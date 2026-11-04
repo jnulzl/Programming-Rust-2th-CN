@@ -1,0 +1,1100 @@
+% chapter18 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_155.html, part0000_split_156.html, part0000_split_157.html, part0000_split_158.html
+
+\begin{myEpigraph}{——科幻喜剧《暗星》（\emph{Dark Star}）}
+Doolittle：你有什么具体证据能证明你的存在？
+
+炸弹-20：嗯……好吧……我思故我在。
+
+Doolittle：很好。非常好。但你又如何知道其他事物的存在呢？
+
+炸弹-20：我的感官感受到了。
+\end{myEpigraph}
+
+Rust 标准库中的输入和输出的特性是围绕 3 个特型组织的，即 \texttt{Read}、\texttt{BufRead} 和 \texttt{Write}。
+
+\begin{itemize}
+\item 实现了 \texttt{Read} 的值具有面向字节的输入方法。它们叫作\textbf{读取器}。
+\item 实现了 \texttt{BufRead} 的值是\textbf{缓冲}读取器。它们支持 \texttt{Read} 的所有方法，外加读取文本行等方法。
+\item 实现了 \texttt{Write} 的值能支持面向字节和 UTF-8 文本的输出。它们叫作\textbf{写入器}。
+\end{itemize}
+
+图 18-1 展示了这 3 个特型以及几个读取器类型和写入器类型的示例。
+
+\myFigure{images/ch18/fig-18-1.jpeg}{图 18-1：Rust 的 3 个主要 I/O 特型和一些实现了它们的类型}
+
+在本章中，我们会讲解如何使用这些特型及其方法，涵盖了图 18-1 中所示的这些读取器类型和写入器类型，并展示了与文件、终端和网络进行交互的其他方式。
+
+\section{读取器与写入器}
+
+你的程序可以从\textbf{读取器}中读取一些字节。例如：
+
+\begin{itemize}
+\item 使用 \texttt{std::fs::File::open(filename)} 打开的文件；
+\item \texttt{std::net::TcpStream}，用于通过网络接收数据；
+\item \texttt{std::io::stdin()}，用于从进程的标准输入流中进行读取；
+\item \texttt{std::io::Cursor<\&[u8]>} 值和 \texttt{std::io::Cursor<Vec<u8>>} 值，它们是从已存在于内存中的字节数组或向量中进行“读取”的读取器。
+\end{itemize}
+
+\textbf{写入器}则可以向其中写入一些字节。例如：
+
+\begin{itemize}
+\item 使用 \texttt{std::fs::File::create(filename)} 打开的文件；
+\item \texttt{std::net::TcpStream}，用于通过网络发送数据；
+\item \texttt{std::io::stdout()} 和 \texttt{std::io:stderr()}，用于写入到终端；
+\item \texttt{Vec<u8>} 也是一个写入器，它的 \texttt{write} 方法会把内容追加到向量；
+\item \texttt{std::io::Cursor<Vec<u8>>}，它与 \texttt{Vec<u8>} 很像，但允许读取数据和写入数据，并能在向量中寻找不同的位置；
+\item \texttt{std::io::Cursor<\&mut [u8]>}，它与 \texttt{std::io::Cursor<Vec<u8>>} 很像，不过不能增长缓冲区，因为它只是一些现有字节数组的切片。
+\end{itemize}
+
+由于读取器和写入器都有标准特型（\texttt{std::io::Read} 和 \texttt{std::io::Write}），因此编写适用于各种输入通道或输出通道的泛型代码是很常见的。例如，下面是一个将所有字节从任意读取器复制到任意写入器的函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Read}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Write}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ErrorKind}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{const}\PYG{+w}{ }\PYG{n}{DEFAULT\PYGZus{}BUF\PYGZus{}SIZE}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{1024}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{copy}\PYG{o}{\PYGZlt{}}\PYG{n}{R}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{W}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{reader}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{R}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{writer}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{W}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u64}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{R}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Read}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{W}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Write}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{DEFAULT\PYGZus{}BUF\PYGZus{}SIZE}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{written}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{len}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{.}\PYG{n}{read}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{written}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{len}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{len}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{k}{ref}\PYG{+w}{ }\PYG{n}{e}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{e}\PYG{p}{.}\PYG{n}{kind}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{ErrorKind}\PYG{p}{::}\PYG{n}{Interrupted}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{continue}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{writer}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{buf}\PYG{p}{[}\PYG{o}{..}\PYG{n}{len}\PYG{p}{]}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{written}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{len}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这是 Rust 标准库中 \texttt{std::io::copy()} 的实现。由于是泛型的，因此可以使用它将数据从 \texttt{File} 复制到 TcpStream，从标准输入复制到内存中的 \texttt{Vec<u8>}，等等。
+
+如果对此处的错误处理代码不清楚，可以重温一下第 7 章。我们接下来还要不断使用 \texttt{Result} 类型，了解它的工作原理很重要。
+
+\texttt{std::io} 的 \texttt{Read}、\texttt{BufRead} 和 \texttt{Write} 这 3 个特型以及 \texttt{Seek} 非常常用，下面是一个只包含这些特型的 \texttt{prelude} 模块：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\end{Verbatim}
+
+你会在本章中看到一两次这种写法。我们还习惯于导入 \texttt{std::io} 模块本身：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Read}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Write}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ErrorKind}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+此处的 \texttt{self} 关键字将 \texttt{io} 声明成了 \texttt{std::io} 模块的别名。这样，\texttt{std::io::Result} 和 \texttt{std::io::Error} 就可以更简洁地写为 \texttt{io::Result} 和 \texttt{io::Error} 了。
+
+\subsection{读取器}
+
+\texttt{std::io::Read} 有以下几个读取数据的方法。所有这些方法都需要对读取器本身进行可变引用。
+
+\begin{myNote}
+\texttt{reader.read(\&mut buffer)}（读取）
+\end{myNote}
+
+从数据源中读取一些字节并将它们存储在给定的 \texttt{buffer} 中。\texttt{buffer} 参数的类型是 \texttt{\&mut[u8]}。此方法最多会读取 \texttt{buffer.len()} 字节。
+
+返回类型是 \texttt{io::Result<u64>}，它是 \texttt{Result<u64, io::Error>} 的类型别名。成功时，这个 \texttt{u64} 的值是已读取的字节数——可能等于或小于 \texttt{buffer.len()}，\textbf{就算数据源突然涌入更多数据也不会超出}。\texttt{Ok(0)} 则意味着没有更多输入可以读取了。
+
+出错时，\texttt{.read()} 会返回 \texttt{Err(err)}，其中 \texttt{err} 是一个 \texttt{io::Error} 值。为了对人类友好，\texttt{io::Error} 是可打印的；为了便于程序处理，它有一个 \texttt{.kind()} 方法，该方法会返回 \texttt{io::ErrorKind} 类型的错误代码。此枚举的成员都有 \texttt{PermissionDenied} 和 \texttt{ConnectionReset} 之类的名称。大多数表示严重的错误，不容忽视，但有一种错误需要特殊处理。\texttt{io::ErrorKind::Interrupted} 对应于 Unix 错误码 \texttt{EINTR}，表示读取恰好被某种信号中断了。除非程序的设计目标之一就是对信号中断做一些巧妙的处理，否则就应该再次尝试读取。18.1 节中的 \texttt{copy()} 代码就展示了这种示例。
+
+如你所见，\texttt{.read()} 方法是非常底层的，甚至还继承了底层操作系统的某些怪癖。如果你正在为一种新型数据源实现 \texttt{Read} 特型，那么这会给你很大的发挥空间。但如果你想读取一些数据，则会很痛苦。因此，Rust 提供了几个更高级的便捷方法。这些方法是 \texttt{Read} 中的默认实现，而且都处理了 \texttt{ErrorKind::Interrupted}，这样你就不必自己处理了。
+
+\begin{myNote}
+\texttt{reader.read\_to\_end(\&mut byte\_vec)}（读至末尾）
+\end{myNote}
+
+从这个读取器读取所有剩余的输入，将其追加到 \texttt{Vec<u8>} 型的 \texttt{byte\_vec} 中。返回 \texttt{io::Result<usize>}，即已读取的字节数。
+
+此方法对要装入向量中的数据量没有任何限制，因此不要在不受信任的来源上使用它。（可以用接下来要讲的 \texttt{.take()} 方法加以限制。）
+
+\begin{myNote}
+\texttt{reader.read\_to\_string(\&mut string)}（读取字符串）
+\end{myNote}
+
+和上一个方法类似，但此方法会将数据附加到给定的 \texttt{String}。如果流不是有效的 UTF-8，则返回 \texttt{ErrorKind::InvalidData} 错误。
+
+在某些编程语言中，字节输入和字符输入是由不同的类型处理的。如今，UTF-8 占据了绝对主导地位，所以 Rust 承认这一事实标准并且处处支持 UTF-8。开源的 \texttt{encoding} crate 可以支持其他字符集。
+
+\begin{myNote}
+\texttt{reader.read\_exact(\&mut buf)}（精确读满）
+\end{myNote}
+
+读取足够的数据来填充给定的缓冲区。参数类型是 \texttt{\&[u8]}。如果读取器在读够 \texttt{buf.len()} 字节之前就耗尽了数据，那么此方法就会返回 \texttt{ErrorKind::UnexpectedEof} 错误。
+
+以上这些是 \texttt{Read} 特型的主要方法。此外，还有 3 个适配器方法可以按值获取 \texttt{reader}，将其转换为迭代器或另一种读取器。
+
+\begin{mySidenote}
+\texttt{reader.bytes()}（字节迭代器）
+\end{mySidenote}
+
+返回输入流中各字节的迭代器。条目类型是 \texttt{io::Result<u8>}，因此每字节都需要进行错误检查。此外，此方法会为每字节调用一次 \texttt{reader.read()}，如果没有缓冲，则会非常低效。
+
+\begin{mySidenote}
+\texttt{reader.chain(reader2)}（串联）
+\end{mySidenote}
+
+返回新的读取器，先生成来自 \texttt{reader} 的所有输入，然后再生成来自 \texttt{reader2} 的所有输入。
+
+\begin{mySidenote}
+\texttt{reader.take(n)}（取出 \emph{n} 个）
+\end{mySidenote}
+
+返回新的读取器，从与 \texttt{reader} 相同的数据源读取，但仅限于前 \texttt{n} 字节的输入。
+
+没有关闭读取器的方法。读取器和写入器通常会实现 \texttt{Drop} 以便自行关闭。
+
+\subsection{缓冲读取器}
+
+为了提高效率，可以对读取器和写入器进行\textbf{缓冲}，这基本上意味着它们有一块内存（缓冲区），用于保存一些输入数据或输出数据。这可以减少一些系统调用，如图 18-2 所示。应用程序会从 \texttt{BufReader} 中读取数据，在本例中是通过调用其 \texttt{.read\_line()} 方法实现的。\texttt{BufReader} 会依次从操作系统获取更大块的输入。
+
+\myFigure{images/ch18/fig-18-2.jpeg}{图 18-2：缓冲文件读取器}
+
+图 18-2 未按比例绘制。\texttt{BufReader} 缓冲区的实际大小默认为几千字节，因此一次 \texttt{read} 系统调用就可以服务数百次 \texttt{.read\_line()} 调用。这很重要，因为系统调用很慢。
+
+（如图 18-2 所示，操作系统也有自己的缓冲区。同理：系统调用固然慢，但从磁盘读取数据更慢。）
+
+缓冲读取器同时实现了 \texttt{Read} 特型和 \texttt{BufRead} 特型，后者添加了以下方法。
+
+\begin{myNote}
+\texttt{reader.read\_line(\&mut line)}（读一行）
+\end{myNote}
+
+读取一行文本并将其追加到 \texttt{line}，\texttt{line} 是一个 \texttt{String}。行尾的换行符 \texttt{'\textbackslash{}n'} 包含在 \texttt{line} 中。
+
+如果输入带有 Windows 风格的行尾结束符号 \texttt{"\textbackslash{}r\textbackslash{}n"}，则这两个字符都会包含在 \texttt{line} 中。
+
+返回值是 \texttt{io::Result<usize>}，表示已读取的字节数，包括行尾结束符号（如果有的话）。
+
+如果读取器在输入的末尾，则会保持 \texttt{line} 不变并返回 \texttt{Ok(0)}。
+
+\begin{mySidenote}
+\texttt{reader.lines()}（文本行迭代器）
+\end{mySidenote}
+
+返回生成各个输入行的迭代器。条目类型是 \texttt{io::Result<String>}。字符串中不包含换行符。如果输入带有 Windows 风格的行尾结束符号 \texttt{"\textbackslash{}r\textbackslash{}n"}，则这两个字符都会被去掉。
+
+在绝大多数场景中，这个方法足够你进行文本输入了。接下来的 18.1.3 节和 18.1.4 节展示了它的一些使用示例。
+
+\begin{myNote}
+\texttt{reader.read\_until(stop\_byte, \&mut byte\_vec)}（读到 \texttt{stop\_byte} 为止）和 \texttt{reader.split(stop\_byte)}（根据 \texttt{stop\_byte} 拆分）
+\end{myNote}
+
+与 \texttt{.read\_line()} 和 \texttt{.lines()} 类似，但这两个方法是面向字节的，会生成 \texttt{Vec<u8>} 而不是 \texttt{String}。你要自选分隔符 \texttt{stop\_byte}。
+
+\texttt{BufRead} 还提供了 \texttt{.fill\_buf()} 和 \texttt{.consume(n)}，这是一对底层方法，用于直接访问读取器的内部缓冲区。有关这两个方法的更多信息，请参阅在线文档。
+
+接下来的 18.1.3 节和 18.1.4 节将更详细地介绍缓冲读取器。
+
+\subsection{读取行}
+
+下面是一个用于实现 Unix \texttt{grep} 实用程序的函数，该函数会在多行文本（通常是通过管道从另一条命令输入的文本）中搜索给定字符串：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{grep}\PYG{p}{(}\PYG{n}{target}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{stdin}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{stdin}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{n}{target}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+因为要调用 \texttt{.lines()}，所以需要一个实现了 \texttt{BufRead} 的输入源。在这种情况下，可以调用 \texttt{io::stdin()} 来获取通过管道传输给我们的数据。但是，Rust 标准库使用互斥锁保护着 \texttt{stdin}。因此要调用 \texttt{.lock()} 来锁定 \texttt{stdin} 以供当前线程独占使用，这会返回一个实现了 \texttt{BufRead} 的 \texttt{StdinLock} 值。在循环结束时，\texttt{StdinLock} 会被丢弃，释放互斥锁。（如果没有互斥锁，那么当两个线程试图同时从 \texttt{stdin} 读取时就会导致未定义行为。C 语言也有相同的问题，且以相同的方式来解决：所有 C 标准输入函数和输出函数都会在幕后获得锁。唯一的不同在于，在 Rust 中，锁是 API 的一部分。）
+
+该函数的其余部分都很简单：它会调用 \texttt{.lines()} 并对生成的迭代器进行循环。因为这个迭代器会生成 \texttt{Result} 值，所以要用 \texttt{?} 运算符检查错误。
+
+假如我们想完善这个 \texttt{grep} 程序，让它支持在磁盘上搜索文件。可以把这个函数变成泛型函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{grep}\PYG{o}{\PYGZlt{}}\PYG{n}{R}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{target}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{R}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{R}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BufRead}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{n}{target}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+现在可以将 \texttt{StdinLock} 或带缓冲的 \texttt{File} 传给它：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{stdin}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{grep}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{target}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{stdin}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{f}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{open}\PYG{p}{(}\PYG{n}{file}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{n}{grep}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{target}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{BufReader}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{f}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 同样正确}
+\end{Verbatim}
+
+请注意，\texttt{File} 不会自动缓冲。\texttt{File} 实现了 \texttt{Read} 但没实现 \texttt{BufRead}。但是，为 \texttt{File} 或任意无缓冲读取器创建缓冲读取器很容易。\texttt{BufReader::new(reader)} 就是做这个的。（要设置缓冲区的大小，请使用 \texttt{BufReader::with\_capacity(size, reader)}。）
+
+在大多数语言中，文件默认是带缓冲的。如果想要无缓冲的输入或输出，就必须弄清楚如何关闭缓冲。在 Rust 中，\texttt{File} 和 \texttt{BufReader} 是两个独立的库特性，因为有时你想要不带缓冲的文件，有时你想要不带文件的缓冲（例如，你可能想要缓冲来自网络的输入）。
+
+下面是一个包括错误处理和一些粗略的参数解析的完整程序。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// grep——搜索stdin或其他文件，以便用给定的字符串进行逐行匹配}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{error}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{BufReader}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{File}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{path}\PYG{p}{::}\PYG{n}{PathBuf}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{grep}\PYG{o}{\PYGZlt{}}\PYG{n}{R}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{target}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{R}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{R}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BufRead}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{n}{target}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{grep\PYGZus{}main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// 获取命令行参数。第一个参数是要搜索的字符串，其他参数是一些文件名}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{args}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{skip}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{target}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{s}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{usage: grep PATTERN FILE...}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{files}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{PathBuf}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{n}{PathBuf}\PYG{p}{::}\PYG{n}{from}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{files}\PYG{p}{.}\PYG{n}{is\PYGZus{}empty}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{stdin}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{grep}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{target}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{stdin}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{file}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{files}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{f}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{open}\PYG{p}{(}\PYG{n}{file}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{grep}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{target}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{BufReader}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{f}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{grep\PYGZus{}main}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{err}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{收集行}
+
+有些读取器方法（包括 \texttt{.lines()}）会返回生成 \texttt{Result} 值的迭代器。当你第一次想要将文件的所有行都收集到一个大型向量中时，就会遇到如何摆脱 \texttt{Result} 的问题：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 正确，但不是你想要的}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{results}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 错误：不能把Result的集合转换成Vec\PYGZlt{}String\PYGZgt{}}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{lines}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+第二次尝试无法编译：遇到这些错误怎么办？最直观的解决方法是编写一个 \texttt{for} 循环并检查每个条目是否有错：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{lines}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{lines}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{line\PYGZus{}result}\PYG{o}{?}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这固然没错，但这里最好还是用 \texttt{.collect()}，事实上确实可以做到。只要知道该请求哪种类型就可以了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{lines}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+这是怎么做到的呢？标准库中包含了 \texttt{Result} 对 \texttt{FromIterator} 的实现（在线文档中这很容易被忽略），这个实现让一切成为可能：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{E}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{C}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{FromIterator}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{E}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{C}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{E}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{C}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{FromIterator}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这需要仔细阅读，但确实是一个很好的技巧。假设 \texttt{C} 是任意集合类型，比如 \texttt{Vec} 或 \texttt{HashSet}。只要已经知道如何从 \texttt{T} 值的迭代器构建出 \texttt{C}，就可以从生成 \texttt{Result<T, E>} 值的迭代器构建出 \texttt{Result<C, E>}。只需从迭代器中提取各个值并从 \texttt{Ok} 结果构建出集合即可，但一旦看到 \texttt{Err}，就停止并将其传出。
+
+换句话说，\texttt{io::Result<Vec<String>>} 是一种集合类型，因此 \texttt{.collect()} 方法可以创建并填充该类型的值。
+
+\subsection{写入器}
+
+如前所述，输入主要是用方法完成的，而输出略有不同。
+
+本书一直在使用 \texttt{println!()} 生成纯文本输出：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hello, world!}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The greatest common divisor of \PYGZob{}:?\PYGZcb{} is \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{         }\PYG{n}{numbers}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{d}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 打印空行}
+\end{Verbatim}
+
+还有不会在行尾添加换行符的 \texttt{print!()} 宏，以及会写入标准错误流的 \texttt{eprintln!} 宏和 \texttt{eprint!} 宏。所有这些宏的格式化代码都和 \texttt{format!} 宏一样，17.4 节曾讲解过。
+
+要将输出发送到写入器，请使用 \texttt{write!()} 宏和 \texttt{writeln!()} 宏。它们和 \texttt{print!()} 和 \texttt{println!()} 类似，但有两点区别：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{writeln!}\PYG{p}{(}\PYG{n}{io}\PYG{p}{::}\PYG{n}{stderr}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error: world not helloable}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{n+nf+fm}{writeln!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{byte\PYGZus{}vec}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The greatest common divisor of \PYGZob{}:?\PYGZcb{} is \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{         }\PYG{n}{numbers}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{d}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+一是每个 \texttt{write} 宏都接受一个额外的写入器作为第一参数。二是它们会返回 \texttt{Result}，因此必须处理错误。这就是为什么要在每行末尾使用 \texttt{?} 运算符。
+
+\texttt{print} 宏不会返回 \texttt{Result}，如果写入失败，它们只会 panic。由于写入的是终端，所以极少失败。
+
+\texttt{Write} 特型有以下几个方法。
+
+\begin{mySidenote}
+\texttt{writer.write(\&buf)}（写入）
+\end{mySidenote}
+
+将切片 \texttt{buf} 中的一些字节写入底层流。此方法会返回 \texttt{io::Result<usize>}。成功时，这给出了已写入的字节数，如果流突然提前关闭，那么这个值可能会小于 \texttt{buf.len()}。
+
+和 \texttt{Reader::read()} 一样，这是一个要避免直接使用的底层方法。
+
+\begin{myNote}
+\texttt{writer.write\_all(\&buf)}（写入全部）
+\end{myNote}
+
+将切片 \texttt{buf} 中的所有字节都写入。返回 \texttt{Result<()>}。
+
+\begin{mySidenote}
+\texttt{writer.flush()}（刷新缓冲区）
+\end{mySidenote}
+
+将可能被缓冲在内存中的数据刷新到底层流中。返回 \texttt{Result<()>}。
+
+请注意，虽然 \texttt{println!} 宏和 \texttt{eprintln!} 宏会自动刷新 \texttt{stdout} 流和 \texttt{stderr} 流的缓冲区，但 \texttt{print!} 宏和 \texttt{eprint!} 宏不会。使用它们时，可能要手动调用 \texttt{flush()}。
+
+与读取器一样，写入器也会在被丢弃时自动关闭。
+
+正如 \texttt{BufReader::new(reader)} 会为任意读取器添加缓冲区一样，\texttt{BufWriter::new(writer)} 也会为任意写入器添加缓冲区：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{file}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{tmp.txt}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{writer}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BufWriter}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{file}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+要设置缓冲区的大小，请使用 \texttt{BufWriter::with\_capacity(size, writer)}。
+
+当丢弃 \texttt{BufWriter} 时，所有剩余的缓冲数据都将写入底层写入器。但是，如果在此写入过程中发生错误，则错误会被\textbf{忽略}。（由于错误发生在 \texttt{BufWriter} 的 \texttt{.drop()} 方法内部，因此没有合适的地方来报告。）为了确保应用程序会注意到所有输出错误，请在丢弃带缓冲的写入器之前将它手动 \texttt{.flush()} 一下。
+
+\subsection{文件}
+
+下面是本书已经介绍过的打开文件的两个方法。
+
+\begin{mySidenote}
+\texttt{File::open(filename)}（打开）
+\end{mySidenote}
+
+打开现有文件进行读取。此方法会返回一个 \texttt{io::Result<File>}，如果该文件不存在则报错。
+
+\begin{mySidenote}
+\texttt{File::create(filename)}（创建）
+\end{mySidenote}
+
+创建一个用于写入的新文件。如果存在具有给定文件名的文件，则会将其截断。
+
+请注意，\texttt{File} 类型位于文件系统模块 \texttt{std::fs} 中，而不是 \texttt{std::io} 中。
+
+当这两个方法都不符合需求时，可以使用 \texttt{OpenOptions} 来指定所期望的确切行为：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{OpenOptions}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{log}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{OpenOptions}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{append}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 如果文件已存在，则追加到末尾}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{open}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{server.log}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{file}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{OpenOptions}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{write}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{create\PYGZus{}new}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 如果文件已存在，则失败}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{open}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{new\PYGZus{}file.txt}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+方法 \texttt{.append()}、\texttt{.write()}、\texttt{.create\_new()} 等是可以链式调用的：每个方法都会返回 \texttt{self}。这种链式调用的设计模式很常见，所以在 Rust 中它有一个专门的名字——\textbf{构建器}（builder）。另一个例子是 \texttt{std::process::Command}。有关 \texttt{OpenOptions} 的详细信息，请参阅在线文档。
+
+\texttt{File} 打开后的行为就和任何读取器或写入器一样。如果需要，可以为它添加缓冲区。\texttt{File} 在被丢弃时会自动关闭。
+
+\subsection{寻址}
+
+\texttt{File} 还实现了 \texttt{Seek} 特型，这意味着你可以在 \texttt{File} 中“跳来跳去”，而不是从头到尾一次性读取或写入。\texttt{Seek} 的定义如下：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Seek}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{seek}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{pos}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{SeekFrom}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u64}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{SeekFrom}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Start}\PYG{p}{(}\PYG{k+kt}{u64}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{End}\PYG{p}{(}\PYG{k+kt}{i64}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Current}\PYG{p}{(}\PYG{k+kt}{i64}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此枚举让 \texttt{seek} 方法表现得很好：可以用 \texttt{file.seek(SeekFrom::Start(0))} 倒回到开头，还能用 \texttt{file.seek(SeekFrom::Current(-8))} 回退几字节，等等。
+
+在文件中寻址很慢。无论使用的是硬盘还是固态驱动器（SSD），每一次寻址的开销都接近于读取数兆字节的数据。
+
+\subsection{其他读取器与写入器类型}
+
+迄今为止，本章一直在使用 \texttt{File} 作为示范的主力，但还有许多其他有用的读取器类型和写入器类型。
+
+\begin{mySidenote}
+\texttt{io::stdin()}（标准输入）
+\end{mySidenote}
+
+返回标准输入流的读取器。类型是 \texttt{io::Stdin}。由于它被所有线程共享，因此每次读取都会获取和释放互斥锁。
+
+\texttt{Stdin} 有一个 \texttt{.lock()} 方法，该方法会获取互斥锁并返回 \texttt{io::StdinLock}，这是一个带缓冲的读取器，在被丢弃之前会持有互斥锁。因此，对 \texttt{StdinLock} 的单个操作就避免了互斥开销。18.1.3 节展示过使用此方法的示例代码。
+
+由于技术原因，不能直接调用 \texttt{io::stdin().lock()}\footnote{从 Rust 1.8 开始，已经可以直接调用 \texttt{io::stdin().lock()} 了。——译者注}。这个锁持有对 \texttt{Stdin} 值的引用，这意味着此 \texttt{Stdin} 值必须存储在某个能让它“活得”足够长的地方：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{stdin}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{lines}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{stdin}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{io::stdout()}（标准输出）和 \texttt{io::stderr()}（标准错误）
+\end{myNote}
+
+返回标准输出流（\texttt{Stdout}）类型和标准错误流（\texttt{Stderr}）类型的写入器。它们也有互斥锁和 \texttt{.lock()} 方法。
+
+\begin{mySidenote}
+\texttt{Vec<u8>}（\texttt{u8} 向量）
+\end{mySidenote}
+
+实现了 \texttt{Write}。写入 \texttt{Vec<u8>} 会使用新数据扩展向量。
+
+（但是，\texttt{String} \textbf{没有}实现 \texttt{Write}。要使用 \texttt{Write} 构建字符串，需要首先写入 \texttt{Vec<u8>}，然后使用 \texttt{String::from\_utf8(vec)} 将向量转换为字符串。）
+
+\begin{mySidenote}
+\texttt{Cursor::new(buf)}（新建）
+\end{mySidenote}
+
+创建一个 \texttt{Cursor}（游标，一个从 \texttt{buf} 读取数据的缓冲读取器）。这样你就创建了一个能读取 \texttt{String} 的读取器。参数 \texttt{buf} 可以是实现了 \texttt{AsRef<[u8]>} 的任意类型，因此也可以传递 \texttt{\&[u8]}、\texttt{\&str} 或 \texttt{Vec<u8>}。
+
+\texttt{Cursor} 的内部平平无奇，只有两个字段：\texttt{buf} 本身和一个整数，该整数是 \texttt{buf} 中下一次读取开始的偏移量。此位置的初始值为 0。
+
+\texttt{Cursor} 实现了 \texttt{Read}、\texttt{BufRead} 和 \texttt{Seek}。如果 \texttt{buf} 的类型是 \texttt{\&mut [u8]} 或 \texttt{Vec<u8>}，那么 \texttt{Cursor} 也实现了 \texttt{Write}。写入游标会覆盖 \texttt{buf} 中从当前位置开始的字节。如果试图直接写到超出 \texttt{\&mut [u8]} 末尾的位置，就会导致一次“部分写入”或一个 \texttt{io::Error}。不过，使用游标写入 \texttt{Vec<u8>} 的结尾就没有这个问题：它会增长此向量。因此，\texttt{Cursor<\&mut [u8]>} 和 \texttt{Cursor<Vec<u8>>} 实现了所有这 4 个 \texttt{std::io::prelude} 特型。
+
+\begin{mySidenote}
+\texttt{std::net::TcpStream}（\texttt{Tcp} 流）
+\end{mySidenote}
+
+表示 TCP 网络连接。由于 TCP 支持双向通信，因此它既是读取器又是写入器。
+
+类型关联函数 \texttt{TcpStream::connect(("hostname", PORT))} 会尝试连接到服务器并返回 \texttt{io::Result<TcpStream>}。
+
+\begin{mySidenote}
+\texttt{std::process::Command}（命令）
+\end{mySidenote}
+
+支持启动子进程并通过管道将数据传输到其标准输入，如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Command}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Stdio}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{child}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{Command}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{grep}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{arg}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZhy{}e}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{arg}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{a.*e.*i.*o.*u}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{stdin}\PYG{p}{(}\PYG{n}{Stdio}\PYG{p}{::}\PYG{n}{piped}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{spawn}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{to\PYGZus{}child}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{child}\PYG{p}{.}\PYG{n}{stdin}\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{word}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{my\PYGZus{}words}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{writeln!}\PYG{p}{(}\PYG{n}{to\PYGZus{}child}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{word}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\PYG{n+nb}{drop}\PYG{p}{(}\PYG{n}{to\PYGZus{}child}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 关闭grep的stdin，以便让它退出}
+\PYG{n}{child}\PYG{p}{.}\PYG{n}{wait}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{child.stdin} 的类型是 \texttt{Option<std::process::ChildStdin>}，这里在建立子进程时使用了 \texttt{.stdin(Stdio::piped())}，因此当 \texttt{.spawn()} 成功时，\texttt{child.stdin} 必然已经就位。如果没提供，那么 \texttt{child.stdin} 就是 \texttt{None}。
+
+\texttt{Command} 还有两个类似的方法 \texttt{.stdout()} 和 \texttt{.stderr()}，可用于请求 \texttt{child.stdout} 和 \texttt{child.stderr} 中的读取器。
+
+\texttt{std::io} 模块还提供了一些返回普通读取器和写入器的函数。
+
+\begin{mySidenote}
+\texttt{io::sink()}（地漏）
+\end{mySidenote}
+
+这是无操作写入器。所有的写入方法都会返回 \texttt{Ok}，但只是把数据扔掉了。
+
+\begin{mySidenote}
+\texttt{io::empty()}（空白）
+\end{mySidenote}
+
+这是无操作读取器。读取总会成功，但只会返回“输入结束”（EOF）。
+
+\begin{mySidenote}
+\texttt{io::repeat(byte)}（重复）
+\end{mySidenote}
+
+返回一个会无限重复给定字节的读取器。
+
+\subsection{二进制数据、压缩和序列化}
+
+许多开源 crate 建立在 \texttt{std::io} 框架之上，以提供额外的特性。
+
+\texttt{byteorder} crate 提供了 \texttt{ReadBytesExt} 特型和 \texttt{WriteBytesExt} 特型，为所有读取器和写入器添加了二进制输入和输出的方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{byteorder}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{ReadBytesExt}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{WriteBytesExt}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{LittleEndian}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{reader}\PYG{p}{.}\PYG{n}{read\PYGZus{}u32}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{LittleEndian}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{n}{writer}\PYG{p}{.}\PYG{n}{write\PYGZus{}i64}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{LittleEndian}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{n}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{i64}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{flate2} crate 提供了用于读取和写入 \texttt{gzip} 数据的适配器方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{flate2}\PYG{p}{::}\PYG{n}{read}\PYG{p}{::}\PYG{n}{GzDecoder}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{file}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{open}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{access.log.gz}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{gzip\PYGZus{}reader}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{GzDecoder}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{file}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{serde} crate 及其关联的格式类 crate（如 \texttt{serde\_json}）实现了序列化和反序列化：它们在 Rust 结构体和字节之间来回转换。11.2.2 节曾简单提到过这个 crate。现在可以仔细看看了。
+
+假设我们有一些数据（文字冒险游戏中的映射表）存储在 \texttt{HashMap} 中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{RoomId}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{;}\PYG{+w}{                       }\PYG{c+c1}{// 每个房间都有唯一的名字}
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{RoomExits}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{RoomId}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{p}{;}\PYG{+w}{       }\PYG{c+c1}{// ……并且存在一个出口列表}
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{RoomMap}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n}{RoomId}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{RoomExits}\PYG{o}{\PYGZgt{}}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 房间名和出口的简单映射表}
+
+\PYG{c+c1}{// 创建一个简单映射表}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{map}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{RoomMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{map}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Cobble Crawl}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}W\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Debris Room}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{map}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Debris Room}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}E\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Cobble Crawl}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}W\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Sloping Canyon}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+将此数据转换为 JSON 输出只需一行代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{serde\PYGZus{}json}\PYG{p}{::}\PYG{n}{to\PYGZus{}writer}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdout}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{map}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+在内部，\texttt{serde\_json::to\_writer} 使用了 \texttt{serde::Serialize} 特型的 \texttt{serialize} 方法。该库会将 \texttt{serde::Serialize} 特型附加到所有它知道如何序列化的类型中，包括我们的数据中出现过的类型：字符串、字符、元组、向量和 \texttt{HashMap}。
+
+\texttt{serde} 很灵活。在这个程序中，输出是 JSON 数据，因为我们选择了 \texttt{serde\_json} 序列化器。其他格式（如 \texttt{MessagePack}）也有对应的序列化器支持。同样，可以将此输出发送到文件、\texttt{Vec<u8>} 或任意写入器。前面的代码会将数据打印到 \texttt{stdout}。具体内容如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{\PYGZob{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Debris Room}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{p}{[}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{E}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Cobble Crawl}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{,}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{W}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Sloping Canyon}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{]}\PYG{p}{,}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Cobble Crawl}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}
+\PYG{p}{[}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{W}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Debris Room}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{]}\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{serde} 还包括对供派生的两个关键 \texttt{serde} 特型的支持：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Serialize, Deserialize)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Player}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{location}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{items}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{health}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u32}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里的 \texttt{\#[derive]} 属性会让编译多花费一点儿时间，所以当你在 Cargo.toml 文件中将它列为依赖项时，要明确要求 \texttt{serde} 支持它。下面是要用在上述代码中的内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{[}\PYG{k}{dependencies}\PYG{k}{]}
+\PYG{n}{serde}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{version}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1.0}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{features}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{derive}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{n}{serde\PYGZus{}json}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1.0}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+有关详细信息，请参阅 \texttt{serde} 文档。简而言之，构建系统会为 \texttt{Player} 自动生成 \texttt{serde::Serialize} 和 \texttt{serde::Deserialize} 的实现，因此序列化 \texttt{Player} 的值很简单：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{serde\PYGZus{}json}\PYG{p}{::}\PYG{n}{to\PYGZus{}writer}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdout}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{player}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+输出如下所示。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{\PYGZob{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{location}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Cobble Crawl}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{items}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{a wand}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{,}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{health}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{l+m+mi}{3}\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\section{文件与目录}
+
+前面已经展示了如何使用读取器和写入器，接下来的几节将介绍 Rust 用于处理文件和目录的特性，这些特性位于 \texttt{std::path} 模块和 \texttt{std::fs} 模块中。所有这些特性都涉及使用文件名，因此我们将从文件名类型开始。
+
+\subsection{\texttt{OsStr} 与 \texttt{Path}}
+
+麻烦的是，操作系统并不会强制要求其文件名是有效的 Unicode。下面是创建文本文件的两个 Linux shell 命令。第一个使用了有效的 UTF-8 文件名，第二个则没有：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{echo}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}hello world\PYGZdq{}}\PYG{+w}{ }\PYGZgt{}\PYG{+w}{ }ô.txt
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{echo}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}O brave new world, that has such filenames in\PYGZsq{}t\PYGZdq{}}\PYG{+w}{ }\PYGZgt{}\PYG{+w}{ }\PYG{l+s+s1}{\PYGZdl{}\PYGZsq{}\PYGZbs{}xf4\PYGZsq{}}.txt
+\end{Verbatim}
+
+这两个命令都没有任何报错就通过了，因为 Linux 内核并不检查 UTF-8 的格式有效性。对内核来说，任意字节串（除了 \texttt{null} 字节和斜杠）都是可接受的文件名。在 Windows 上的情况类似：几乎任意 16 位“宽字符”字符串都是可接受的文件名，即使字符串不是有效的 UTF-16 也可以。操作系统处理的其他字符串也是如此，比如命令行参数和环境变量。
+
+Rust 字符串始终是有效的 Unicode。文件名在实践中\textbf{几乎}总是 Unicode，但 Rust 必须以某种方式处理罕见的例外情况。这就是 Rust 会有 \texttt{std::ffi::OsStr} 和 \texttt{OsString} 的原因。
+
+\texttt{OsStr} 是一种字符串类型，它是 UTF-8 的超集。\texttt{OsStr} 的任务是表示当前系统上的所有文件名、命令行参数和环境变量，\textbf{无论它们是不是有效的 Unicode}。在 Unix 上，\texttt{OsStr} 可以保存任意字节序列。在 Windows 上，\texttt{OsStr} 使用 UTF-8 的扩展格式存储，可以对任意 16 位值序列（包括不符合标准的半代用区码点）进行编码。
+
+所以我们有两种字符串类型：\texttt{str} 用于实际的 Unicode 字符串，而 \texttt{OsStr} 用于操作系统可能抛出的任意文字。还有用于文件名的 \texttt{std::path::Path}，这纯粹是一个便捷名称。\texttt{Path} 与 \texttt{OsStr} 完全一样，只是添加了许多关于文件名的便捷方法，18.2.2 节会介绍这些方法。绝对路径和相对路径都使用 \texttt{Path} 表示。对于路径中的单个组件，请使用 \texttt{OsStr}。
+
+最后，每种字符串类型都有对应的\textbf{拥有型}版本：\texttt{String} 拥有分配在堆上的 \texttt{str}，\texttt{std::ffi:: OsString} 拥有分配在堆上的 \texttt{OsStr}，而 \texttt{std::path::PathBuf} 拥有分配在堆上的 \texttt{Path}。表 18-1 概述了每种类型的一些特性。
+
+\myCaption{表 18-1：文件名类型}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.894\hsize\raggedright\arraybackslash}X>{\hsize=0.983\hsize\raggedright\arraybackslash}X>{\hsize=1.073\hsize\raggedright\arraybackslash}X>{\hsize=1.050\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{} & \textcolor{white}{\texttt{str}} & \textcolor{white}{\texttt{OsStr}} & \textcolor{white}{\texttt{Path}} \\
+无固定大小类型，总是通过引用传递 & 是 & 是 & 是 \\
+可以包含任意 Unicode 文本 & 是 & 是 & 是 \\
+通常看起来和 UTF-8 一样 & 是 & 是 & 是 \\
+可以包含非 Unicode 数据 & 否 & 是 & 是 \\
+文本处理类方法 & 是 & 否 & 否 \\
+文件名相关方法 & 否 & 否 & 是 \\
+拥有型、可增长且分配在堆上的等价类型 & \texttt{String} & \texttt{OsString} & \texttt{PathBuf} \\
+转换为拥有型类型 & \texttt{.to\_string()} & \texttt{.to\_os\_string()} & \texttt{.to\_path\_buf()} \\
+\end{tabularx}
+\myTableEnd
+
+所有这 3 种类型都实现了一个公共特型 \texttt{AsRef<Path>}，因此我们可以轻松地声明一个接受“任意文件名类型”作为参数的泛型函数。这使用了 13.7 节中展示过的技巧：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{path}\PYG{p}{::}\PYG{n}{Path}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{swizzle\PYGZus{}file}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{path\PYGZus{}arg}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{   }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{AsRef}\PYG{o}{\PYGZlt{}}\PYG{n}{Path}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{   }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{path}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{path\PYGZus{}arg}\PYG{p}{.}\PYG{n}{as\PYGZus{}ref}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{   }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+所有接受 \texttt{path} 参数的标准函数和方法都使用了这种技巧，因此可以直接将字符串字面量传给它们中的任意一个。
+
+\subsection{\texttt{Path} 与 \texttt{PathBuf} 的方法}
+
+\texttt{Path} 提供了以下方法。
+
+\begin{mySidenote}
+\texttt{Path::new(str)}（新建）
+\end{mySidenote}
+
+将 \texttt{\&str} 或 \texttt{\&OsStr} 转换为 \texttt{\&Path}。这不会复制字符串。新的 \texttt{\&Path} 会指向与原始 \texttt{\&str} 或 \texttt{\&OsStr} 相同的字节。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{path}\PYG{p}{::}\PYG{n}{Path}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{home\PYGZus{}dir}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/fwolfe}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+（类似的方法 \texttt{OsStr::new(str)} 会将 \texttt{\&str} 转换为 \texttt{\&OsStr}。）
+
+\texttt{path.parent()}（父目录）
+
+返回路径的父目录（如果有的话）。返回类型是 \texttt{Option<\&Path>}。
+
+这不会复制路径。\texttt{path} 的父路径一定是 \texttt{path} 的子串。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/fwolfe/program.txt}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{parent}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/fwolfe}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{path.file\_name()}（文件名）
+\end{mySidenote}
+
+返回 \texttt{path} 的最后一个组件（如果有的话）。返回类型是 \texttt{Option<\&OsStr>}。
+
+典型情况下，\texttt{path} 由目录、斜杠和文件名组成，此方法会返回文件名。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ffi}\PYG{p}{::}\PYG{n}{OsStr}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/fwolfe/program.txt}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{file\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{OsStr}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{program.txt}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{path.is\_absolute()}（是绝对路径？）和 \texttt{path.is\_relative()}（是相对路径？）
+\end{myNote}
+
+这两个方法会指出文件是绝对路径（如 Unix 路径 /usr/bin/advent 或 Windows 路径 C:\textbackslash{}Program Files）还是相对路径（如 src/main.rs）。
+
+\begin{mySidenote}
+\texttt{path1.join(path2)}（联结）
+\end{mySidenote}
+
+联结两个路径，返回一个新的 \texttt{PathBuf}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{path1}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/usr/share/dict}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{path1}\PYG{p}{.}\PYG{n}{join}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{words}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/usr/share/dict/words}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如果 \texttt{path2} 本身是绝对路径，则只会返回 \texttt{path2} 的副本，因此该方法可用于将任意路径转换为绝对路径。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{abs\PYGZus{}path}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{current\PYGZus{}dir}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{any\PYGZus{}path}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{path.components()}（组件迭代器）
+\end{mySidenote}
+
+返回从左到右访问给定路径各个组件的迭代器。这个迭代器的条目类型是 \texttt{std::path::Component}，这是一个枚举，可以代表所有可能出现在文件名中的不同部分：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Component}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Prefix}\PYG{p}{(}\PYG{n}{PrefixComponent}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{  }\PYG{c+c1}{// 驱动器路径或共享路径（在Windows 上）}
+\PYG{+w}{    }\PYG{n}{RootDir}\PYG{p}{,}\PYG{+w}{                      }\PYG{c+c1}{// 根目录，`/`或`\PYGZbs{}`}
+\PYG{+w}{    }\PYG{n}{CurDir}\PYG{p}{,}\PYG{+w}{                       }\PYG{c+c1}{// 特殊目录`.`}
+\PYG{+w}{    }\PYG{n}{ParentDir}\PYG{p}{,}\PYG{+w}{                    }\PYG{c+c1}{// 特殊目录`..`}
+\PYG{+w}{    }\PYG{n}{Normal}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n}{OsStr}\PYG{p}{)}\PYG{+w}{             }\PYG{c+c1}{// 普通文件或目录名}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+例如，Windows 路径 \textbackslash{}\textbackslash{}venice\textbackslash{}Music\textbackslash{}A Love Supreme\textbackslash{}04-Psalm.mp3 包含一个表示 \textbackslash{}\textbackslash{}venice\textbackslash{}Music 的 \texttt{Prefix}，后跟一个 \texttt{RootDir}，然后是表示 A Love Supreme 和 04-Psalm.mp3 的两个 \texttt{Normal} 组件。
+
+有关详细信息，请参阅在线文档。
+
+\begin{mySidenote}
+\texttt{path.ancestors()}（祖先迭代器）
+\end{mySidenote}
+
+返回一个从 \texttt{path} 开始一直遍历到根路径的迭代器。生成的每个条目也都是 \texttt{Path}：首先是 \texttt{path} 本身，然后是它的父级，接下来是它的祖父级，以此类推：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{file}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/jimb/calendars/calendar\PYGZhy{}18x18.pdf}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{file}\PYG{p}{.}\PYG{n}{ancestors}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/jimb/calendars/calendar\PYGZhy{}18x18.pdf}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/jimb/calendars}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/jimb}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这就像在重复调用 \texttt{parent} 直到它返回 \texttt{None}。最后一个条目始终是根路径或前缀路径（\texttt{Prefix}）。
+
+这些方法只针对内存中的字符串进行操作。\texttt{Path} 也有一些能查询文件系统的方法：\texttt{.exists()}、\texttt{.is\_file()}、\texttt{.is\_dir()}、\texttt{.read\_dir()}、\texttt{.canonicalize()} 等。请参阅在线文档以了解更多信息。
+
+将 \texttt{Path} 转换为字符串有以下 3 个方法，每个方法都容许 \texttt{Path} 中存在无效 UTF-8。
+
+\begin{mySidenote}
+\texttt{path.to\_str()}（转字符串）
+\end{mySidenote}
+
+将 \texttt{Path} 转换为字符串，返回 \texttt{Option<\&str>}。如果 \texttt{path} 不是有效的 UTF-8，则返回 \texttt{None}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{file\PYGZus{}str}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{.}\PYG{n}{to\PYGZus{}str}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{file\PYGZus{}str}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{  }\PYG{c+c1}{// ……否则就跳过这种名称古怪的文件}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{path.to\_string\_lossy()}（转字符串，宽松版）
+\end{myNote}
+
+基本上和上一个方法一样，但该方法在任何情况下都会设法返回某种字符串。如果 \texttt{path} 不是有效的 UTF-8，则该方法会制作一个副本，用 Unicode 代用字符  替代每个无效的字节序列。
+
+返回类型为 \texttt{std::borrow::Cow<str>}：借用或拥有的字符串。要从此值获取 \texttt{String}，请使用其 \texttt{.to\_owned()} 方法。（有关 \texttt{Cow} 的更多信息，请参阅 13.12 节。）
+
+\begin{mySidenote}
+\texttt{path.display()}（转显示）
+\end{mySidenote}
+
+用于打印路径：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Download found. You put it in: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dir\PYGZus{}path}\PYG{p}{.}\PYG{n}{display}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+此方法返回的值不是字符串，但它实现了 \texttt{std::fmt::Display}，因此可以与 \texttt{format!()}、\texttt{println!()} 和类似的宏一起使用。如果路径不是有效的 UTF-8，则输出可能包含 � 字符。
+
+\subsection{访问文件系统的函数}
+
+表 18-2 展示了 \texttt{std::fs} 中的一些函数及其在 Unix 和 Windows 上的近乎等价方式。所有这些函数都会返回 \texttt{io::Result} 值。除非另行说明，否则它们的返回值都是 \texttt{Result<()>}。
+
+\myCaption{表 18-2：文件系统访问函数汇总表}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.333\hsize\raggedright\arraybackslash}X>{\hsize=1.222\hsize\raggedright\arraybackslash}X>{\hsize=1.222\hsize\raggedright\arraybackslash}X>{\hsize=1.222\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{} & \textcolor{white}{Rust 函数} & \textcolor{white}{Unix} & \textcolor{white}{Windows} \\
+创建和删除 & \texttt{create\_dir(path)}\newline{}\texttt{create\_dir\_all(path)}\newline{}\texttt{remove\_dir(path)}\newline{}\texttt{remove\_dir\_all(path)}\newline{}\texttt{remove\_file(path)} & \texttt{mkdir()}\newline{}类似 \texttt{mkdir -p}\newline{}\texttt{rmdir()}\newline{}类似 \texttt{rm -r}\newline{}\texttt{unlink()} & \texttt{CreateDirectory()}\newline{}类似 \texttt{mkdir}\newline{}\texttt{RemoveDirectory()}\newline{}类似 \texttt{rmdir /s}\newline{}\texttt{DeleteFile()} \\
+复制、移动和链接 & \texttt{copy(src\_path, dest\_path) -> Result<u64>}\newline{}\texttt{rename(src\_path, dest\_path)}\newline{}\texttt{hard\_link(src\_path, dest\_path)} & 类似 \texttt{cp -p}\newline{}\texttt{rename()}\newline{}\texttt{link()} & \texttt{CopyFileEx()}\newline{}\texttt{MoveFileEx()}\newline{}\texttt{CreateHardLink()} \\
+检查 & \texttt{canonicalize(path) -> Result<PathBuf>}\newline{}\texttt{metadata(path) -> Result<Metadata>}\newline{}\texttt{symlink\_metadata(path) -> Result<Metadata>}\newline{}\texttt{read\_dir(path) -> Result<ReadDir>}\newline{}\texttt{read\_link(path) -> Result<PathBuf>} & \texttt{realpath()}\newline{}\texttt{stat()}\newline{}\texttt{lstat()}\newline{}\texttt{opendir()}\newline{}\texttt{readlink()} & \texttt{GetFinalPathNameByHandle()}\newline{}\texttt{GetFileInformationByHandle()}\newline{}\texttt{GetFileInformationByHandle()}\newline{}\texttt{FindFirstFile()}\newline{}\texttt{FSCTL\_GET\_REPARSE\_POINT} \\
+权限 & \texttt{set\_permissions(path, perm)} & \texttt{chmod()} & \texttt{SetFileAttributes()} \\
+\end{tabularx}
+\myTableEnd
+
+（\texttt{copy()} 返回的数值是已复制文件的大小，以字节为单位。要创建符号链接，请参阅 18.2.5 节。）
+
+如你所见，Rust 会努力提供可移植的函数，这些函数可以在 Windows 以及 macOS、Linux 和其他 Unix 系统上如预期般工作。
+
+关于文件系统的完整教程超出了本书的范畴，如果你对这些函数中的任何一个感到好奇，可以轻松地在网上找到更多相关信息。18.2.4 节中会展示一些示例。
+
+所有这些函数都是通过调用操作系统实现的。例如，\texttt{std::fs::canonicalize(path)} 不仅会使用字符串处理来从给定的 \texttt{path} 中消除 \texttt{.} 和 \texttt{..}，还会使用当前工作目录解析相对路径，并追踪符号链接。如果路径不存在，则会报错。
+
+\texttt{std::fs::metadata(path)} 和 \texttt{std::fs::symlink\_metadata(path)} 生成的 \texttt{Metadata} 类型包含文件类型和大小、权限、时间戳等信息。同样，可以参阅在线文档了解详细信息。
+
+为便于使用，\texttt{Path} 类型将其中一些内置成了方法，比如，\texttt{path.metadata()} 和 \texttt{std::fs::metadata(path)} 是一样的。
+
+\subsection{读取目录}
+
+要列出目录的内容，请使用 \texttt{std::fs::read\_dir} 或 \texttt{Path} 中的等效方法 \texttt{.read\_dir()}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{entry\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{.}\PYG{n}{read\PYGZus{}dir}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{entry}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{entry\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{entry}\PYG{p}{.}\PYG{n}{file\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{to\PYGZus{}string\PYGZus{}lossy}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+注意，在这段代码中有两行用到了 \texttt{?} 运算符。第 1 行检查了打开目录时的错误。第 2 行检查了读取下一个条目时的错误。
+
+\texttt{entry} 的类型是 \texttt{std::fs::DirEntry}，这个结构体提供了数个方法。
+
+\begin{mySidenote}
+\texttt{entry.file\_name()}（文件名）
+\end{mySidenote}
+
+文件或目录的名称，是 \texttt{OsString} 类型的。
+
+\begin{mySidenote}
+\texttt{entry.path()}（路径）
+\end{mySidenote}
+
+与 \texttt{entry.file\_name()} 基本相同，但 \texttt{entry.path()} 联结了原始路径，生成了一个新的 \texttt{PathBuf}。如果正在列出的目录是 \texttt{"/home/\allowbreak{}jimb"}，并且 \texttt{entry.file\_name()} 是 \texttt{".emacs"}，那么 \texttt{entry.path()} 将返回 \texttt{PathBuf::from("/home/\allowbreak{}jimb/\allowbreak{}.emacs")}.
+
+\begin{mySidenote}
+\texttt{entry.file\_type()}（文件类型）
+\end{mySidenote}
+
+返回 \texttt{io::Result<FileType>}。\texttt{FileType} 有 \texttt{.is\_file()} 方法、\texttt{.is\_dir()} 方法和 \texttt{.is\_symlink()} 方法。
+
+\begin{mySidenote}
+\texttt{entry.metadata()}（元数据）
+\end{mySidenote}
+
+获取有关此条目的其他元数据。
+
+特殊目录 \texttt{.} 和 \texttt{..} 在读取目录时\textbf{不会}列出。
+
+下面是一个更接近现实的例子。以下代码会递归地将目录树从磁盘上的一个位置复制到另一个位置。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{path}\PYG{p}{::}\PYG{n}{Path}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 把现有目录`src`复制到目标路径`dst`}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{copy\PYGZus{}dir\PYGZus{}to}\PYG{p}{(}\PYG{n}{src}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Path}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dst}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Path}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{dst}\PYG{p}{.}\PYG{n}{is\PYGZus{}dir}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{fs}\PYG{p}{::}\PYG{n}{create\PYGZus{}dir}\PYG{p}{(}\PYG{n}{dst}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{entry\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{src}\PYG{p}{.}\PYG{n}{read\PYGZus{}dir}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{entry}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{entry\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{file\PYGZus{}type}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{entry}\PYG{p}{.}\PYG{n}{file\PYGZus{}type}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{copy\PYGZus{}to}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{entry}\PYG{p}{.}\PYG{n}{path}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{file\PYGZus{}type}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{dst}\PYG{p}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{entry}\PYG{p}{.}\PYG{n}{file\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+独立的 \texttt{copy\_to} 函数用于复制单个目录条目。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 把`src`中的任何内容复制到目标路径`dst`}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{copy\PYGZus{}to}\PYG{p}{(}\PYG{n}{src}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Path}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{src\PYGZus{}type}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{fs}\PYG{p}{::}\PYG{n}{FileType}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dst}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Path}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{src\PYGZus{}type}\PYG{p}{.}\PYG{n}{is\PYGZus{}file}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{fs}\PYG{p}{::}\PYG{n}{copy}\PYG{p}{(}\PYG{n}{src}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dst}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{src\PYGZus{}type}\PYG{p}{.}\PYG{n}{is\PYGZus{}dir}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{copy\PYGZus{}dir\PYGZus{}to}\PYG{p}{(}\PYG{n}{src}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dst}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{io}\PYG{p}{::}\PYG{n}{ErrorKind}\PYG{p}{::}\PYG{n}{Other}\PYG{p}{,}
+\PYG{+w}{                                  }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{don\PYGZsq{}t know how to copy: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                                          }\PYG{n}{src}\PYG{p}{.}\PYG{n}{display}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{特定于平台的特性}
+
+到目前为止，\texttt{copy\_to} 函数既可以复制文件也可以复制目录。接下来我们还打算在 Unix 上支持符号链接。
+
+没有可移植的方法来创建同时适用于 Unix 和 Windows 的符号链接，但标准库提供了一个特定于 Unix 的 \texttt{symlink} 函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{os}\PYG{p}{::}\PYG{n}{unix}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{symlink}\PYG{p}{;}
+\end{Verbatim}
+
+有了这个函数，我们的工作就很容易了。只需向 \texttt{copy\_to} 中的 \texttt{if} 表达式添加一个分支即可：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{src\PYGZus{}type}\PYG{p}{.}\PYG{n}{is\PYGZus{}symlink}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{target}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{src}\PYG{p}{.}\PYG{n}{read\PYGZus{}link}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{symlink}\PYG{p}{(}\PYG{n}{target}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dst}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+如果只是为 Unix 系统（如 Linux 和 macOS）编译我们的程序，那么就能这么用。
+
+\texttt{std::os} 模块包含各种特定于平台的特性，比如 \texttt{symlink}。\texttt{std::os} 在标准库中的实际主体如下所示（这里为了看起来整齐，调整了代码格式）：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{//! 特定于操作系统的功能}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(unix)}\PYG{c+cp}{]}\PYG{+w}{                    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{unix}\PYG{p}{;}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(windows)}\PYG{c+cp}{]}\PYG{+w}{                 }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{windows}\PYG{p}{;}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(target\PYGZus{}os = }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ios}\PYG{l+s}{\PYGZdq{}}\PYG{c+cp}{)}\PYG{c+cp}{]}\PYG{+w}{       }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{ios}\PYG{p}{;}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(target\PYGZus{}os = }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{linux}\PYG{l+s}{\PYGZdq{}}\PYG{c+cp}{)}\PYG{c+cp}{]}\PYG{+w}{     }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{linux}\PYG{p}{;}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(target\PYGZus{}os = }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{macos}\PYG{l+s}{\PYGZdq{}}\PYG{c+cp}{)}\PYG{c+cp}{]}\PYG{+w}{     }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{macos}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+\texttt{\#[cfg]} 属性表示条件编译：这些模块中的每一个仅在某些平台上存在。这就是为什么使用 \texttt{std::os::unix} 修改后的程序只能针对 Unix 成功编译，因为在其他平台上 \texttt{std::os::unix} 不存在。
+
+如果希望代码在所有平台上编译，并支持 Unix 上的符号链接，则必须也在程序中使用 \texttt{\#[cfg]}。在这种情况下，最简单的方法是在 Unix 上导入 \texttt{symlink}，同时在其他系统上定义自己的 \texttt{symlink} 模拟实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(unix)}\PYG{c+cp}{]}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{os}\PYG{p}{::}\PYG{n}{unix}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{symlink}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 在未提供`symlink`的平台上提供的模拟实现}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(not(unix))}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{symlink}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{AsRef}\PYG{o}{\PYGZlt{}}\PYG{n}{Path}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Q}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{AsRef}\PYG{o}{\PYGZlt{}}\PYG{n}{Path}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{src}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}dst}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Q}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{io}\PYG{p}{::}\PYG{n}{ErrorKind}\PYG{p}{::}\PYG{n}{Other}\PYG{p}{,}
+\PYG{+w}{                       }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{can\PYGZsq{}t copy symbolic link: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                               }\PYG{n}{src}\PYG{p}{.}\PYG{n}{as\PYGZus{}ref}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{display}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+事实上，\texttt{symlink} 只是特殊情况。大多数特定于 Unix 的特性不是独立函数，而是将新方法添加到标准库类型的扩展特型（11.2.2 节介绍过扩展特型）。\texttt{prelude} 模块可用于同时启用所有这些扩展：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{os}\PYG{p}{::}\PYG{n}{unix}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\end{Verbatim}
+
+例如，在 Unix 上，这会向 \texttt{std::fs::Permissions} 添加 \texttt{.mode()} 方法，从而支持表达 Unix 权限所需的底层 \texttt{u32} 值。同样，这还会给 \texttt{std::fs::Metadata} 添加一些访问器方法，从而得以访问底层 \texttt{struct stat} 的字段（比如 \texttt{.uid()} 可获得文件所有者的用户 \texttt{ID}）为 \texttt{std::fs::Metadata} 添加了访问器。
+
+总而言之，\texttt{std::os} 中的内容非常基础。更多特定于平台的功能可通过第三方 crate 获得，比如用于访问 Windows 注册表的 \texttt{winreg}。
+
+\section{网络}
+
+关于网络的教程远远超出了本书的范畴。但是，如果你已经对网络编程有所了解，那么本节能帮你开始使用 Rust 中的网络支持。
+
+要编写较底层的网络代码，可以使用 \texttt{std::net} 模块，该模块为 TCP 网络和 UDP 网络提供了跨平台支持。可以使用 \texttt{native\_tls} crate 来支持 SSL/TLS。
+
+这些模块为网络上直接的、阻塞型的输入和输出提供了一些基础构件。用几行代码就可以编写一个简单的服务器，只要使用 \texttt{std::net} 并为每个连接启动一个线程即可。例如，下面是一个“回显”（echo）服务器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpListener}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{thread}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 不断接受连接，为每个连接启动一个线程}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{echo\PYGZus{}main}\PYG{p}{(}\PYG{n}{addr}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{listener}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{TcpListener}\PYG{p}{::}\PYG{n}{bind}\PYG{p}{(}\PYG{n}{addr}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{listening on \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{addr}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{c+c1}{// 等待客户端连入}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{p}{(}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{stream}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{addr}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{listener}\PYG{p}{.}\PYG{n}{accept}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{connection received from \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{addr}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{c+c1}{// 启动一个线程来处理此客户端}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{write\PYGZus{}stream}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{stream}\PYG{p}{.}\PYG{n}{try\PYGZus{}clone}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{spawn}\PYG{p}{(}\PYG{k}{move}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{c+c1}{// 回显从`stream`中收到的一切}
+\PYG{+w}{            }\PYG{n}{io}\PYG{p}{::}\PYG{n}{copy}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{stream}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{write\PYGZus{}stream}\PYG{p}{)}
+\PYG{+w}{                }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error in client thread: }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{connection closed}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{echo\PYGZus{}main}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{127.0.0.1:17007}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error: }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+回显服务器会简单地重复发给它的所有内容。这种代码与用 Java 或 Python 编写的代码没有太大区别。（第 19 章会介绍 \texttt{std::thread::spawn()}。）
+
+但是，对于高性能服务器，需要使用异步输入和输出。第 20 章会介绍 Rust 对异步编程的支持，并展示网络客户端和服务器的完整代码。
+
+更高层级的协议由第三方 crate 提供支持。例如，\texttt{reqwest} crate 为 HTTP 客户端提供了一个漂亮的 API。下面是一个完整的命令行程序，该程序可以通过 \texttt{http:} 或 \texttt{https:} URL 获取对应文档，并将其内容打印到你的终端。此代码是使用 \texttt{reqwest = "0.11"} 编写的，并启用了其 \texttt{"blocking"} 特性。\texttt{reqwest} 还提供了一个异步接口。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{error}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{http\PYGZus{}get\PYGZus{}main}\PYG{p}{(}\PYG{n}{url}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// 发送HTTP请求并获取响应}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{response}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{reqwest}\PYG{p}{::}\PYG{n}{blocking}\PYG{p}{::}\PYG{n}{get}\PYG{p}{(}\PYG{n}{url}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{response}\PYG{p}{.}\PYG{n}{status}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{is\PYGZus{}success}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{response}\PYG{p}{.}\PYG{n}{status}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{c+c1}{// 读取响应体并写到标准输出}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{stdout}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdout}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{io}\PYG{p}{::}\PYG{n}{copy}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{response}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{stdout}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{usage: http\PYGZhy{}get URL}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{return}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{http\PYGZus{}get\PYGZus{}main}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{err}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{actix-web} 框架为 HTTP 服务器提供了一些高层次抽象，比如 \texttt{Service} 特型和 \texttt{Transform} 特型，这两个特型可以帮助你从一些可插接部件组合出应用程序。\texttt{websocket} crate 实现了 WebSocket 协议。Rust 是一门年轻的语言，拥有繁荣的开源生态系统，对网络的支持正在迅速扩展。
+

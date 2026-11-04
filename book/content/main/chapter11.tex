@@ -1,0 +1,1306 @@
+% chapter11 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_099.html, part0000_split_100.html, part0000_split_101.html, part0000_split_102.html, part0000_split_103.html, part0000_split_104.html, part0000_split_105.html
+
+\begin{myEpigraph}{——高德纳}
+计算机科学家倾向于处理非统一性结构（情形 1、情形 2、情形 3），而数学家则倾向于找一个统一的公理来管理整个体系。
+\end{myEpigraph}
+
+编程领域的伟大发现之一，就是可以编写能对许多不同类型（\textbf{甚至是尚未发明的类型}）的值进行操作的代码。下面是两个例子。
+
+\begin{itemize}
+\item \texttt{Vec<T>} 是泛型的：你可以创建任意类型值的向量，包括在你的程序中定义的连 \texttt{Vec} 的作者都不曾设想的类型。
+\item 许多类型有 \texttt{.write()} 方法，包括 \texttt{File} 和 \texttt{TcpStream}。你的代码可以通过引用来获取任意写入器，并向它发送数据。你的代码不必关心写入器的类型。以后，如果有人添加了一种新型写入器，你的代码也能够直接支持。
+\end{itemize}
+
+当然，这种能力对 Rust 来说并不是什么新鲜事。这就是所谓的\textbf{多态性}，在 20 世纪 70 年代，它是最新且最热门的编程语言技术。到了现在，多态性实际上已经成了通用技术。Rust 通过两个相关联的特性来支持多态：特型和泛型。许多程序员熟悉这些概念，但 Rust 受到 Haskell 类型类（typeclass）的启发，采用了一种全新的方式。
+
+\textbf{特型}是 Rust 体系中的接口或抽象基类。乍一看，它们和 Java 或 C\# 中的接口差不多。写入字节的特型称为 \texttt{std::io::Write}，它在标准库中的定义开头部分是这样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Write}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{flush}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write\PYGZus{}all}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此特型还提供了几个方法，我们只展示了前 3 个。
+
+\texttt{File} 和 \texttt{TcpStream} 这两个标准类型以及 \texttt{Vec<u8>} 都实现了 \texttt{std::io::Write}。这 3 种类型都提供了 \texttt{.write()}、\texttt{.flush()} 等方法。使用写入器而不关心其具体类型的代码如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{say\PYGZus{}hello}\PYG{p}{(}\PYG{n}{out}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Write}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{out}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{hello world}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{out}\PYG{p}{.}\PYG{n}{flush}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{out} 的类型是 \texttt{\&mut dyn Write}，意思是“对实现了 \texttt{Write} 特型的任意值的可变引用”。我们可以将任何此类值的可变引用传给 \texttt{say\_hello}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{File}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{local\PYGZus{}file}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello.txt}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{n}{say\PYGZus{}hello}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{local\PYGZus{}file}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正常}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{bytes}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{n}{say\PYGZus{}hello}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{bytes}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 同样正常}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{bytes}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{hello world}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+本章展示特型的用法、工作原理，以及如何定义你自己的特型。其实，除了前面介绍的用法，特型还有很多其他用法：我们会使用特型为现有类型添加扩展方法，甚至可以在 \texttt{str}、\texttt{bool} 等内置类型上添加；我们会解释为什么向类型添加特型不需要额外的内存，以及如何在不需要虚方法调用开销的情况下使用特型；我们会看到，某些内置特型其实是 Rust 为运算符重载和其他特性提供的语言级钩子；我们会介绍 \texttt{Self} 类型、关联函数和关联类型，这是 Rust 从 Haskell 中借来的三大特性，它们优雅地解决了其他语言中要通过变通和入侵才能解决的问题。
+
+\textbf{泛型}是 Rust 中多态的另一种形式。与 C++ 模板一样，泛型函数或泛型类型可以和不同类型的值一起使用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 给定两个值，找出哪个更小}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{min}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Ord}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{value1}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{value2}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{value1}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{value2}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{value1}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{value2}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此函数中的 \texttt{<T: Ord>} 表明 \texttt{min} 函数可以与实现了 \texttt{Ord} 特型的任意类型（任意有序类型）\texttt{T} 的参数一起使用。像这样的要求称为\textbf{限界}，因为它对 \texttt{T} 可能的类型范围做了限制。编译器会针对你实际用到的每种类型 \texttt{T} 生成一份单独的机器码。
+
+泛型和特型紧密相关：泛型函数会在限界中使用特型来阐明它能针对哪些类型的参数进行调用。因此，我们还会讨论 \texttt{\&mut dyn Write} 和 \texttt{<T: Write>} 的相似之处、不同之处，以及如何在特型的这两种使用方式之间做出选择。
+
+\section{使用特型}
+
+特型是一种语言特性，我们\textbf{可以}说某类型支持或不支持某个特型。大多数情况下，特型代表着一种能力，即一个类型能做什么。
+
+\begin{itemize}
+\item 实现了 \texttt{std::io::Write} 的值能写出一些字节。
+\item 实现了 \texttt{std::iter::Iterator} 的值能生成一系列值。
+\item 实现了 \texttt{std::clone::Clone} 的值能在内存中克隆自身。
+\item 实现了 \texttt{std::fmt::Debug} 的值能用带有 \texttt{\{:?\}} 格式说明符的 \texttt{println!()} 打印出来。
+\end{itemize}
+
+这 4 个特型都是 Rust 标准库的一部分，许多标准类型实现了它们。
+
+\begin{itemize}
+\item \texttt{std::fs::File} 实现了 \texttt{Write} 特型，它能将一些字节写入本地文件。\texttt{std::net::TcpStream} 能写入网络连接。\texttt{Vec<u8>} 也实现了 \texttt{Write}，对字节向量的每次 \texttt{.write()} 调用都会将一些数据追加到向量末尾。
+\item \texttt{Range<i32>}（表达式 \texttt{0..10} 的类型）实现了 \texttt{Iterator} 特型，一些与切片、哈希表等关联的迭代器类型同样实现了 \texttt{Iterator} 特型。
+\item 大多数标准库类型实现了 \texttt{Clone}。没实现 \texttt{Clone} 的主要是一些像 \texttt{TcpStream} 这样的类型，因为它们代表的不仅仅是内存中的数据。
+\item 同样，大多数标准库类型支持 \texttt{Debug}。
+\end{itemize}
+
+关于特型方法有一条值得注意的规则：特型本身必须在作用域内。否则，它的所有方法都是不可见的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{n}{buf}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：没有名为`write\PYGZus{}all`的方法}
+\end{Verbatim}
+
+在这种情况下，编译器会打印出一条友好的错误消息，建议添加 \texttt{use std::io::Write;}，这确实可以解决问题：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{n}{buf}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\end{Verbatim}
+
+之所以 Rust 会有这条规则，是因为你可以使用特型为任意类型添加新方法——甚至是像 \texttt{u32} 和 \texttt{str} 这样的标准库类型（正如我们将在本章后面看到的那样）。而第三方 crate 也可以这样做。显然，这可能导致命名冲突。但是由于 Rust 会要求你导入自己想用的特型，因此 crate 可以放心地利用这种超能力。只有导入两个特型，才会发生冲突，将具有相同名称的方法添加到同一个类型中。这在实践中非常罕见。（如果确实遇到冲突，你可以使用带完全限定符的方法名明确写出自己想要的内容，本章后面会介绍。）
+
+\texttt{Clone} 和 \texttt{Iterator} 的各个方法在没有任何特殊导入的情况下就能工作，因为默认情况下它们始终在作用域中：它们是标准库预导入的一部分，Rust 会把这些名称自动导入每个模块中。事实上，预导入主要就是一些精心挑选的特型。第 13 章会介绍其中的许多内容。
+
+C++ 程序员和 C\# 程序员可能已经看出来了，特型方法类似于虚方法。不过，特型方法的调用仍然很快，与任何其他方法调用一样快。一言以蔽之，这里没有多态。很明显，\texttt{buf} 一定是向量，而不可能是文件或网络连接。编译器可以生成对 \texttt{Vec<u8>::write()} 的简单调用，甚至可以内联该方法。（C++ 和 C\# 通常也会这样做，不过有时会因为子类的缘故而无法做到。）只有通过 \texttt{\&mut dyn Write} 调用时才会产生动态派发（也叫虚方法调用）的开销，类型上的 \texttt{dyn} 关键字指出了这一点。\texttt{dyn Write} 叫作\textbf{特型对象}，11.1.1 节会介绍特型对象的一些技术细节，以及它们与泛型函数的比较。
+
+\subsection{特型对象}
+
+在 Rust 中使用特型编写多态代码有两种方法：特型对象和泛型。我们将首先介绍特型对象，然后会在 11.1.2 节转向泛型。
+
+Rust 不允许 \texttt{dyn Write} 类型的变量：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{writer}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{dyn}\PYG{+w}{ }\PYG{n}{Write}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：`Write`的大小不是常量}
+\end{Verbatim}
+
+变量的大小必须是编译期已知的，而那些实现了 \texttt{Write} 的类型可以是任意大小。
+
+如果你是 C\# 程序员或 Java 程序员，可能会对此感到惊讶，但原因其实很简单。在 Java 中，\texttt{OutputStream} 类型（类似于 \texttt{std::io::Write} 的 Java 标准接口）的变量其实是对任何实现了 \texttt{OutputStream} 的对象的引用。它本身就是引用，无须显式说明。C\# 和大多数其他语言中的接口也一样。
+
+我们在 Rust 中也想这么做，但在 Rust 中，引用是显式的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{writer}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Write}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\end{Verbatim}
+
+对特型类型（如 \texttt{writer}）的引用叫作\textbf{特型对象}。与任何其他引用一样，特型对象指向某个值，它具有生命周期，并且可以是可变或共享的。
+
+特型对象的与众不同之处在于，Rust 通常无法在编译期间知道引用目标的类型。因此，特型对象要包含一些关于引用目标类型的额外信息。这仅供 Rust 自己在幕后使用：当你调用 \texttt{writer.write(data)} 时，Rust 需要使用类型信息来根据 \texttt{*writer} 的具体类型动态调用正确的 \texttt{write} 方法。你不能直接查询这些类型信息，Rust 也不支持从特型对象 \texttt{\&mut dyn Write} 向下转型回像 \texttt{Vec<u8>} 这样的具体类型。
+
+\textbf{特型对象的内存布局}
+
+在内存中，特型对象是一个胖指针，由指向值的指针和指向表示该值类型的虚表的指针组成。因此，每个特型对象会占用两个机器字，如图 11-1 所示。
+
+C++ 也有这种运行期类型信息，叫作\textbf{虚表}或 vtable。就像在 C++ 中一样，在 Rust 中，虚表只会在编译期生成一次，并由同一类型的所有对象共享。图 11-1 中深色部分展示的所有内容（包括虚表）都是 Rust 的私有实现细节。同样，这些都不是你可以直接访问的字段和数据结构。当你调用特型对象的方法时，该语言会自动使用虚表来确定要调用哪个实现。
+
+\myFigure{images/ch11/fig-11-1.jpeg}{图 11-1：内存中的特型对象}
+
+经验丰富的 C++ 程序员可能会注意到 Rust 和 C++ 在内存使用上略有不同。在 C++ 中，虚表指针或 vptr 是作为结构体的一部分存储的，而 Rust 使用的是胖指针方案。结构体本身只包含自己的字段。这样一来，每个结构体就可以实现几十个特型而不必包含几十个 vptr 了。甚至连 \texttt{i32} 这样大小不足以容纳 vptr 的类型都可以实现特型。
+
+Rust 在需要时会自动将普通引用转换为特型对象。这就是为什么我们能够在这个例子中把 \texttt{\&mut local\_file} 传给 \texttt{say\_hello}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{local\PYGZus{}file}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello.txt}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{n}{say\PYGZus{}hello}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{local\PYGZus{}file}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{\&mut local\_file} 的类型是 \texttt{\&mut File}，\texttt{say\_hello} 的参数类型是 \texttt{\&mut dyn Write}。由于 \texttt{File} 也是一种写入器，因此 Rust 允许这样操作，它会自动将普通引用转换为特型对象。
+
+同样，Rust 会愉快地将 \texttt{Box<File>} 转换为 \texttt{Box<dyn Write>}，这是一个拥有在堆中分配的写入器的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{w}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Write}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{local\PYGZus{}file}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+和 \texttt{\&mut dyn Write} 一样，\texttt{Box<dyn Write>} 也是一个胖指针，即包含写入器本身的地址和虚表的地址。其他指针类型（如 \texttt{Rc<dyn Write>}）同样如此。
+
+这种转换是创建特型对象的唯一方法。编译器在这里真正做的事非常简单。在发生转换的地方，Rust 知道引用目标的真实类型（在本例中为 \texttt{File}），因此它只要加上适当的虚表的地址，把常规指针变成胖指针就可以了。
+
+\subsection{泛型函数与类型参数}
+
+本章在开头展示过一个以特型对象为参数的 \texttt{say\_hello()} 函数。现在，让我们把该函数重写为泛型函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{say\PYGZus{}hello}\PYG{o}{\PYGZlt{}}\PYG{n}{W}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Write}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{out}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{W}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{out}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{hello world}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{out}\PYG{p}{.}\PYG{n}{flush}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+只有类型签名发生了变化：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{say\PYGZus{}hello}\PYG{p}{(}\PYG{n}{out}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Write}\PYG{p}{)}\PYG{+w}{     }\PYG{c+c1}{// 普通函数}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{say\PYGZus{}hello}\PYG{o}{\PYGZlt{}}\PYG{n}{W}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Write}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{out}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{W}\PYG{p}{)}\PYG{+w}{   }\PYG{c+c1}{// 泛型函数}
+\end{Verbatim}
+
+短语 \texttt{<W: Write>} 把函数变成了泛型形式。此短语叫作\textbf{类型参数}。这意味着在这个函数的整个函数体中，\texttt{W} 都代表着某种实现了 \texttt{Write} 特型的类型。按照惯例，类型参数通常是单个大写字母。
+
+\texttt{W} 代表哪种类型取决于泛型函数的使用方式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{say\PYGZus{}hello}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{local\PYGZus{}file}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 调用say\PYGZus{}hello::\PYGZlt{}File\PYGZgt{}}
+
+\PYG{n}{say\PYGZus{}hello}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{bytes}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}\PYG{+w}{       }\PYG{c+c1}{// 调用say\PYGZus{}hello::\PYGZlt{}Vec\PYGZlt{}u8\PYGZgt{}\PYGZgt{}}
+\end{Verbatim}
+
+当你将 \texttt{\&mut local\_file} 传给泛型函数 \texttt{say\_hello()} 时，其实调用的是 \texttt{say\_hello::<File>()}。Rust 会为此函数生成一份机器码，以调用 \texttt{File::write\_all()} 方法和 \texttt{File::flush()} 方法。当你传入 \texttt{\&mut bytes} 时，其实是在调用 \texttt{say\_hello::<Vec<u8>>()}。Rust 会为这个版本的函数生成单独的机器码，以调用相应的 \texttt{Vec<u8>} 方法。在这两种情况下，Rust 都会从参数的类型推断出类型 \texttt{W}，这个过程叫作\textbf{单态化}，编译器会自动处理这一切。
+
+你总是可以明确写出类型参数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{say\PYGZus{}hello}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{File}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{local\PYGZus{}file}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+但一般无此必要，因为 Rust 通常可以通过查看参数来推断出类型参数。在这里，\texttt{say\_hello} 泛型函数需要一个 \texttt{\&mut W} 参数，我们向它传入了一个 \texttt{\&mut File}，所以 Rust 断定 \texttt{W = File}。
+
+如果你调用的泛型函数没有任何能提供有用线索的参数，则可能需要把它明确写出来：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 调用无参数的泛型方法collect\PYGZlt{}C\PYGZgt{}()}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v1}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：无法推断类型}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v2}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 正确}
+\end{Verbatim}
+
+有时我们需要同一个类型参数的多种能力。如果想打印出向量中前十个最常用的值，那么就要让这些值是可打印的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Debug}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{top\PYGZus{}ten}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Debug}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{values}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+但这还不够好。如果我们要确定哪些值是最常用的该怎么办呢？通常的做法是用这些值作为哈希表中的键。这意味着这些值还要支持 \texttt{Hash} 操作和 \texttt{Eq} 操作。\texttt{T} 的类型限界必须包括这些特型，就像 \texttt{Debug} 一样。这种情况下就要使用 \texttt{+} 号语法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{hash}\PYG{p}{::}\PYG{n}{Hash}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Debug}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{top\PYGZus{}ten}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Debug}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Hash}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{values}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+有些类型实现了 \texttt{Debug}，有些类型实现了 \texttt{Hash}，有些类型支持 \texttt{Eq}，还有一些类型（如 \texttt{u32} 和 \texttt{String}）实现了所有这 3 个，如图 11-2 所示。
+
+\myFigure{images/ch11/fig-11-2.jpeg}{图 11-2：把类型集用作特型}
+
+类型参数也可能完全没有限界，但是如果没有为它指定任何限界，则无法对它做什么。你可以移动它，也可以将它放入一个 \texttt{Box} 或向量中。但也只能做这些了。
+
+泛型函数可以有多个类型参数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 在一个大型且分区的数据集上运行查询}
+\PYG{l+s+sd}{/// 参见\PYGZlt{}http://research.google.com/archive/mapreduce.html\PYGZgt{}}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{run\PYGZus{}query}\PYG{o}{\PYGZlt{}}\PYG{n}{M}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Mapper}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Serialize}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{R}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Reducer}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Serialize}\PYG{o}{\PYGZgt{}}\PYG{p}{(}
+\PYG{+w}{    }\PYG{n}{data}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{DataSet}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{map}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{M}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{reduce}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{R}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Results}
+\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如本示例所示，限界可能会变得很长，让人眼花缭乱。Rust 使用关键字 \texttt{where} 提供了另一种语法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{run\PYGZus{}query}\PYG{o}{\PYGZlt{}}\PYG{n}{M}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{R}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{data}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{DataSet}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{map}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{M}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{reduce}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{R}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Results}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{M}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Mapper}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Serialize}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{R}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Reducer}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Serialize}
+\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+类型参数 \texttt{M} 和 \texttt{R} 仍然放在前面声明，但限界移到了单独的行中。这种 \texttt{where} 子句也允许用于泛型结构体、枚举、类型别名和方法——任何允许使用限界的地方。
+
+当然，替代 \texttt{where} 子句的最佳方案是保持简单：找到一种无须大量使用泛型就能编写程序的方式。
+
+5.3.2 节中介绍了生命周期参数的语法。泛型函数可以同时具有生命周期参数和类型参数。生命周期参数要排在前面：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 返回对`candidates`中最接近`target`的点的引用}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{nearest}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{t}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{c}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{target}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{t}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{candidates}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{c}\PYG{+w}{ }\PYG{p}{[}\PYG{n}{P}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{c}\PYG{+w}{ }\PYG{n+nc}{P}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{MeasureDistance}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个函数有两个参数，即 \texttt{target} 和 \texttt{candidates}。两者都是引用，但我们为它们赋予了不同的生命周期 \texttt{'t} 和 \texttt{'c}（参见 5.3.6 节）。此外，该函数适用于实现了 \texttt{MeasureDistance} 特型的任意类型 \texttt{P}，因此可以在一个程序中将其用于 \texttt{Point2d} 值，而在另一个程序中将其用于 \texttt{Point3d} 值。
+
+生命周期永远不会对机器码产生任何影响。如果对 \texttt{nearest()} 进行的两次调用使用了相同的类型 \texttt{P} 和不同的生命周期，那么就会调用同一个编译结果函数。只有不同的类型才会导致 Rust 编译出泛型函数的多个副本。
+
+除了类型和生命周期，泛型函数也可以接受常量参数，就像 9.9 节中介绍过的 \texttt{Polynomial} 结构体：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot\PYGZus{}product}\PYG{o}{\PYGZlt{}}\PYG{k}{const}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{a}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{[}\PYG{k+kt}{f64}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{[}\PYG{k+kt}{f64}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{sum}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{n}{N}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{sum}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{a}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{sum}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在这里，短语 \texttt{<const N: usize>} 指出函数 \texttt{dot\_product} 需要一个泛型参数 \texttt{N}，该参数必须是一个 \texttt{usize}。给定了 \texttt{N}，这个函数就会接受两个 \texttt{[f64; N]} 类型的参数，并将其对应元素的乘积相加。\texttt{N} 与普通 \texttt{usize} 参数的区别是，你可以在 \texttt{dot\_product} 的签名或函数体的类型中使用它。
+
+与类型参数一样，你既可以显式提供常量参数，也可以让 Rust 推断它们。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 显式提供`3`作为`N`的值}
+\PYG{n}{dot\PYGZus{}product}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{l+m+mi}{3}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mf}{0.2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{0.4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{0.6}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mf}{0.}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{0.}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{1.}\PYG{p}{]}\PYG{p}{)}
+
+\PYG{c+c1}{// 让Rust推断`N`必然是`2`}
+\PYG{n}{dot\PYGZus{}product}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mf}{3.}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{4.}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{5.}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{1.}\PYG{p}{]}\PYG{p}{)}
+\end{Verbatim}
+
+当然，函数并不是 Rust 中唯一的泛型代码。
+
+\begin{itemize}
+\item 9.7 节和 10.1.4 节已经介绍过泛型类型。
+\item 单独的方法也可以是泛型的，即使它并没有定义在泛型类型上。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{PancakeStack}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{push}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Topping}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{goop}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{PancakeResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{goop}\PYG{p}{.}\PYG{n}{pour}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{absorb\PYGZus{}topping}\PYG{p}{(}\PYG{n}{goop}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\item 类型别名也可以是泛型的。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{PancakeResult}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{PancakeError}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+\item 本章在后面还会介绍一些泛型特型。
+\end{itemize}
+
+本节中介绍的特性（限界、\texttt{where} 子句、生命周期参数等）可用于所有泛型语法项，而不仅仅是函数。
+
+\subsection{使用哪一个}
+
+关于是使用特型对象还是泛型代码的选择相当微妙。由于这两个特性都基于特型，因此它们有很多共同点。
+
+当你需要一些混合类型值的集合时，特型对象是正确的选择。制作泛型沙拉在技术上是可行的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Vegetable}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Salad}\PYG{o}{\PYGZlt{}}\PYG{n}{V}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Vegetable}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{veggies}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{V}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+然而，这是一种相当严格的设计：每一样沙拉都要完全由一种蔬菜组成。但毕竟众口难调。本书的一位作者就曾花 14 美元买过一份 \texttt{Salad<IcebergLettuce>}（球形生菜沙拉），那味道真是让人终生难忘。
+
+怎样才能做出更好的沙拉呢？由于 \texttt{Vegetable} 的值可以有各种不同的大小，因此不能要求 Rust 接受 \texttt{Vec<dyn Vegetable>} 这种写法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Salad}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{veggies}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Vegetable}\PYG{o}{\PYGZgt{}}\PYG{+w}{  }\PYG{c+c1}{// 错误：`dyn Vegetable`的大小不是常量}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+解决方案是使用特型对象：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Salad}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{veggies}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Vegetable}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+每个 \texttt{Box<dyn Vegetable>} 都可以拥有任意类型的蔬菜，但 \texttt{Box} 本身具有适合存储在向量中的常量大小（两个指针）。虽然把盒子（\texttt{Box}）放进某个食物里这种隐喻怪怪的，但这正是我们想要的，这种方式同样适用于绘图应用程序中的形状、游戏中的怪物、网络路由器中的可插接路由算法等。
+
+使用特型对象的另一个原因可能是想减少编译后代码的总大小。Rust 可能会不得不多次编译泛型函数，针对用到了它的每种类型各编译一次。而这可能会使二进制文件变大，这种现象在 C++ 圈子里叫作\textbf{代码膨胀}。如今，内存资源充裕，大多数人可以不在乎代码大小，但确实仍然存在着某种受限环境。
+
+除了像制作沙拉这种问题或是低资源环境之类的情况，与特型对象相比，泛型具有 3 个重要优势，因此在 Rust 中，泛型是更常见的选择。
+
+第一个优势是速度。请注意泛型函数签名中缺少 \texttt{dyn} 关键字。因为你要在编译期指定类型，所以无论是显式写出还是通过类型推断，编译器都知道要调用哪个 \texttt{write} 方法。没有使用 \texttt{dyn} 关键字是因为这里不涉及特型对象（因此也不涉及动态派发）。
+
+本章开头展示过的泛型函数 \texttt{min()} 运行起来与我们编写的单独的函数 \texttt{min\_u8}、\texttt{min\_i64}、\texttt{min\_string} 等一样快。编译器可以像任何函数一样将其内联，因此在发布构建中，调用 \texttt{min::<i32>} 可能只有两三条指令。参数是常数的调用（如 \texttt{min(5, 3)}）会更快：Rust 可以在编译期对其求值，因此根本没有运行期开销。
+
+或者考虑这个泛型函数调用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{sink}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{sink}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{say\PYGZus{}hello}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{sink}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{std::io::sink()} 会返回类型为 \texttt{Sink} 的写入器，该写入器会悄悄地丢弃写入其中的所有字节。
+
+当 Rust 为此生成机器码时，它可以生成调用 \texttt{Sink::write\_all} 的代码，检查错误，然后调用 \texttt{Sink::flush}。这就是泛型函数体所要求做的。
+
+Rust 还可以查看这些方法并注意到：
+
+\begin{itemize}
+\item \texttt{Sink::write\_all()} 什么都不做；
+\item \texttt{Sink::flush()} 什么都不做；
+\item 这两种方法都不会返回错误。
+\end{itemize}
+
+简而言之，Rust 拥有完全优化此函数调用所需的全部信息。
+
+这与特型对象的行为不同。在那种方式下，Rust 直到运行期才能知道特型对象指向什么类型的值。因此，即使你传递了 \texttt{Sink}，调用虚方法和检查错误的开销仍然存在。
+
+泛型的第二个优势在于并不是每个特型都能支持特型对象。特型支持的几个特性（如关联函数）只适用于泛型：它们完全不支持特型对象。我们会在谈及这些特性时指出这一点。
+
+泛型的第三个优势是它很容易同时指定具有多个特型的泛型参数限界，就像我们的 \texttt{top\_ten} 函数要求它的 \texttt{T} 参数必须实现 \texttt{Debug + Hash + Eq} 那样。特型对象不能这样做：Rust 不支持像 \texttt{\&mut (dyn Debug + Hash + Eq)} 这样的类型。（你可以使用本章稍后定义的子特型来解决这个问题，但有点儿复杂。）
+
+\section{定义与实现特型}
+
+定义特型很简单，给它一个名字并列出特型方法的类型签名即可。如果你正在编写游戏，那么可能会有这样的特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 角色、道具和风景的特型——游戏世界中可在屏幕上看见的任何东西}
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Visible}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 在给定的画布上渲染此对象}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{draw}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{canvas}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Canvas}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 如果单击(x, y)时应该选中此对象，就返回true}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{hit\PYGZus{}test}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+要实现特型，请使用语法 \texttt{impl \emph{TraitName} for \emph{Type}}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Visible}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Broom}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{draw}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{canvas}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Canvas}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{y}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{y}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{height}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{y}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{canvas}\PYG{p}{.}\PYG{n}{write\PYGZus{}at}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{x}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}|\PYGZsq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{n}{canvas}\PYG{p}{.}\PYG{n}{write\PYGZus{}at}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{x}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{y}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}M\PYGZsq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{hit\PYGZus{}test}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{x}
+\PYG{+w}{        }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{y}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{height}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{y}
+\PYG{+w}{        }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{n}{y}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{y}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+请注意，这个 \texttt{impl} 包含 \texttt{Visible} 特型中每个方法的实现，再无其他。特型的 \texttt{impl} 代码中定义的一切都必须是真正属于此特型的，如果想添加一个辅助方法来支持 \texttt{Broom::draw()}，就必须在单独的 \texttt{impl} 块中定义它：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Broom}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 供下面的Broom::draw()使用的辅助函数}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{broomstick\PYGZus{}range}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Range}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{y}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{height}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{y}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这些辅助函数可以在特型的各个 \texttt{impl} 块中使用。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Visible}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Broom}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{draw}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{canvas}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Canvas}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{y}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{broomstick\PYGZus{}range}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{默认方法}
+
+我们之前讨论的 \texttt{Sink} 写入器类型可以用几行代码来实现。首先，定义如下类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 一个会忽略你写入的任何数据的写入器}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Sink}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{Sink} 是一个空结构体，因为我们不需要在其中存储任何数据。接下来，为 \texttt{Sink} 提供 \texttt{Write} 特型的实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Write}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Write}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Sink}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{c+c1}{// 声称已成功写入了整个缓冲区}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{buf}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{flush}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+迄今为止，这种写法和 \texttt{Visible} 特型非常相似。但我们看到 \texttt{Write} 特型中还有一个 \texttt{write\_all} 方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{out}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Sink}\PYG{p}{;}
+\PYG{n}{out}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{hello world}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+为什么 Rust 允许在未定义此方法的情况下 \texttt{impl Write for Sink} 呢？答案是标准库的 \texttt{Write} 特型定义中包含了对 \texttt{write\_all} 的\textbf{默认实现}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Write}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{flush}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write\PYGZus{}all}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{bytes\PYGZus{}written}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{while}\PYG{+w}{ }\PYG{n}{bytes\PYGZus{}written}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{bytes\PYGZus{}written}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{write}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{buf}\PYG{p}{[}\PYG{n}{bytes\PYGZus{}written}\PYG{o}{..}\PYG{p}{]}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{write} 方法和 \texttt{flush} 方法是每个写入器必须实现的基本方法。写入器也可以自行实现 \texttt{write\_all}，但如果没实现，就会使用前面展示过的默认实现。
+
+你的自定义特型也可以包含一些使用同样语法的默认实现。
+
+标准库中对默认方法最引人注目的应用场景是 \texttt{Iterator} 特型，它有一个必要方法 (\texttt{.next()}) 和几十个默认方法。第 15 章会解释原因。
+
+\subsection{特型与其他人的类型}
+
+Rust 允许在任意类型上实现任意特型，但特型或类型二者必须至少有一个是在当前 crate 中新建的。
+
+这意味着任何时候如果你想为任意类型添加一个方法，都可以使用特型来完成：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{IsEmoji}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{is\PYGZus{}emoji}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{l+s+sd}{/// 为内置的字符类型实现IsEmoji特型}
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{IsEmoji}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{k+kt}{char}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{is\PYGZus{}emoji}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}\PYGZdl{}\PYGZsq{}}\PYG{p}{.}\PYG{n}{is\PYGZus{}emoji}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+与任何其他特型方法一样，只有当 \texttt{IsEmoji} 在作用域内时这个新的 \texttt{is\_emoji} 方法才是可见的。
+
+这个特殊特型的唯一目的是向现有类型 \texttt{char} 中添加一个方法。这称为\textbf{扩展特型}。当然，也可以通过 \texttt{impl IsEmoji for str \{ ... \}} 等写法将此特型添加到其他类型中。
+
+甚至可以使用一个泛型的 \texttt{impl} 块来一次性向整个类型家族添加扩展特型。这个特型可以在任意类型上实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Write}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 能让你把HTML写入值里的特型}
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{WriteHtml}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write\PYGZus{}html}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{html}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{HtmlDocument}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+为所有写入器实现特型会令其成为扩展特型，比如为所有 Rust 写入器添加一个方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 可以把HTML写入任何一个std::io writer}
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{W}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Write}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{WriteHtml}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{W}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write\PYGZus{}html}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{html}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{HtmlDocument}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{impl<W: Write> WriteHtml for W} 这一行的意思是“对于每个实现了 \texttt{Write} 的类型 \texttt{W}，这里有一个适用于 \texttt{W} 的 \texttt{WriteHtml} 实现”。
+
+\texttt{serde} 库提供了一个很好的例子，表明在标准类型上实现用户定义的特型非常有用。\texttt{serde} 是一个序列化库。也就是说，你可以使用 \texttt{serde} 将 Rust 数据结构写入磁盘，稍后再重新加载它们。这个库定义了一个特型 \texttt{Serialize}，它为该库支持的每种数据类型都提供了实现。因此在 \texttt{serde} 源代码中，有一些代码为 \texttt{bool}、\texttt{i8}、\texttt{i16}、\texttt{i32}、数组类型和元组类型等内置类型，以及像 \texttt{Vec} 和 \texttt{HashMap} 这样的标准数据结构实现了 \texttt{Serialize}。
+
+所有这些工作的成果，就是 \texttt{serde} 为这些类型添加了一个 \texttt{.serialize()} 方法。它可以这样使用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{serde}\PYG{p}{::}\PYG{n}{Serialize}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{serde\PYGZus{}json}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{save\PYGZus{}configuration}\PYG{p}{(}\PYG{n}{config}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// 创建一个JSON序列化器以把数据写入文件}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{writer}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{n}{config\PYGZus{}filename}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{serializer}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{serde\PYGZus{}json}\PYG{p}{::}\PYG{n}{Serializer}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{writer}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// serde的`.serialize()`方法会完成剩下的工作}
+\PYG{+w}{    }\PYG{n}{config}\PYG{p}{.}\PYG{n}{serialize}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{serializer}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+我们之前说过，在实现特型时，特型或类型二者必须至少有一个是在当前 crate 中新建的。这叫作\textbf{孤儿规则}。它会帮助 Rust 确保特型的实现是唯一的。你的代码不能写成 \texttt{impl Write for u8}，因为 \texttt{Write} 和 \texttt{u8} 都是在标准库中定义的。如果 Rust 允许 crate 这样做，那么在不同的 crate 中可能会有多个 \texttt{u8} 的 \texttt{Write} 实现，而 Rust 并没有合理的方法来决定把哪个实现用于给定的方法调用。
+
+（C++ 有一个类似的唯一性限制：单一定义规则。在典型的 C++ 流派中，除了一些最简单的情况，编译器不会强制执行此规则。如果你打破了此规则，就会得到未定义行为。）
+
+\subsection{特型中的 \texttt{Self}}
+
+特型可以用关键字 \texttt{Self} 作为类型。例如，标准库的 \texttt{Clone} 特型看起来是这样的（稍作简化）：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Clone}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{clone}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里以 \texttt{Self} 作为返回类型意味着 \texttt{x.clone()} 的类型与 \texttt{x} 的类型相同，无论 \texttt{x} 是什么。如果 \texttt{x} 是 \texttt{String}，那么 \texttt{x.clone()} 的类型也必须是 \texttt{String}——而不能是 \texttt{dyn Clone} 或其他可克隆类型。
+
+同样，如果我们定义如下特型
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Spliceable}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{splice}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+并有两个实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Spliceable}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{CherryTree}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{splice}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Spliceable}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Mammoth}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{splice}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+那么在第一个 \texttt{impl} 中，\texttt{Self} 只是 \texttt{CherryTree} 的别名，而在第二个 \texttt{impl} 中，它是 \texttt{Mammoth} 的别名。这意味着可以将两棵樱桃树或两头猛犸象拼接在一起，但不表示可以创造出猛犸象和樱桃树的混合体。\texttt{self} 的类型和 \texttt{other} 的类型必须匹配。
+
+使用了 \texttt{Self} 类型的特型与特型对象不兼容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 错误：特型`Spliceable`不能用作特型对象}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{splice\PYGZus{}anything}\PYG{p}{(}\PYG{n}{left}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{dyn}\PYG{+w}{ }\PYG{n}{Spliceable}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{right}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{dyn}\PYG{+w}{ }\PYG{n}{Spliceable}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{combo}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{left}\PYG{p}{.}\PYG{n}{splice}\PYG{p}{(}\PYG{n}{right}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{c+c1}{// ...}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+至于其原因，当我们深入研究特型的高级特性时还会一次又一次看到。Rust 会拒绝此代码，因为它无法对 \texttt{left.splice(right)} 这个调用进行类型检查。特型对象的全部意义恰恰在于其类型要到运行期才能知道。Rust 在编译期无从了解 \texttt{left} 和 \texttt{right} 是否为同一类型。
+
+特型对象实际上是为最简单的特型类型而设计的，这些类型都可以使用 Java 中的接口或 C++ 中的抽象基类来实现。特型的高级特性很有用，但它们不能与特型对象共存，因为一旦有了特型对象，就会失去 Rust 对你的程序进行类型检查时所必需的类型信息。
+
+现在，如果想要实现这种在遗传意义上不可能的拼接，可以设计一个对特型对象友好的特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{MegaSpliceable}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{splice}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{dyn}\PYG{+w}{ }\PYG{n}{MegaSpliceable}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{MegaSpliceable}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此特型与特型对象兼容。对 \texttt{.splice()} 方法的调用可以通过类型检查，因为参数 \texttt{other} 的类型不需要匹配 \texttt{self} 的类型，只要这两种类型都是 \texttt{MegaSpliceable} 就可以了。
+
+\subsection{子特型}
+
+我们可以声明一个特型是另一个特型的扩展：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 游戏世界中的生物，既可以是玩家，也可以是}
+\PYG{l+s+sd}{/// 其他小精灵、石像鬼、松鼠、食人魔等}
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Creature}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Visible}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{position}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{i32}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{facing}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Direction}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+短语 \texttt{trait Creature : Visible} 表示所有生物都是可见的。每个实现了 \texttt{Creature} 的类型也必须实现 \texttt{Visible} 特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Visible}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Broom}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Creature}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Broom}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+可以按任意顺序实现这两个特型，但是如果不为类型实现 \texttt{Visible} 只为其实现 \texttt{Creature} 则是错误的。在这里，我们说 \texttt{Creature} 是 \texttt{Visible} 的\textbf{子特型}，而 \texttt{Visible} 是 \texttt{Creature} 的\textbf{超特型}。
+
+子特型与 Java 或 C\# 中的子接口类似，因为用户可以假设实现了子特型的任何值也会实现其超特型。但是在 Rust 中，子特型不会继承其超特型的关联项，如果你想调用超特型的方法，那么仍然要保证每个特型都在作用域内。
+
+事实上，Rust 的子特型只是对 \texttt{Self} 类型限界的简写。像下面这样的 \texttt{Creature} 定义与前面的定义完全等效。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Creature}\PYG{+w}{ }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Visible}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{类型关联函数}
+
+在大多数面向对象语言中，接口不能包含静态方法或构造函数，但特型可以包含类型关联函数，这是 Rust 对静态方法的模拟：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{StringSet}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 返回一个新建的空集合}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{new}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 返回一个包含`strings`中所有字符串的集合}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{from\PYGZus{}slice}\PYG{p}{(}\PYG{n}{strings}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 判断这个集合中是否包含特定的`string`}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{contains}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 把一个字符串添加到此集合中}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+每个实现了 \texttt{StringSet} 特型的类型都必须实现这 4 个关联函数。前两个函数，即 \texttt{new()} 和 \texttt{from\_slice()}，不接受 \texttt{self} 参数。它们扮演着构造函数的角色。在非泛型代码中，可以使用 \texttt{::} 语法调用这些函数，就像调用任何其他类型关联函数一样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 创建实现了StringSet的两个假想集合类型：}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{set1}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{SortedStringSet}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{set2}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashedStringSet}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+在泛型代码中，也可以使用 \texttt{::} 语法，不过其类型部分通常是类型变量，如下面对 \texttt{S::new()} 的调用所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 返回`document`中不存在于`wordlist`中的单词集合}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{unknown\PYGZus{}words}\PYG{o}{\PYGZlt{}}\PYG{n}{S}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{StringSet}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{document}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n+nb}{String}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{wordlist}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{S}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{S}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{unknowns}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{S}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{word}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{document}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{wordlist}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{n}{word}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{unknowns}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{n}{word}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{unknowns}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+与 Java 接口和 C\# 接口一样，特型对象也不支持类型关联函数。如果想使用 \texttt{\&dyn StringSet} 特型对象，就必须修改此特型，为每个未通过引用接受 \texttt{self} 参数的关联函数加上类型限界 \texttt{where Self: Sized}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{StringSet}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{new}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}
+\PYG{+w}{        }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{from\PYGZus{}slice}\PYG{p}{(}\PYG{n}{strings}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}
+\PYG{+w}{        }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{contains}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个限界告诉 Rust，特型对象不需要支持特定的关联函数\footnote{指带有 \texttt{:Sized} 限界的 \texttt{new} 和 \texttt{from\_slice} 这两个关联函数。——译者注}。通过添加这些限界，就能把 \texttt{StringSet} 作为特型对象使用了。虽然特型对象仍不支持关联函数 \texttt{new} 或 \texttt{from\_slice}，但你还是可以创建它们并用其调用 \texttt{.contains()} 和 \texttt{.add()}。同样的技巧也适用于其他与特型对象不兼容的方法。（我们暂且放弃对“为何这么改就行”的枯燥技术解释，但会在第 13 章介绍一下 \texttt{Sized} 特型，届时你就懂了。）
+
+\section{完全限定的方法调用}
+
+迄今为止，我们看到的所有调用特型方法的方式都依赖于 Rust 为你补齐了一些缺失的部分。假设你编写了以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}
+\end{Verbatim}
+
+Rust 知道 \texttt{to\_string} 指的是 \texttt{ToString} 特型的 \texttt{to\_string} 方法（我们称之为 \texttt{str} 类型的实现）。所以这个游戏里有 4 个“玩家”：特型、特型的方法、方法的实现以及调用该实现时传入的值。很高兴我们不必在每次调用方法时都把它们完全写出来。但在某些情况下，你需要一种方式来准确表达你的意思。完全限定的方法调用符合此要求。
+
+首先，要知道方法只是一种特殊的函数。下面两个调用是等效的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}
+
+\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\end{Verbatim}
+
+第二种形式看起来很像关联函数调用。尽管 \texttt{to\_string} 方法需要一个 \texttt{self} 参数，但是仍然可以像关联函数一样调用。只需将 \texttt{self} 作为此函数的第一个参数传进去即可。
+
+由于 \texttt{to\_string} 是标准 \texttt{ToString} 特型的方法之一，因此你还可以使用另外两种形式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nb}{ToString}\PYG{p}{::}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+
+\PYG{o}{\PYGZlt{}}\PYG{k+kt}{str}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n+nb}{ToString}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\end{Verbatim}
+
+所有这 4 种方法调用都会做同样的事情。大多数情况下，只要写 \texttt{value.method()} 就可以了。其他形式都是\textbf{限定}方法调用。它们要指定方法所关联的类型或特型。最后一种带有尖括号的形式，同时指定了两者，这就是\textbf{完全限定}的方法调用。
+
+当你写下 \texttt{"hello".to\_string()} 时，使用的是 \texttt{.} 运算符，你并没有确切说明要调用哪个 \texttt{to\_string} 方法。Rust 有一个“方法查找”算法，它可以根据类型、隐式解引用等来解决这个问题。通过完全限定的调用，你可以准确地指出是哪一个方法，这在一些奇怪的情况下会有所帮助。
+
+\begin{itemize}
+\item 当两个方法具有相同的名称时。生拼硬凑的经典示例是 \texttt{Outlaw}（亡命之徒），它具有来自不同特型的两个 \texttt{.draw()} 方法，一个用于将其绘制在屏幕上，另一个用于犯罪。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{outlaw}\PYG{p}{.}\PYG{n}{draw}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：画（draw）在屏幕上还是拔出（draw）手枪？}
+
+\PYG{n}{Visible}\PYG{p}{::}\PYG{n}{draw}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{outlaw}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确：画在屏幕上}
+\PYG{n}{HasPistol}\PYG{p}{::}\PYG{n}{draw}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{outlaw}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确：拔出手枪}
+\end{Verbatim}
+
+通常你可以对其中一个方法改名，但有时实在没法改。
+\item 当无法推断 \texttt{self} 参数的类型时。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{zero}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 类型未指定：可能为`i8`、`u8`……}
+
+\PYG{n}{zero}\PYG{p}{.}\PYG{n}{abs}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：无法在有歧义的数值类型上调用方法`abs`}
+
+\PYG{k+kt}{i64}\PYG{p}{::}\PYG{n}{abs}\PYG{p}{(}\PYG{n}{zero}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\end{Verbatim}
+
+\item 将函数本身用作函数类型的值时。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{words}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{line}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 迭代器生成\PYGZam{}str值}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{n+nb}{ToString}\PYG{p}{::}\PYG{n}{to\PYGZus{}string}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\item 在宏中调用特型方法时。第 21 章会对此进行解释。
+\end{itemize}
+
+完全限定语法也适用于关联函数。在 11.2.5 节中，我们编写了 \texttt{S::new()} 以在泛型函数中创建一个新集合。也可以写成 \texttt{StringSet::new()} 或 \texttt{<S as StringSet>::new()}。
+
+\section{定义类型之间关系的特型}
+
+迄今为止，我们看到的每个特型都是独立的：特型是类型可以实现的一组方法。特型也可以用于多种类型必须协同工作的场景中。它们可以描述多个类型之间的关系。
+
+\begin{itemize}
+\item \texttt{std::iter::Iterator} 特型会为每个迭代器类型与其生成的值的类型建立联系。
+\item \texttt{std::ops::Mul} 特型与可以相乘的类型有关。在表达式 \texttt{a * b} 中，值 \texttt{a} 和 \texttt{b} 可以是相同类型，也可以是不同类型。
+\item \texttt{rand} crate 中包含随机数生成器的特型（\texttt{rand::Rng}）和可被随机生成的类型的特型（\texttt{rand::Distribution}）。这些特型本身就准确地定义了它们是如何协同工作的。
+\end{itemize}
+
+你不需要每天都创建这样的特型，但它们在整个标准库和第三方 crate 中随处可见。本节将展示每一个示例是如何实现的，并根据需要来展开讲解相关的 Rust 语言特性。你需要掌握的关键技能是能够阅读这些特型和方法签名，并理解它们对所涉及的类型意味着什么。
+
+\subsection{关联类型（或迭代器的工作原理）}
+
+接下来我们从迭代器讲起。迄今为止，每种面向对象的语言都内置了某种对迭代器的支持，迭代器是用以遍历某种值序列的对象。
+
+Rust 有一个标准的 \texttt{Iterator} 特型，定义如下：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{next}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个特型的第一个特性（\texttt{type Item;}）是一个\textbf{关联类型}。实现了 \texttt{Iterator} 的每种类型都必须指定它所生成的条目的类型。
+
+第二个特性（\texttt{next()} 方法）在其返回值中使用了关联类型。\texttt{next()} 会返回一个 \texttt{Option<Self::Item>}：或者是序列中的下一个值 \texttt{Some(item)}，或者当没有更多值可供访问时返回 \texttt{None}。该类型要写成 \texttt{Self::Item}，而不仅仅是无修饰的 \texttt{Item}，因为这里的 \texttt{Item} 是每个迭代器类型下的一个特性，而不是一个独立的类型。同样，\texttt{self} 和 \texttt{Self} 类型在代码中任何使用了其字段、方法等的地方都要像这样显式写出来。
+
+下面是为一个类型实现 \texttt{Iterator} 的范例：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{//（来自标准库中std::env模块的代码）}
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Args}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{next}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{std::env::Args} 是我们在第 2 章中用来访问命令行参数的标准库函数 \texttt{std::env::args()} 返回的迭代器类型。它能生成 \texttt{String} 值，因此这个 \texttt{impl} 声明了 \texttt{type Item = String;}。
+
+泛型代码可以使用关联类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 遍历迭代器，将值存储在新向量中}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{collect\PYGZus{}into\PYGZus{}vector}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{I}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{results}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{value}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{iter}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{results}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{results}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在这个函数体中，Rust 为我们推断出了 \texttt{value} 的类型，这固然不错，但我们还必须明确写出 \texttt{collect\_into\_vector} 的返回类型，而 \texttt{Item} 关联类型是唯一的途径。（用 \texttt{Vec<I>} 肯定不对，因为那样是在宣告要返回一个由迭代器组成的向量。）
+
+前面示例中的代码并不需要你自己编写，因为在阅读第 15 章之后，你会知道迭代器已经有了一个执行此操作的标准方法：\texttt{iter.collect()}。在继续之前，再来看一个例子：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 打印出迭代器生成的所有值}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dump}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{I}\PYG{p}{)}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{I}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{index}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{iter}\PYG{p}{.}\PYG{n}{enumerate}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{index}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{   }\PYG{c+c1}{// 错误}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这几乎已经改好了。但还有一个问题：\texttt{value} 不一定是可打印的类型。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{err}{`}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{Item}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{doesn}\PYG{o}{\PYGZsq{}}\PYG{n+na}{t}\PYG{+w}{ }\PYG{n}{implement}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{Debug}\PYG{err}{`}
+\PYG{+w}{  }\PYG{o}{|}
+\PYG{l+m+mi}{8}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{         }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{index}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{   }\PYG{c+c1}{// 错误}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                                     }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                          }\PYG{err}{`}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{Item}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{cannot}\PYG{+w}{ }\PYG{n}{be}\PYG{+w}{ }\PYG{n}{formatted}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                          }\PYG{n}{using}\PYG{+w}{ }\PYG{err}{`}\PYG{p}{\PYGZob{}}\PYG{p}{:}\PYG{o}{?}\PYG{p}{\PYGZcb{}}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{because}\PYG{+w}{ }\PYG{n}{it}\PYG{+w}{ }\PYG{n}{doesn}\PYG{o}{\PYGZsq{}}\PYG{n+na}{t}\PYG{+w}{ }\PYG{n}{implement}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{Debug}\PYG{err}{`}
+\PYG{+w}{  }\PYG{o}{|}
+\PYG{+w}{  }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{help}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{the}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{Debug}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{not}\PYG{+w}{ }\PYG{n}{implemented}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{err}{`}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{Item}\PYG{err}{`}
+\PYG{+w}{  }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{note}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{required}\PYG{+w}{ }\PYG{n}{by}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Debug}\PYG{p}{::}\PYG{n}{fmt}\PYG{err}{`}
+\PYG{n}{help}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{consider}\PYG{+w}{ }\PYG{n}{further}\PYG{+w}{ }\PYG{n}{restricting}\PYG{+w}{ }\PYG{n}{the}\PYG{+w}{ }\PYG{n}{associated}\PYG{+w}{ }\PYG{k}{type}
+\PYG{+w}{  }\PYG{o}{|}
+\PYG{l+m+mi}{5}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{     }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{I}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Debug}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                      }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}
+\end{Verbatim}
+
+由于 Rust 使用了语法 \texttt{<I as Iterator>::Item}（\texttt{I::Item} 的一种明确但冗长的说法），因此错误消息被弄得稍微有点儿乱。虽然这是有效的 Rust 语法，但实际上你很少需要以这种方式书写类型。
+
+这个错误消息的要点是，要编译此泛型函数，就必须确保 \texttt{I::Item} 实现了 \texttt{Debug} 特型，也就是用 \texttt{\{:?\}} 格式化值时要求的特型。正如错误消息所暗示的那样，我们可以通过在 \texttt{I::Item} 上设置一个限界来做到这一点：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Debug}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dump}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{I}\PYG{p}{)}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{I}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{I}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Debug}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+或者，我们可以说“\texttt{I} 必须是针对 \texttt{String} 值的迭代器”：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dump}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{I}\PYG{p}{)}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{I}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Iterator<Item=String>} 本身就是一个特型。如果将 \texttt{Iterator} 视为所有迭代器类型的全集，那么 \texttt{Iterator<Item=String>} 就是 \texttt{Iterator} 的子集：生成 \texttt{String} 的迭代器类型的集合。此语法可用于任何可以使用特型名称（包括特型对象类型）的地方：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dump}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{k}{dyn}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{index}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{iter}\PYG{p}{.}\PYG{n}{enumerate}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{index}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+具有关联类型的特型（如 \texttt{Iterator}）与特型对象是兼容的，但前提是要把所有关联类型都明确写出来，就像此处所展示的那样。否则，\texttt{s} 的类型可能是任意类型，同样，这会导致 Rust 无法对这段代码进行类型检查。
+
+我们已经展示了很多涉及迭代器的示例。之所以花了这么多篇幅，是因为迭代器是迄今为止使用关联类型的最主要场景。但当特型需要包含的不仅仅是方法的时候，关联类型会很有用。
+
+\begin{itemize}
+\item 在线程池库中，\texttt{Task} 特型表示一个工作单元，它可以包含一个关联的 \texttt{Output} 类型。
+\item \texttt{Pattern} 特型表示一种搜索字符串的方式，它可以包含一个关联的 \texttt{Match} 类型，后者表示将模式与字符串匹配后收集到的所有信息。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Pattern}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Match}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{search}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Match}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{l+s+sd}{/// 你可以在字符串中找一个特定的字符}
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Pattern}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{k+kt}{char}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// Match只是找到的字符的位置}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Match}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{search}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果你熟悉正则表达式，那么很容易看出 \texttt{impl Pattern for RegExp} 应该有一个更精细的 \texttt{Match} 类型，它可能是一个结构体，其中包含此匹配的开始位置和长度、圆括号组匹配的位置等。
+\item 用于处理关系型数据库的库可能具有 \texttt{DatabaseConnection} 特型，其关联类型表示事务、游标、已准备语句等。
+\end{itemize}
+
+关联类型非常适合每个实现都有\textbf{一个}特定相关类型的情况：每种类型的 \texttt{Task} 都会生成特定类型的 \texttt{Output}，每种类型的 \texttt{Pattern} 都会寻找特定类型的 \texttt{Match}。然而，如你所见，类型之间的某些关系并不是这样的。
+
+\subsection{泛型特型（或运算符重载的工作原理）}
+
+Rust 中的乘法使用了以下特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// std::ops::Mul，用于标记支持`*`（乘号）的类型的特型}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Mul}\PYG{o}{\PYGZlt{}}\PYG{n}{RHS}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 在应用了`*`运算符后的结果类型}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 实现`*`运算符的方法}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{mul}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{RHS}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Mul} 是一个泛型特型。类型参数 \texttt{RHS} 是\textbf{右操作数}（right-hand side）的缩写。
+
+这里的类型参数与它在结构体或函数上的含义是一样的：\texttt{Mul} 是一个泛型特型，它的实例 \texttt{Mul<f64>}、\texttt{Mul<String>}、\texttt{Mul<Size>} 等都是不同的特型，就像 \texttt{min::<i32>} 和 \texttt{min::<String>} 是不同的函数，\texttt{Vec<i32>} 和 \texttt{Vec<String>} 是不同的类型一样。
+
+单一类型（如 \texttt{WindowSize}）可以同时实现 \texttt{Mul<f64>}、\texttt{Mul<i32>}，等等。然后你就可以将 \texttt{WindowSize} 乘以许多其他类型。每个实现都有自己关联的 \texttt{Output} 类型。
+
+泛型特型在涉及孤儿规则时会得到特殊豁免：你可以为外部类型实现外部特型，只要特型的类型参数之一是当前 crate 中定义的类型即可。因此，如果你自己定义了 \texttt{WindowSize}，则可以为 \texttt{f64} 实现 \texttt{Mul<WindowSize>}，即使你既没有定义 \texttt{Mul} 也没有定义 \texttt{f64}。这些实现甚至可以是泛型的，比如 \texttt{impl<T> Mul<WindowSize> for Vec<T>}。这是可行的，因为其他 crate 不可能在任何东西上定义 \texttt{Mul<WindowSize>}，因此实现之间不可能出现冲突。（11.2.2 节介绍过孤儿规则。）这就是像 \texttt{nalgebra} 这样的 crate 能为向量定义算术运算的原理。
+
+前面展示的特型缺少一个小细节。真正的 \texttt{Mul} 特型是这样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Mul}\PYG{o}{\PYGZlt{}}\PYG{n}{RHS}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+语法 \texttt{RHS=Self} 表示 \texttt{RHS} 默认为 \texttt{Self}。如果我写下 \texttt{impl Mul for Complex}，而不指定 \texttt{Mul} 的类型参数，则表示 \texttt{impl Mul<Complex> for Complex}。在类型限界中，如果我写下 \texttt{where T: Mul}，则表示 \texttt{where T: Mul<T>}。
+
+在 Rust 中，表达式 \texttt{lhs * rhs} 是 \texttt{Mul::mul(lhs, rhs)} 的简写形式。所以在 Rust 中重载 \texttt{*} 运算符就像实现 \texttt{Mul} 特型一样简单。第 12 章会展示相关示例。
+
+\subsection{\texttt{impl Trait}}
+
+如你所料，由许多泛型类型组合而成的结果可能会极其凌乱。例如，使用标准库的组合器组合上几个迭代器，就会迅速把你的返回类型变成一个“丑八怪”：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{iter}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{vec}\PYG{p}{::}\PYG{n}{IntoIter}\PYG{p}{;}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cyclical\PYGZus{}zip}\PYG{p}{(}\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{u}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}
+\PYG{+w}{    }\PYG{n+nc}{iter}\PYG{p}{::}\PYG{n}{Cycle}\PYG{o}{\PYGZlt{}}\PYG{n}{iter}\PYG{p}{::}\PYG{n}{Chain}\PYG{o}{\PYGZlt{}}\PYG{n}{IntoIter}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{IntoIter}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{v}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{chain}\PYG{p}{(}\PYG{n}{u}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cycle}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+我们可以很容易地用特型对象替换这个“丑陋的”返回类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cyclical\PYGZus{}zip}\PYG{p}{(}\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{u}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Box}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{v}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{chain}\PYG{p}{(}\PYG{n}{u}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cycle}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+然而，在大多数情况下，如果仅仅是为了避免“丑陋的”类型签名，就要在每次调用这个函数时承受动态派发和不可避免的堆分配开销，可不太划算。
+
+Rust 有一个名为 \texttt{impl Trait} 的特性，该特性正是为应对这种情况而设计的。\texttt{impl Trait} 允许我们“擦除”返回值的类型，仅指定它实现的一个或多个特型，而无须进行动态派发或堆分配：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cyclical\PYGZus{}zip}\PYG{p}{(}\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{u}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{v}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{chain}\PYG{p}{(}\PYG{n}{u}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cycle}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+现在，\texttt{cyclical\_zip} 的签名中再也没有那种带着迭代器组合结构的嵌套类型了，而只是声明它会返回某种 \texttt{u8} 迭代器。返回类型表达了函数的意图，而非实现细节。
+
+这无疑清理了代码并提高了可读性，但 \texttt{impl Trait} 可不止是一个方便的简写形式。使用 \texttt{impl Trait} 意味着你将来可以更改返回的实际类型，只要返回类型仍然会实现 \texttt{Iterator<Item=u8>}，调用该函数的任何代码就能继续编译而不会出现问题。这就为库作者提供了很大的灵活性，因为其类型签名中只编码了有意义的功能。
+
+如果库的第一个版本像前面那样使用迭代器的组合器，但后来发现了针对同一过程的更好算法，则库作者可能会改用不同的组合器，甚至会创建一个能实现 \texttt{Iterator} 的自定义类型，但只要当初使用了 \texttt{impl Trait} 来编写签名，库的用户根本不必更改代码就能获得性能改进。
+
+使用 \texttt{impl Trait} 来为面向对象语言中常用的工厂模式模仿出一个静态派发版本可能是个诱人的想法。例如，你可能会想定义如下特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Shape}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{new}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{area}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在为几种类型实现了 \texttt{Shape} 之后，你可能希望根据某个运行期的值（比如用户输入的字符串）使用不同的 \texttt{Shape}。但以 \texttt{impl Shape} 作为返回类型并不能实现这一目标：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{make\PYGZus{}shape}\PYG{p}{(}\PYG{n}{shape}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n}{Shape}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{shape}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{circle}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Circle}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{triangle}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Triangle}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{c+c1}{// 错误：不兼容的类型}
+\PYG{+w}{        }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{shape}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Rectangle}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+从调用者的角度来看，这样的函数没有多大意义。\texttt{impl Trait} 是一种静态派发形式，因此编译器必须在编译期就知道从函数返回的类型，以便在栈上分配正确的空间数量并正确访问该类型的字段和方法。在这里，这个类型可能是 \texttt{Circle}、\texttt{Triangle} 或 \texttt{Rectangle}，它们可能占用不同的空间大小，并且有着不同的 \texttt{area()} 实现。
+
+这里的要点是，Rust 不允许特型方法使用 \texttt{impl Trait} 作为返回值。要支持这个特性，就要对语言的类型系统进行一些改进。在这项工作完成之前，只有自由函数和关联具体类型的函数才能使用 \texttt{impl Trait} 作为返回值。
+
+\texttt{impl Trait} 也可以用在带有泛型参数的函数中。例如，考虑下面这个简单的泛型函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{print}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Display}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{val}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{val}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+它与使用 \texttt{impl Trait} 的版本完全相同：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{print}\PYG{p}{(}\PYG{n}{val}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n}{Display}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{val}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+但有一个重要的例外。使用泛型时允许函数的调用者指定泛型参数的类型，比如 \texttt{print::<i32>(42)}，而如果使用 \texttt{impl Trait} 则不能这样做。
+
+每个 \texttt{impl Trait} 参数都被赋予了自己独有的匿名类型参数，因此，只有在最简单的泛型函数中才能把 \texttt{impl Trait} 参数用作类型，参数的类型之间不能存在关系。
+
+\subsection{关联常量}
+
+与结构体和枚举一样，特型也可以有关联常量。你可以使用与结构体或枚举相同的语法来声明带有关联常量的特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Greet}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{const}\PYG{+w}{ }\PYG{n}{GREETING}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{greet}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+不过，关联常量在特型中具有特殊的功能。与关联类型和函数一样，你也可以声明它们，但不为其定义值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Float}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{const}\PYG{+w}{ }\PYG{n}{ZERO}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{const}\PYG{+w}{ }\PYG{n}{ONE}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+之后，特型的实现者可以定义这些值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Float}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{k+kt}{f32}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{const}\PYG{+w}{ }\PYG{n}{ZERO}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f32}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{const}\PYG{+w}{ }\PYG{n}{ONE}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f32}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Float}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{const}\PYG{+w}{ }\PYG{n}{ZERO}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{const}\PYG{+w}{ }\PYG{n}{ONE}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+你可以编写使用这些值的泛型代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add\PYGZus{}one}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Float}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{value}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{value}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{::}\PYG{n}{ONE}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+请注意，关联常量不能与特型对象一起使用，因为为了在编译期选择正确的值，编译器会依赖相关实现的类型信息。
+
+即使是没有任何行为的简单特型（如 \texttt{Float}），也可以提供有关类型的足够信息，再结合一些运算符，以实现像斐波那契数列这样常见的数学函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{fib}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Float}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{::}\PYG{n}{ZERO}\PYG{p}{,}
+\PYG{+w}{        }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{::}\PYG{n}{ONE}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{fib}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{n}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{fib}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{n}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在 11.5 节和 11.6 节中，我们将展示用特型描述类型之间关系的不同方式。所有这些都可以看作避免虚方法开销和向下转换的方法，因为它们允许 Rust 在编译期了解更多的具体类型。
+
+\section{逆向工程求限界}
+
+当没有特型可以满足你的所有需求时，编写泛型代码可能会是一件真正的苦差事。假设我们编写了下面这个非泛型函数来进行一些计算：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{i64}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{i64}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{i64}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{total}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+现在我们想对浮点值使用相同的代码，因此可能会尝试像下面这么做。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{N}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{total}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{N}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{total}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+运气不佳：Rust 会报错说乘法（\texttt{*}）的使用以及 0 的类型有问题。我们可以使用 \texttt{Add} 和 \texttt{Mul} 的特型要求 \texttt{N} 是支持 \texttt{+} 和 \texttt{*} 的类型。但是，对 0 的用法需要改变，因为 0 在 Rust 中始终是一个整数，对应的浮点值为 0.0。幸运的是，对于具有默认值的类型，有一个标准的 \texttt{Default} 特型。对于数值类型，默认值始终为 0：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Add}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Mul}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Mul}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{N}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{::}\PYG{n}{default}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{total}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+离成功更近了，但仍未完全解决：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{mismatched}\PYG{+w}{ }\PYG{n}{types}
+\PYG{+w}{  }\PYG{o}{|}
+\PYG{l+m+mi}{5}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Mul}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{N}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{        }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{this}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{parameter}
+\PYG{o}{..}\PYG{p}{.}
+\PYG{l+m+mi}{8}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{         }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                         }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{+w}{ }\PYG{n}{expected}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{parameter}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{N}\PYG{err}{`}\PYG{p}{,}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                                       }\PYG{n}{found}\PYG{+w}{ }\PYG{n}{associated}\PYG{+w}{ }\PYG{k}{type}
+\PYG{+w}{  }\PYG{o}{|}
+\PYG{+w}{  }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{note}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{expected}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{parameter}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{N}\PYG{err}{`}
+\PYG{+w}{            }\PYG{n}{found}\PYG{+w}{ }\PYG{n}{associated}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{err}{`}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n}{Mul}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{Output}\PYG{err}{`}
+\PYG{n}{help}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{consider}\PYG{+w}{ }\PYG{n}{further}\PYG{+w}{ }\PYG{n}{restricting}\PYG{+w}{ }\PYG{n}{this}\PYG{+w}{ }\PYG{n}{bound}
+\PYG{+w}{  }\PYG{o}{|}
+\PYG{l+m+mi}{5}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Mul}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Mul}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{N}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                               }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}
+\end{Verbatim}
+
+我们的新代码中假定将两个 \texttt{N} 类型的值相乘会生成另一个 \texttt{N} 类型的值。但事实并非如此。你可以重载乘法运算符以返回想要的任意类型。我们需要以某种方式让 Rust 知道这个泛型函数只适用于那些支持正常乘法规范的类型，其中 \texttt{N * N} 一定会返回 \texttt{N}。错误消息中的建议\textbf{几乎}是正确的：我们可以通过将 \texttt{Mul} 替换为 \texttt{Mul<Output=N>} 来做到这一点，对 \texttt{Add} 的处理也是一样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Mul}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{N}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此时，类型限界积累得越来越多，使得代码难以阅读。我们来把限界移动到 \texttt{where} 子句中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{N}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Mul}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Default}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+漂亮！但是 Rust 仍然会对这行代码报错：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{cannot}\PYG{+w}{ }\PYG{k}{move}\PYG{+w}{ }\PYG{n}{out}\PYG{+w}{ }\PYG{n}{of}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{err}{`}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{err}{`}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{n}{non}\PYG{o}{\PYGZhy{}}\PYG{n}{copy}\PYG{+w}{ }\PYG{n}{slice}
+\PYG{+w}{  }\PYG{o}{|}
+\PYG{l+m+mi}{8}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{         }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                         }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                         }\PYG{o}{|}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                         }\PYG{n}{cannot}\PYG{+w}{ }\PYG{k}{move}\PYG{+w}{ }\PYG{n}{out}\PYG{+w}{ }\PYG{n}{of}\PYG{+w}{ }\PYG{n}{here}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                         }\PYG{k}{move}\PYG{+w}{ }\PYG{n}{occurs}\PYG{+w}{ }\PYG{n}{because}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{v1}\PYG{p}{[}\PYG{n}{\PYGZus{}}\PYG{p}{]}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{has}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{N}\PYG{err}{`}\PYG{p}{,}
+\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{                         }\PYG{n}{which}\PYG{+w}{ }\PYG{n}{does}\PYG{+w}{ }\PYG{n}{not}\PYG{+w}{ }\PYG{n}{implement}\PYG{+w}{ }\PYG{n}{the}\PYG{+w}{ }\PYG{err}{`}\PYG{n+nb}{Copy}\PYG{err}{`}\PYG{+w}{ }\PYG{k}{trait}
+\end{Verbatim}
+
+由于我们没有要求 \texttt{N} 是可复制的类型，因此 Rust 将 \texttt{v1[i]} 解释为试图将值从切片中移动出去（Rust 中禁止这样做）。但是我们根本就没想修改切片，只是想将这些值复制出来以便对它们进行操作。幸运的是，Rust 的所有内置数值类型都实现了 \texttt{Copy}，因此可以简单地将其添加到对 \texttt{N} 的约束中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{where}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Mul}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Copy}
+\end{Verbatim}
+
+这样代码就可以编译并运行了。最终代码如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Add}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Mul}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{N}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Mul}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{o}{=}\PYG{n}{N}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Copy}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{::}\PYG{n}{default}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{total}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{test\PYGZus{}dot}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{dot}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{dot}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+m+mf}{53.0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{7.0}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+m+mf}{1.0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{5.0}\PYG{p}{]}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{88.0}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+上述现象在 Rust 中偶有发生：虽然经历了一段与编译器的激烈拉锯战，但最后代码看起来相当不错，就仿佛这场拉锯战从未发生过一样，运行起来也很令人满意。
+
+我们在这里所做的就是对 \texttt{N} 的限界进行逆向工程，使用编译器来指导和检查我们的工作。这个过程有点儿痛苦，因为标准库中没有那么一个 \texttt{Number} 特型包含我们想要使用的所有运算符和方法。碰巧的是，有一个名为 \texttt{num} 的流行开源 crate 定义了这样的一个特型。如果我们能提前知道，就可以将 \texttt{num} 添加到 Cargo.toml 中并这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{num}\PYG{p}{::}\PYG{n}{Num}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dot}\PYG{o}{\PYGZlt{}}\PYG{n}{N}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Num}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Copy}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{v1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{N}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{N}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{N}\PYG{p}{::}\PYG{n}{zero}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{total}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{v1}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{v2}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{total}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+就像在面向对象编程中正确的接口能令一切变得美好一样，在泛型编程中正确的特型也能令一切变得美好。
+
+不过，为什么要这么麻烦呢？为什么 Rust 的设计者不让泛型更像 C++ 模板中的“鸭子类型”那样在代码中隐含约束呢？
+
+Rust 的这种方式的一个优点是泛型代码的前向兼容性。你可以更改公共泛型函数或方法的实现，只要没有更改签名，对它的用户就没有任何影响。
+
+类型限界的另一个优点是，当遇到编译器错误时，至少编译器可以告诉你问题出在哪里。涉及模板的 C++ 编译器错误消息可能比 Rust 的错误消息要长得多，并且会指向许多不同的代码行，因为编译器无法判断谁应该为此问题负责：是模板，还是其调用者？而调用者也可能是模板，或者\textbf{调用者模板}的模板……
+
+也许明确写出限界的最重要的优点是限界就这么写在代码和文档中。你可以查看 Rust 中泛型函数的签名，并准确了解它能接受的参数类型。而使用模板则做不到这些。在像 Boost 这样的 C++ 库中完整记录参数类型的工作比我们在这里经历的还要艰巨得多。Boost 开发人员可没有能帮他们检查工作成果的编译器。
+
+\section{以特型为基础}
+
+特型成为 Rust 中最主要的组织特性之一是有充分理由的，因为良好的接口在设计程序或库时尤为重要。
+
+本章是关于语法、规则和解释的“狂风骤雨”。现在我们已经奠定了基础，可以开始讨论在 Rust 代码中使用特型和泛型的多种方式了。事实上，我们才刚刚开始入门。接下来的第 12 章和第 13 章将介绍标准库提供的公共特型。之后的各章将涵盖闭包、迭代器、输入 /输出和并发。特型和泛型在所有这些主题中都扮演着核心角色。
+

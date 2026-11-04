@@ -1,0 +1,823 @@
+% chapter13 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_112.html, part0000_split_113.html, part0000_split_114.html, part0000_split_115.html, part0000_split_116.html, part0000_split_117.html, part0000_split_118.html, part0000_split_119.html, part0000_split_120.html, part0000_split_121.html, part0000_split_122.html, part0000_split_123.html, part0000_split_124.html
+
+\begin{myEpigraph}{——Jacob Bronowski}
+科学无非就是在自然界的多样性中寻求统一性（或者更确切地说，是在我们经验的多样性中寻求统一性）。用 Coleridge 的话说，诗歌、绘画、艺术，同样是在多样性中寻求统一性。
+\end{myEpigraph}
+
+本章讲解了所谓的 Rust“实用工具”特型，这是标准库中各种特型的“百宝箱”，它们对 Rust 的编写方式有相当大的影响，所以，只有熟悉它们，你才能写出符合 Rust 语言惯例的代码并据此为你的 crate 设计公共接口，让用户认为这些接口是符合 Rust 风格的。Rust 实用工具特型可分为三大类。
+
+\begin{mySidenote}
+语言扩展特型
+\end{mySidenote}
+
+第 12 章中介绍的运算符重载特型能让你在自己的类型上使用 Rust 的表达式运算符，同样，还有其他几个标准库特型也是 Rust 的扩展点，允许你把自己的类型更紧密地集成进语言中。这类特型包括 \texttt{Drop}、\texttt{Deref} 和 \texttt{DerefMut}，以及转换特型 \texttt{From} 和 \texttt{Into}。我们将在本章中讲解它们。
+
+\begin{mySidenote}
+标记特型
+\end{mySidenote}
+
+这类特型多用作泛型类型变量的限界，以表达无法以其他方式捕获的约束条件。\texttt{Sized} 和 \texttt{Copy} 就属于这类特型。
+
+\begin{mySidenote}
+公共词汇特型
+\end{mySidenote}
+
+这类特型不涉及任何编译器魔术，你完全可以在自己的代码中定义其等效特型。之所以定义它们，是为了给常见问题制定一些约定俗成的解决方案。这对 crate 和模块之间的公共接口来说特别有价值：通过减少不必要的变体，让接口更容易理解，也增加了把来自不同 crate 的特性轻易插接在一起的可能性，而且无须样板代码或自定义胶水代码。
+
+这类特型包括 \texttt{Default}、引用借用特型 \texttt{AsRef}、\texttt{AsMut}、\texttt{Borrow} 与 \texttt{BorrowMut}、容错的转换特型 \texttt{TryFrom} 与 \texttt{TryInto}，以及 \texttt{ToOwned} 特型（对 \texttt{Clone} 的泛化）。
+
+表 13-1 对上述特型进行了汇总。
+
+\myCaption{表 13-1：实用工具特型汇总表}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.853\hsize\raggedright\arraybackslash}X>{\hsize=1.147\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{特型} & \textcolor{white}{描述} \\
+\texttt{Drop} & 析构器。每当丢弃一个值时，Rust 都要自动运行的清理代码 \\
+\texttt{Sized} & 具有在编译期已知的固定大小类型的标记特型，与之相对的是动态大小类型（如切片） \\
+\texttt{Clone} & 用来支持克隆值的类型 \\
+\texttt{Copy} & 可以简单地通过对包含值的内存进行逐字节复制以进行克隆的类型的标记特型 \\
+\texttt{Deref} 与 \texttt{DerefMut} & 智能指针类型的特型 \\
+\texttt{Default} & 具有合理“默认值”的类型 \\
+\texttt{AsRef} 与 \texttt{AsMut} & 用于从另一种类型中借入一种引用类型的转换特型 \\
+\texttt{Borrow} 与 \texttt{BorrowMut} & 转换特型，类似 \texttt{AsRef}/\texttt{AsMut}，但能额外保证一致的哈希、排序和相等性 \\
+\texttt{From} 与 \texttt{Into} & 用于将一种类型的值转换为另一种类型的转换特型 \\
+\texttt{TryFrom} 与 \texttt{TryInto} & 用于将一种类型的值转换为另一种类型的转换特型，用于可能失败的转换 \\
+\texttt{ToOwned} & 用于将引用转换为拥有型值的转换特型 \\
+\end{tabularx}
+\myTableEnd
+
+还有另一些重要的标准库特型。第 15 章会介绍 \texttt{Iterator} 和 \texttt{IntoIterator}。第 16 章会介绍用于计算哈希值的 \texttt{Hash} 特型。第 19 章会介绍两个用于标记线程安全类型的特型 \texttt{Send} 和 \texttt{Sync}。
+
+\section{\texttt{Drop}}
+
+当一个值的拥有者消失时，Rust 会\textbf{丢弃}（drop）该值。丢弃一个值就必须释放该值拥有的任何其他值、堆存储和系统资源。丢弃可能发生在多种情况下：当变量超出作用域时；在表达式语句的末尾；当截断一个向量时，会从其末尾移除元素；等等。
+
+在大多数情况下，Rust 会自动处理丢弃值的工作。假设你定义了以下类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Appellation}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{nicknames}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Appellation} 拥有用作字符串内容和向量元素缓冲区的堆存储。每当 \texttt{Appellation} 被丢弃时，Rust 都会负责清理所有这些内容，无须你进行任何进一步的编码。但只要你想，也可以通过实现 \texttt{std::ops::Drop} 特型来自定义 Rust 该如何丢弃此类型的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Drop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{drop}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Drop} 的实现类似于 C++ 中的析构函数或其他语言中的终结器。当一个值被丢弃时，如果它实现了 \texttt{std::ops::Drop}，那么 Rust 就会调用它的 \texttt{drop} 方法，然后像往常一样继续丢弃它的字段或元素拥有的任何值。这种对 \texttt{drop} 的隐式调用是调用该方法的唯一途径。如果你试图显式调用该方法，那么 Rust 会将其标记为错误。
+
+Rust 在丢弃某个值的字段或元素之前会先对值本身调用 \texttt{Drop::drop}，该方法收到的值仍然是已完全初始化的。因此，在 \texttt{Appellation} 类型的 \texttt{Drop} 实现中可以随意使用其字段：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{Drop}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Appellation}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{drop}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{print!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Dropping \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{name}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{o}{!}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{nicknames}\PYG{p}{.}\PYG{n}{is\PYGZus{}empty}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{print!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ (AKA \PYGZob{}\PYGZcb{})}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{nicknames}\PYG{p}{.}\PYG{n}{join}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{, }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+基于该实现，可以编写以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Appellation}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Zeus}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{nicknames}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{vec}\PYG{o}{!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{cloud collector}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                        }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{king of the gods}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{]}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{before assignment}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{a}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Appellation}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hera}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{nicknames}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{vec}\PYG{o}{!}\PYG{p}{[}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{at end of block}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当我们将第二个 \texttt{Appellation} 赋值给 \texttt{a} 时，就会丢弃第一个 \texttt{Appellation}，而当我们离开 \texttt{a} 的作用域时，就会丢弃第二个 \texttt{Appellation}。上述代码会打印出以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{before}\PYG{+w}{ }\PYG{n}{assignment}
+\PYG{n}{Dropping}\PYG{+w}{ }\PYG{n}{Zeus}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{AKA}\PYG{+w}{ }\PYG{n}{cloud}\PYG{+w}{ }\PYG{n}{collector}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{king}\PYG{+w}{ }\PYG{n}{of}\PYG{+w}{ }\PYG{n}{the}\PYG{+w}{ }\PYG{n}{gods}\PYG{p}{)}
+\PYG{n}{at}\PYG{+w}{ }\PYG{n}{end}\PYG{+w}{ }\PYG{n}{of}\PYG{+w}{ }\PYG{n}{block}
+\PYG{n}{Dropping}\PYG{+w}{ }\PYG{n}{Hera}
+\end{Verbatim}
+
+\texttt{Appellation} 的 \texttt{std::ops::Drop} 实现只打印了一条消息，那么它的内存究竟是如何清理的呢？\texttt{Vec} 类型实现了 \texttt{Drop}，它会丢弃自己的每一个元素，然后释放它们占用的分配在堆上的缓冲区。\texttt{String} 在内部使用 \texttt{Vec<u8>} 来保存它的文本，因此 \texttt{String} 不需要自己实现 \texttt{Drop}，它会让 \texttt{Vec} 负责释放这些字符。同样的原则也适用于 \texttt{Appellation} 值：当一个值被丢弃时，最终由 \texttt{Vec} 的 \texttt{Drop} 实现来负责真正释放每个字符串的内容，并释放保存这些向量元素的缓冲区。至于 \texttt{Appellation} 值本身占用的内存，它的拥有者（可能是某个局部变量或某些数据结构）会负责释放。
+
+如果一个变量的值移动到了别处，以致该变量在超出作用域时正处于未初始化状态，那么 Rust 将不会试图丢弃该变量，因为这里没有需要丢弃的值。
+
+虽然根据控制流才能判断变量的值是否会移动出去，但这一原则仍然成立。在这种情况下，Rust 会使用一个不可见的标志来跟踪此变量的状态，该标志会指出是否需要丢弃此变量的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{p}\PYG{p}{;}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{q}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Appellation}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Cardamine hirsuta}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                          }\PYG{n}{nicknames}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{vec}\PYG{o}{!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{shotweed}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                                          }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{bittercress}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{complicated\PYGZus{}condition}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{p}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{q}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Sproing! What was that?}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+根据 \texttt{complicated\_condition} 返回的是 \texttt{true} 还是 \texttt{false}，\texttt{p} 或 \texttt{q} 中的一个会最终拥有 \texttt{Appellation}，而另一个则会变成未初始化状态。这种差异决定了它是在 \texttt{println!} 之前还是之后丢弃（因为 \texttt{q} 在 \texttt{println!} 之前就离开了作用域，而 \texttt{p} 则在 \texttt{println!} 之后离开的作用域）。虽然一个值可能会从一个地方移动到另一个地方，但 Rust 只会丢弃它一次。
+
+除非正在定义某个拥有 Rust 不了解的资源类型，通常我们不需要自己实现 \texttt{std::ops::Drop}。例如，在 Unix 系统上，Rust 的标准库在内部使用了以下类型来表示操作系统的文件描述符：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{FileDesc}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{fd}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{c\PYGZus{}int}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{FileDesc} 的 \texttt{fd} 字段是当程序完成时应该关闭的文件描述符的编号，\texttt{c\_int} 是 \texttt{i32} 的别名。标准库为 \texttt{FileDesc} 实现的 \texttt{Drop} 如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{Drop}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{FileDesc}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{drop}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{unsafe}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{libc}\PYG{p}{::}\PYG{n}{close}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{fd}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里，\texttt{libc::close} 是 C 库中 \texttt{close} 函数的 Rust 名称。Rust 代码只能在 \texttt{unsafe} 块中调用 C 函数，因此在这里使用了一个 \texttt{unsafe} 块。
+
+如果一个类型实现了 \texttt{Drop}，就不能再实现 \texttt{Copy} 特型了。如果类型是 \texttt{Copy} 类型，就表示简单的逐字节复制足以生成该值的独立副本。但是，对同一份数据多次调用同一个 \texttt{drop} 方法显然是错误的。
+
+标准库预导入中包含一个丢弃值的函数 \texttt{drop}，但它的定义一点儿也不神奇：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{drop}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{\PYGZus{}x}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+换句话说，它会按值接受参数，从调用者那里获得所有权，然后什么也不做。当 \texttt{\_x} 超出作用域时，Rust 自然会丢弃它的值，这跟对任何其他变量的操作一样。
+
+\section{\texttt{Sized}}
+
+\textbf{固定大小类型}是指其每个值在内存中都有相同大小的类型。Rust 中的几乎所有类型都是固定大小的，比如每个 \texttt{u64} 占用 8 字节，每个 \texttt{(f32, f32, f32)} 元组占用 12 字节。甚至枚举也是有大小的，也就是说，无论实际存在的是哪个变体，枚举总会占据足够的空间来容纳其最大的变体。尽管 \texttt{Vec<T>} 拥有一个大小可变的堆分配缓冲区，但 \texttt{Vec} 值本身是指向“缓冲区、容量和长度”的指针，因此 \texttt{Vec<T>} 也是一个固定大小类型。
+
+所有固定大小类型都实现了 \texttt{std::marker::Sized} 特型，该特型没有方法或关联类型。Rust 自动为所有适用的类型实现了 \texttt{std::marker::Sized} 特型，你不能自己实现它。\texttt{Sized} 的唯一用途是作为类型变量的限界：像 \texttt{T: Sized} 这样的限界要求 \texttt{T} 必须是在编译期已知的类型。由于 Rust 语言本身会使用这种类型的特型为具有某些特征的类型打上标记，因此我们将其称为\textbf{标记特型}。
+
+然而，Rust 也有一些\textbf{无固定大小类型}，它们的值大小不尽相同。例如，字符串切片类型 \texttt{str}（注意没有 \texttt{\&}）就是无固定大小的。字符串字面量 \texttt{"diminutive"} 和 \texttt{"big"} 是对占用了 10 字节和 3 字节的 \texttt{str} 切片的引用，两者都展示在图 13-1 中。像 \texttt{[T]}（同样没有 \texttt{\&}）这样的数组切片类型也是无固定大小的，即像 \texttt{\&[u8]} 这样的共享引用可以指向任意大小的 \texttt{[u8]} 切片。因为 \texttt{str} 类型和 \texttt{[T]} 类型都表示不定大小的值集，所以它们是无固定大小类型。
+
+\myFigure{images/ch13/fig-13-1.jpeg}{图 13-1：对无固定大小的值的引用}
+
+Rust 中另一种常见的无固定大小类型是 \texttt{dyn} 类型，它是特型对象的引用目标。正如我们在 11.1.1 节中所解释的那样，特型对象是指向实现了给定特型的某个值的指针。例如，类型 \texttt{\&dyn std::io::Write} 和 \texttt{Box<dyn std::io::Write>} 是指向实现了 \texttt{Write} 特型的某个值的指针。引用目标可能是文件、网络套接字，或某种实现了 \texttt{Write} 的自定义类型。由于实现了 \texttt{Write} 的类型集是开放式的，因此 \texttt{dyn Write} 作为一个类型也是无固定大小的，也就是说它的值可以有各种大小。
+
+Rust 不能将无固定大小的值存储在变量中或将它们作为参数传递。你只能通过像 \texttt{\&str} 或 \texttt{Box<dyn Write>} 这样的本身是固定大小的指针来处理它们。如图 13-1 所示，指向无固定大小值的指针始终是一个\textbf{胖指针}，宽度为两个机器字：指向切片的指针带有切片的长度，特型对象带有指向方法实现的虚表的指针。
+
+特型对象和指向切片的指针在结构上很像。这两种类型都缺乏某种在使用它们时必要的信息。换句话说，你无法在不知道其长度的情况下对 \texttt{[u8]} 进行索引，也无法在不知道该对某个值使用 \texttt{Write} 的哪个具体实现的情况下调用 \texttt{Box<dyn Write>} 的方法。对于这两种类型，胖指针都会补齐类型中缺少的信息——它携带着长度或虚表指针。既然欠缺静态信息，那就用动态信息来弥补。
+
+由于无固定大小类型处处受限，因此大多数泛型类型变量应当被限制为固定大小的 \texttt{Sized} 类型。事实上，鉴于这种情况的普遍性，\texttt{Sized} 已经成为 Rust 中的隐式默认值：如果你写 \texttt{struct S<T> \{ ... \}}，那么 Rust 会将其理解为 \texttt{struct S<T: Sized> \{ ... \}}。如果你不想以这种方式约束 \texttt{T}，就必须将其明确地排除，写成 \texttt{struct S<T: ?Sized> \{ ... \}}。\texttt{?Sized} 语法专用于这种情况，意思是“不要求固定大小的”。如果你写 \texttt{struct S<T: ?Sized> \{ b: Box<T> \}}，那么 Rust 将允许写成 \texttt{S<str>} 和 \texttt{S<dyn Write>}，这样这两个 Box 就变成了胖指针，而不像 \texttt{S<i32>} 和 \texttt{S<String>} 的 Box 那样只是普通指针。
+
+尽管存在一些限制，但无固定大小类型能让 Rust 的类型系统工作得更顺畅。阅读标准库文档时，你偶尔会遇到类型变量上的 \texttt{?Sized} 限界，这几乎总是表明“给定的类型只能通过指针访问”，并能让其关联的代码与切片对象和特型对象以及普通值一起使用。当类型变量具有 \texttt{?Sized} 限界时，人们认为它的\textbf{大小不确定}，既可能是固定大小，也可能不是。
+
+除了切片对象和特型对象，还有另一种无固定大小类型。结构体类型的最后一个字段（而且只能是最后一个）可以是无固定大小的，并且这样的结构体本身也是无固定大小的。例如，\texttt{Rc<T>} 引用计数指针的内部实现是指向私有类型 \texttt{RcBox<T>} 的指针，后者把引用计数和 \texttt{T} 保存在一起。下面是 \texttt{RcBox} 的简化定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{RcBox}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{ref\PYGZus{}count}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{value}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Rc<T>} 是引用计数指针，其中的 \texttt{value} 字段是 \texttt{Rc<T>} 对其进行引用计数的 \texttt{T} 类型。\texttt{Rc<T>} 会解引用成指向 \texttt{value} 字段的指针。\texttt{ref\_count} 字段会保存其引用计数。
+
+真正的 \texttt{RcBox} 只是标准库的一个实现细节，无法在外部使用。但假设我们正在使用前面这种定义，那么就可以将此 \texttt{RcBox} 与固定大小类型一起使用，比如 \texttt{RcBox<String>} 的结果是一个固定大小的结构体类型。或者也可以将它与无固定大小类型一起使用，比如 \texttt{RcBox<dyn std::fmt::Display>}（其中 \texttt{Display} 是可以通过 \texttt{println!} 之类的宏进行格式化的类型的特型），结果 \texttt{RcBox<dyn Display>} 就成了无固定大小的结构体类型。
+
+不能直接构建 \texttt{RcBox<dyn Display>} 值，而应该先创建一个普通的固定大小的 \texttt{RcBox}，并让其 \texttt{value} 类型实现 \texttt{Display}，比如 \texttt{RcBox<String>}。然后 Rust 就会允许你将引用 \texttt{\&RcBox<String>} 转换为胖引用 \texttt{\&RcBox<dyn Display>}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{boxed\PYGZus{}lunch}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{RcBox}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{RcBox}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{ref\PYGZus{}count}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{value}\PYG{p}{:}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{lunch}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Display}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{boxed\PYGZus{}displayable}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{RcBox}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Display}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{boxed\PYGZus{}lunch}\PYG{p}{;}
+\end{Verbatim}
+
+在将值传给函数时会发生隐式转换，这样你就可以将 \texttt{\&RcBox<String>} 传给需要 \texttt{\&RcBox<dyn Display>} 的函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{display}\PYG{p}{(}\PYG{n}{boxed}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{RcBox}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Display}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{For your enjoyment: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{boxed}\PYG{p}{.}\PYG{n}{value}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{n}{display}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{boxed\PYGZus{}lunch}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这将生成以下输出。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{For}\PYG{+w}{ }\PYG{n}{your}\PYG{+w}{ }\PYG{n}{enjoyment}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{lunch}
+\end{Verbatim}
+
+\section{\texttt{Clone}}
+
+\texttt{std::clone::Clone} 特型适用于可复制自身的类型。\texttt{Clone} 定义如下：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Clone}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{clone}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{clone\PYGZus{}from}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{source}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{*}\PYG{n+nb+bp}{self}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{source}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{clone} 方法应该为 \texttt{self} 构造一个独立的副本并返回它。由于此方法的返回类型是 \texttt{Self}，并且函数本来也不可能返回无固定大小的值，因此 \texttt{Clone} 特型也是扩展自 \texttt{Sized} 特型的，进而导致其实现代码中的 \texttt{Self} 类型被限界成了 \texttt{Sized}。
+
+克隆一个值通常还需要为它拥有的任何值分配副本，因此 \texttt{clone} 无论在时间消耗还是内存占用方面都是相当昂贵的。例如，克隆 \texttt{Vec<String>} 不仅会复制此向量，还会复制它的每个 \texttt{String} 元素。这就是 Rust 不会自动克隆值，而是要求你进行显式方法调用的原因。像 \texttt{Rc<T>} 和 \texttt{Arc<T>} 这样的引用计数指针类型属于例外，即克隆其中任何一个都只会增加引用计数并为你返回一个新指针。
+
+\texttt{clone\_from} 方法会把 \texttt{self} 修改成 \texttt{source} 的副本。\texttt{clone\_from} 的默认定义只是克隆 \texttt{source}，然后将其转移给 \texttt{*self}。这固然可行，但对于某些类型，有一种更快的方法可以获得同样的效果。假设 \texttt{s} 和 \texttt{t} 都是 \texttt{String}。\texttt{s = t.clone();} 语句必然会克隆 \texttt{t}，丢弃 \texttt{s} 的旧值，然后将克隆后的值转移给 \texttt{s}，这会进行一次堆分配和一次堆释放。但是如果属于原始 \texttt{s} 的堆缓冲区有足够的容量来保存 \texttt{t} 的内容，则不需要分配或释放：可以简单地将 \texttt{t} 的文本复制到 \texttt{s} 的缓冲区并调整长度。在泛型代码中，应该优先使用 \texttt{clone\_from}，以便充分利用这种优化。
+
+如果你的 \texttt{Clone} 实现只需要简单地对类型中的每个字段或元素进行 \texttt{clone}，然后从这些克隆结果中构造一个新值，并且认为 \texttt{clone\_from} 的默认定义已经足够好了，那么 Rust 也可以帮你实现：只要在类型定义上方写 \texttt{\#[derive(Clone)]} 就可以了。
+
+标准库中几乎所有能合理复制的类型都实现了 \texttt{Clone}。不仅 \texttt{bool}、\texttt{i32} 等原始类型实现了 \texttt{Clone}，\texttt{String}、\texttt{Vec<T>} 和 \texttt{HashMap} 等容器类型也实现了 \texttt{Clone}。而那些无法合理复制的类型（如 \texttt{std::sync::Mutex}）则没有实现 \texttt{Clone}。像 \texttt{std::fs::File} 这样的类型虽然可以复制，但如果操作系统无法提供必要的资源，则复制可能会失败。这些类型也没有实现 \texttt{Clone}，因为 \texttt{clone} 必须是不会失败的。作为替代，\texttt{std::fs::File} 提供了一个 \texttt{try\_clone} 方法，该方法会返回一个 \texttt{std::io::Result<File>} 值，用以报告失败信息。
+
+\section{\texttt{Copy}}
+
+在第 4 章中，我们曾解释说，对于大多数类型，赋值时会移动值，而不是复制它们。移动值可以更简单地跟踪它们所拥有的资源。但在 4.3 节中，我们指出了例外情况：不拥有任何资源的简单类型可以是 \texttt{Copy} 类型，对这些简单类型赋值会创建源的副本，而不会移动值并使源回到未初始化状态。
+
+当时，我们没有充分解释 \texttt{Copy} 类型到底是什么，现在可以告诉你了：如果一个类型实现了 \texttt{std::marker::Copy} 标记特型，那么它就是 \texttt{Copy} 类型，其定义如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Copy}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Clone}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+对于你自己的类型，这当然很容易实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{Copy}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{MyType}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+但由于 \texttt{Copy} 是一种对语言有着特殊意义的标记特型，因此只有当类型需要一个浅层的逐字节复制时，Rust 才允许它实现 \texttt{Copy}。拥有任何其他资源（比如堆缓冲区或操作系统句柄）的类型都无法实现 \texttt{Copy}。
+
+任何实现了 \texttt{Drop} 特型的类型都不能是 \texttt{Copy} 类型。Rust 认为如果一个类型需要特殊的清理代码，那么就必然需要特殊的复制代码，因此不能是 \texttt{Copy} 类型。
+
+与 \texttt{Clone} 一样，可以使用 \texttt{\#[derive(Copy)]} 让 Rust 为你派生出 \texttt{Copy} 实现。你会经常看到同时使用 \texttt{\#[derive(Copy, Clone)]} 进行派生的代码。
+
+在允许一个类型成为 \texttt{Copy} 类型之前务必慎重考虑。尽管这样做能让该类型更易于使用，但也对其实现施加了严格的限制。如果复制的开销很高，那么就不适合进行隐式复制。4.3 节曾详细解释过这些因素。
+
+\section{\texttt{Deref} 与 \texttt{DerefMut}}
+
+通过实现 \texttt{std::ops::Deref} 特型和 \texttt{std::ops::DerefMut} 特型，可以指定像 \texttt{*} 和 \texttt{.} 这样的解引用运算符在你的类型上的行为。像 \texttt{Box<T>} 和 \texttt{Rc<T>} 这样的指针类型就实现了这些特型，因此它们可以像 Rust 的内置指针类型那样用。如果你有一个 \texttt{Box<Complex>} 型的值 \texttt{b}，那么 \texttt{*b} 引用的就是 \texttt{b} 指向的 \texttt{Complex}（复数）值，而 \texttt{b.re} 引用的是它的实部。如果上下文对引用目标进行了赋值或借用了可变引用，那么 Rust 就会使用 \texttt{DerefMut}（解可变引用）特型，否则，只要通过 \texttt{Deref} 进行只读访问就够了。
+
+这两个特型的定义如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Deref}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Target}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{deref}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Target}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{DerefMut}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Deref}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{deref\PYGZus{}mut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Target}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{deref} 方法会接受 \texttt{\&Self} 引用并返回 \texttt{\&Self::Target} 引用，而 \texttt{deref\_mut} 方法会接受 \texttt{\&mut Self} 引用并返回 \texttt{\&mut Self::Target} 引用。\texttt{Target} 应该是 \texttt{Self} 包含、拥有或引用的资源：对于 \texttt{Box<Complex>}，其 \texttt{Target} 类型是 \texttt{Complex}。请注意 \texttt{DerefMut} 扩展了 \texttt{Deref}：如果可以解引用并修改某些资源，那么当然也可以借入对它的共享引用。由于这些方法会返回与 \texttt{\&self} 生命周期相同的引用，因此只要返回的引用还存在，\texttt{self} 就会一直处于已借出状态。
+
+\texttt{Deref} 特型和 \texttt{DerefMut} 特型还扮演着另一个角色。由于 \texttt{deref} 会接受 \texttt{\&Self} 引用并返回 \texttt{\&Self::Target} 引用，因此 Rust 会利用这一点自动将前一种类型的引用转换为后一种类型的引用。换句话说，如果只要插入一个 \texttt{deref} 调用就能解决类型不匹配问题，那 Rust 就会插入它。实现 \texttt{DerefMut} 也可以为可变引用启用相应的转换。这些叫作\textbf{隐式解引用}：一种类型被“转换”成了另一种类型。
+
+尽管隐式解引用也可以通过显式的方式写出来，但隐式解引用使用起来更方便。
+
+\begin{itemize}
+\item 如果你有一个 \texttt{Rc<String>} 型的值 \texttt{r}，并想对其调用 \texttt{String::find}，就可以简单地写成 \texttt{r.find('?')}，而不用写成 \texttt{(*r).find('?')}：这种方法调用会隐式借入 \texttt{r}，并将 \texttt{\&Rc<String>} 转换为 \texttt{\&String}，因为 \texttt{Rc<T>} 实现了 \texttt{Deref<Target=T>}。
+\item 你可以对 \texttt{String} 值使用 \texttt{split\_at} 之类的方法，虽然 \texttt{split\_at} 是在 \texttt{str} 切片类型上定义的方法，但因为 \texttt{String} 实现了 \texttt{Deref<Target=str>}，所以可以这样写。\texttt{String} 不需要重新实现 \texttt{str} 的所有方法，因为可以将 \texttt{\&String} 隐式转换为 \texttt{\&str}。
+\item 如果你有一个字节向量 \texttt{v} 并且想将它传给需要字节切片 \texttt{\&[u8]} 的函数，就可以简单地将 \texttt{\&v} 作为参数传递，因为 \texttt{Vec<T>} 实现了 \texttt{Deref<Target=[T]>}。
+\end{itemize}
+
+在必要的情况下，Rust 会连续应用多个隐式解引用。例如，使用前面提到的隐式转换，你可以将 \texttt{split\_at} 直接应用于 \texttt{Rc<String>}，因为 \texttt{\&Rc<String>} 解引用成了 \texttt{\&String}，后者又解引用成了 \texttt{\&str}，而 \texttt{\&str} 具有 \texttt{split\_at} 方法。
+
+假设你有以下类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Selector}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 在这个`Selector`中可用的元素}
+\PYG{+w}{    }\PYG{n}{elements}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// `elements`中“当前”（current）元素的索引}
+\PYG{+w}{    }\PYG{l+s+sd}{/// `Selector`的行为类似于指向当前元素的指针}
+\PYG{+w}{    }\PYG{n}{current}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+要让 \texttt{Selector} 的行为与文档型注释中声明的一致，就必须为该类型实现 \texttt{Deref} 和 \texttt{DerefMut}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Deref}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{DerefMut}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Deref}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Selector}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Target}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{deref}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{T}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{elements}\PYG{p}{[}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{current}\PYG{p}{]}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{DerefMut}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Selector}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{deref\PYGZus{}mut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{T}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{elements}\PYG{p}{[}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{current}\PYG{p}{]}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+给定上述实现，可以像下面这样使用 \texttt{Selector}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Selector}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{elements}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{vec}\PYG{o}{!}\PYG{p}{[}\PYG{l+s+sc}{\PYGZsq{}x\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}y\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}z\PYGZsq{}}\PYG{p}{]}\PYG{p}{,}
+\PYG{+w}{                       }\PYG{n}{current}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{c+c1}{// 因为`Selector`实现了`Deref`，所以可以使用`*`运算符来引用它的当前元素}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{*}\PYG{n}{s}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}z\PYGZsq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 通过隐式解引用直接在`Selector`上使用`char`的方法断言\PYGZsq{}z\PYGZsq{}是字母}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{s}\PYG{p}{.}\PYG{n}{is\PYGZus{}alphabetic}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 通过对此`Selector`的引用目标赋值，把\PYGZsq{}z\PYGZsq{}改成了\PYGZsq{}w\PYGZsq{}}
+\PYG{o}{*}\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}w\PYGZsq{}}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{s}\PYG{p}{.}\PYG{n}{elements}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s+sc}{\PYGZsq{}x\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}y\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}w\PYGZsq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{Deref} 特型和 \texttt{DerefMut} 特型旨在实现诸如 \texttt{Box}、\texttt{Rc} 和 \texttt{Arc} 之类的智能指针类型，以及其拥有型版本会频繁通过引用来使用的类型（比如 \texttt{Vec<T>} 和 \texttt{String} 就是 \texttt{[T]} 和 \texttt{str} 的拥有型版本）。仅仅为了让 \texttt{Target} 类型的方法能自动通过类型指针使用（就像 C++ 中那样让基类的方法在子类上可见）就为类型实现 \texttt{Deref} 和 \texttt{DerefMut} 是不对的。那样做的话并不总能如预期般工作，并且在出错时可能会让人困惑。
+
+隐式解引用有一个容易引起混淆的地方需要注意：Rust 会用它们来解决类型冲突，但并不会将其用于满足类型变量的限界。例如，下面的代码能正常工作：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Selector}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{elements}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{vec}\PYG{o}{!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{good}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{bad}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ugly}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{n}{current}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{show\PYGZus{}it}\PYG{p}{(}\PYG{n}{thing}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{thing}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{n}{show\PYGZus{}it}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+在调用 \texttt{show\_it(\&s)} 时，Rust 发现了一个类型为 \texttt{\&Selector<\&str>} 的实参（argument）和一个类型为 \texttt{\&str} 的形参（parameter），据此找到了这个 \texttt{Deref<Target=str>} 实现，并根据需要将此调用重写成了 \texttt{show\_it(s.deref())}。\footnote{在需要做出区分的上下文中，本书选择将 argument 和 parameter 分别译为“实参”和“形参”。除此之外，在表示一般性概念或不会导致混淆的情况下，二者均译为“参数”。——编者注}
+
+但是，如果将 \texttt{show\_it} 改成泛型函数，Rust 突然就报错了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Display}\PYG{p}{;}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{show\PYGZus{}it\PYGZus{}generic}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Display}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{thing}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{thing}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{n}{show\PYGZus{}it\PYGZus{}generic}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+Rust 报错说：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{Selector}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{doesn}\PYG{o}{\PYGZsq{}}\PYG{n+na}{t}\PYG{+w}{ }\PYG{n}{implement}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Display}\PYG{err}{`}
+\PYG{+w}{   }\PYG{o}{|}
+\PYG{l+m+mi}{31}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{  }\PYG{n}{show\PYGZus{}it\PYGZus{}generic}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{                  }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{                  }\PYG{o}{|}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{                  }\PYG{err}{`}\PYG{n}{Selector}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{cannot}\PYG{+w}{ }\PYG{n}{be}\PYG{+w}{ }\PYG{n}{formatted}\PYG{+w}{ }\PYG{n}{with}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{                  }\PYG{n}{the}\PYG{+w}{ }\PYG{n}{default}\PYG{+w}{ }\PYG{n}{formatter}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{                  }\PYG{n}{help}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{consider}\PYG{+w}{ }\PYG{n}{adding}\PYG{+w}{ }\PYG{n}{dereference}\PYG{+w}{ }\PYG{n}{here}\PYG{p}{:}\PYG{+w}{ }\PYG{err}{`}\PYG{o}{\PYGZam{}}\PYG{o}{*}\PYG{n}{s}\PYG{err}{`}
+\PYG{+w}{   }\PYG{o}{|}
+\PYG{n}{note}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{required}\PYG{+w}{ }\PYG{n}{by}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{n}{bound}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{show\PYGZus{}it\PYGZus{}generic}\PYG{err}{`}
+\PYG{+w}{   }\PYG{o}{|}
+\PYG{l+m+mi}{30}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{  }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{show\PYGZus{}it\PYGZus{}generic}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Display}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{thing}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{thing}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{                        }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{+w}{ }\PYG{n}{required}\PYG{+w}{ }\PYG{n}{by}\PYG{+w}{ }\PYG{n}{this}\PYG{+w}{ }\PYG{n}{bound}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{                                }\PYG{k}{in}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{show\PYGZus{}it\PYGZus{}generic}\PYG{err}{`}
+\end{Verbatim}
+
+这可能会令人困惑：为什么仅仅把函数改成泛型形式就会引入错误呢？\texttt{Selector<\&str>} 本身确实没有实现 \texttt{Display}，但它解引用成了 \texttt{\&str}，而 \texttt{\&str} 实现了 \texttt{Display}。
+
+由于你要传入一个类型为 \texttt{\&Selector<\&str>} 的实参并且函数的形参类型为 \texttt{\&T}，因此类型变量 \texttt{T} 必然是 \texttt{Selector<\&str>}。然后，Rust 会检查这是否满足 \texttt{T: Display} 限界，但因为它不会通过隐式解引用来满足类型变量的限界，所以这个检查失败了。
+
+要解决此问题，可以使用 \texttt{as} 运算符进行显式转换：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{show\PYGZus{}it\PYGZus{}generic}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+或者，正如编译器建议的那样，可以使用 \texttt{\&*} 进行强制转换。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{show\PYGZus{}it\PYGZus{}generic}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{o}{*}\PYG{n}{s}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\section{\texttt{Default}}
+
+显然，某些类型具有合理的默认值：向量或字符串默认为空、数值默认为 0、\texttt{Option} 默认为 \texttt{None}，等等。这样的类型都可以实现 \texttt{std::default::Default} 特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{default}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{default} 方法只会返回一个 \texttt{Self} 类型的新值。为 \texttt{String} 实现 \texttt{Default} 的代码一目了然：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{default}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+Rust 的所有集合类型（\texttt{Vec}、\texttt{HashMap}、\texttt{BinaryHeap} 等）都实现了 \texttt{Default}，其 \texttt{default} 方法会返回一个空集合。当你需要构建一些值的集合但又想让调用者来决定具体构建何种集合时，这很有用。例如，\texttt{Iterator} 特型的 \texttt{partition} 方法会将迭代器生成的值分为两个集合，并使用闭包来决定每个值的去向：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashSet}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{squares}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{16}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{25}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{36}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{49}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{64}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{powers\PYGZus{}of\PYGZus{}two}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{impure}\PYG{p}{)}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{HashSet}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{HashSet}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{squares}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{partition}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{n}{n}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{n}\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{powers\PYGZus{}of\PYGZus{}two}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{impure}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+闭包 \texttt{|\&n| n \& (n-1) == 0} 会使用一些位操作来识别哪些数值是 2 的幂，并且 \texttt{partition} 会使用它来生成两个 \texttt{HashSet}。不过，\texttt{partition} 显然不是专属于 \texttt{HashSet} 的，你可以用它来生成想要的任何种类的集合，只要该集合类型能够实现 \texttt{Default} 以生成一个初始的空集合，并且实现 \texttt{Extend<T>} 以将 \texttt{T} 添加到集合中就可以。\texttt{String} 实现了 \texttt{Default} 和 \texttt{Extend<char>}，所以你可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{upper}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{)}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{)}
+\PYG{+w}{    }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Great Teacher Onizuka}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{partition}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{.}\PYG{n}{is\PYGZus{}uppercase}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{upper}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{GTO}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{lower}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{reat eacher nizuka}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{Default} 的另一个常见用途是为表示大量参数集合的结构体生成默认值，其中大部分参数通常不用更改。例如，\texttt{glium} crate 为强大而复杂的 OpenGL 图形库提供了 Rust 绑定。\texttt{glium:: DrawParameters} 结构体包括 24 个字段，每个字段控制着 OpenGL 应该如何渲染某些图形的不同细节。\texttt{glium draw} 函数需要一个 \texttt{DrawParameters} 结构体作为参数。由于 \texttt{DrawParameters} 已经实现了 \texttt{Default}，因此只需提及想要更改的那些字段即可创建一个可以传给 \texttt{draw} 的结构体：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{params}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{glium}\PYG{p}{::}\PYG{n}{DrawParameters}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{line\PYGZus{}width}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mf}{0.02}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{point\PYGZus{}size}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mf}{0.02}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{o}{..}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{p}{::}\PYG{n}{default}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{n}{target}\PYG{p}{.}\PYG{n}{draw}\PYG{p}{(}\PYG{o}{..}\PYG{p}{.}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{params}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这会调用 \texttt{Default::default()} 来创建一个 \texttt{DrawParameters} 值，该值会使用其所有字段的默认值进行初始化，然后使用结构体的 \texttt{..} 语法创建出一个更改了 \texttt{line\_width} 字段和 \texttt{point\_size} 字段的新值，最后就可以把它传给 \texttt{target.draw} 了。
+
+如果类型 \texttt{T} 实现了 \texttt{Default}，那么标准库就会自动为 \texttt{Rc<T>}、\texttt{Arc<T>}、\texttt{Box<T>}、\texttt{Cell<T>}、\texttt{RefCell<T>}、\texttt{Cow<T>}、\texttt{Mutex<T>} 和 \texttt{RwLock<T>} 实现 \texttt{Default}。例如，类型 \texttt{Rc<T>} 的默认值就是一个指向类型 \texttt{T} 的默认值的 \texttt{Rc}。
+
+如果一个元组类型的所有元素类型都实现了 \texttt{Default}，那么该元组类型也同样会实现 \texttt{Default}，这个元组的默认值包含每个元素的默认值。
+
+Rust 不会为结构体类型隐式实现 \texttt{Default}，但是如果结构体的所有字段都实现了 \texttt{Default}，则可以使用 \texttt{\#[derive(Default)]} 为此结构体自动实现 \texttt{Default}。
+
+\section{\texttt{AsRef} 与 \texttt{AsMut}}
+
+如果一个类型实现了 \texttt{AsRef<T>}，那么就意味着你可以高效地从中借入 \texttt{\&T}。\texttt{AsMut} 是 \texttt{AsRef} 针对可变引用的对应类型。它们的定义如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{AsRef}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{as\PYGZus{}ref}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{T}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{AsMut}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{as\PYGZus{}mut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+例如，\texttt{Vec<T>} 实现了 \texttt{AsRef<[T]>}，而 \texttt{String} 实现了 \texttt{AsRef<str>}。还可以把 \texttt{String} 的内容借入为字节数组，因此 \texttt{String} 也实现了 \texttt{AsRef<[u8]>}。
+
+\texttt{AsRef} 通常用于让函数更灵活地接受其参数类型。例如，\texttt{std::fs::File::open} 函数的声明如下：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{open}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{AsRef}\PYG{o}{\PYGZlt{}}\PYG{n}{Path}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{path}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{File}\PYG{o}{\PYGZgt{}}
+\end{Verbatim}
+
+\texttt{open} 真正想要的是 \texttt{\&Path}，即代表文件系统路径的类型。有了这个函数签名，\texttt{open} 就能接受可以从中借入 \texttt{\&Path} 的一切，也就是实现了 \texttt{AsRef<Path>} 的一切。这些类型包括 \texttt{String} 和 \texttt{str}、操作系统接口字符串类型 \texttt{OsString} 和 \texttt{OsStr}，当然还有 \texttt{PathBuf} 和 \texttt{Path}。有关完整列表，请参阅标准库的文档。这样你才能给 \texttt{open} 传入字符串字面量：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{dot\PYGZus{}emacs}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{File}\PYG{p}{::}\PYG{n}{open}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/home/jimb/.emacs}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+标准库的所有文件系统访问函数都会以这种方式接受路径参数。对调用者来说，其效果类似于 C++ 中的重载函数，只不过 Rust 采用的是另一种方式来确定可接受的参数类型。
+
+但这还不是全部。字符串字面量是 \texttt{\&str}，实现了 \texttt{AsRef<Path>} 的类型是 \texttt{str}，并没有 \texttt{\&}。正如我们在 13.5 节中解释的那样，Rust 不会试图通过隐式解引用来满足类型变量限界，因此就算它们在这里也无济于事。
+
+幸运的是，标准库包含了其通用实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{U}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{AsRef}\PYG{o}{\PYGZlt{}}\PYG{n}{U}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n}{T}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{AsRef}\PYG{o}{\PYGZlt{}}\PYG{n}{U}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{U}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{as\PYGZus{}ref}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{U}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{p}{(}\PYG{o}{*}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{p}{.}\PYG{n}{as\PYGZus{}ref}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+换句话说，对于任意类型 \texttt{T} 和 \texttt{U}，只要满足 \texttt{T: AsRef<U>}，就必然满足 \texttt{\&T: AsRef<U>}：只需追踪引用并像以前那样继续处理即可。特别是，如果满足 \texttt{str: AsRef<Path>}，那么也会满足 \texttt{\&str: AsRef<Path>}。从某种意义上说，这是一种在检查类型变量的 \texttt{AsRef} 限界时获得受限隐式解引用的方法。
+
+你可能会认为，如果一个类型实现了 \texttt{AsRef<T>}，那么它也应该实现 \texttt{AsMut<T>}。但是，这在某些情况下是不合适的。例如，我们已经提到 \texttt{String} 实现了 \texttt{AsRef<[u8]>}，这是合理的，因为每个 \texttt{String} 肯定都有一个可以作为二进制数据访问的字节缓冲区。但是，\texttt{String} 要进一步保证这些字节是表示 Unicode 文本的一段格式良好的 UTF-8 编码，如果 \texttt{String} 实现了 \texttt{AsMut<[u8]>}，那么就会允许调用者将 \texttt{String} 的字节更改为他们想要的任何内容，这样你就不能再相信 \texttt{String} 一定是格式良好的 UTF-8 了。只有修改给定的 \texttt{T} 肯定不会违反此类型的不变性约束时，实现 \texttt{AsMut<T>} 的类型才有意义。
+
+尽管 \texttt{AsRef} 和 \texttt{AsMut} 非常简单，但为引用转换提供标准的泛型特型可避免更专用的转换特型数量激增。只要能实现 \texttt{AsRef<Foo>}，就要尽量避免定义自己的 \texttt{AsFoo} 特型。
+
+\section{\texttt{Borrow} 与 \texttt{BorrowMut}}
+
+\texttt{std::borrow::Borrow} 特型类似于 \texttt{AsRef}：如果一个类型实现了 \texttt{Borrow<T>}，那么它的 \texttt{borrow} 方法就能高效地从自身借入一个 \texttt{\&T}。但是 \texttt{Borrow} 施加了更多限制：只有当 \texttt{\&T} 能通过与它借来的值相同的方式进行哈希和比较时，此类型才应实现 \texttt{Borrow<T>}。（Rust 并不强制执行此限制，它只是记述了此特型的意图。）这使得 \texttt{Borrow} 在处理哈希表和树中的键或者处理因为某些原因要进行哈希或比较的值时非常有用。
+
+这在区分对 \texttt{String} 的借用时很重要，比如 \texttt{String} 实现了 \texttt{AsRef<str>}、\texttt{AsRef<[u8]>} 和 \texttt{AsRef<Path>}，但这 3 种目标类型通常具有不一样的哈希值。只有 \texttt{\&str} 切片才能保证像其等效的 \texttt{String} 一样进行哈希，因此 \texttt{String} 只实现了 \texttt{Borrow<str>}。
+
+\texttt{Borrow} 的定义与 \texttt{AsRef} 的定义基本相同，只是名称变了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Borrow}\PYG{o}{\PYGZlt{}}\PYG{n}{Borrowed}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{borrow}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Borrowed}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Borrow} 旨在解决具有泛型哈希表和其他关联集合类型的特定情况。假设你有一个 \texttt{std::collections::HashMap<String, i32>}，用于将字符串映射到数值。这个表的键是 \texttt{String}，每个条目都有一个键。在这个表中查找某个条目的方法的签名应该是什么呢？下面是第一次尝试。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{K}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Hash}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{key}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{K}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这很合理：要查找条目，就必须为表提供适当类型的键。但在这里，\texttt{K} 是 \texttt{String}，这种签名会强制你将 \texttt{String} 按值传给对 \texttt{get} 的每次调用，这显然是一种浪费。你真正需要的只是此键的引用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{K}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Hash}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{key}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{K}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这稍微好一点儿了，但现在你必须将键作为 \texttt{\&String} 传递，所以如果想查找常量字符串，就必须像下面这样写。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{hashtable}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{twenty\PYGZhy{}two}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\end{Verbatim}
+
+这相当荒谬：它会在堆上分配一个 \texttt{String} 缓冲区并将文本复制进去，这样才能将其作为 \texttt{\&String} 借用出来，传给 \texttt{get}，然后将其丢弃。
+
+它应该只要求传入任何可以哈希并与我们的键类型进行比较的类型。例如，\texttt{\&str} 就完全够用了。所以下面是最后一次迭代，也正是你在标准库中所看到的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{K}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Hash}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get}\PYG{o}{\PYGZlt{}}\PYG{n}{Q}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{key}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Q}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{n}{V}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{        }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{K}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Borrow}\PYG{o}{\PYGZlt{}}\PYG{n}{Q}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{              }\PYG{n}{Q}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Hash}
+\PYG{+w}{    }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+换句话说，只要可以借入一个条目的键充当 \texttt{\&Q}，并且对生成的引用进行哈希和比较的方式与键本身一致，\texttt{\&Q} 显然就是可接受的键类型。由于 \texttt{String} 实现了 \texttt{Borrow<str>} 和 \texttt{Borrow<String>}，因此最终版本的 \texttt{get} 允许按需传入 \texttt{\&String} 型或 \texttt{\&str} 型的 \texttt{key}。
+
+\texttt{Vec<T>} 和 \texttt{[T; N]} 实现了 \texttt{Borrow<[T]>}。每个类似字符串的类型都能借入其相应的切片类型：\texttt{String} 实现了 \texttt{Borrow<str>}、\texttt{PathBuf} 实现了 \texttt{Borrow<Path>}，等等。标准库中所有关联集合类型都使用 \texttt{Borrow} 来决定哪些类型可以传给它们的查找函数。
+
+标准库中包含一个通用实现，因此每个类型 \texttt{T} 都可以从自身借用：\texttt{T: Borrow<T>}。这确保了在 \texttt{HashMap<K, V>} 中查找条目时 \texttt{\&K} 总是可接受的类型。
+
+为便于使用，每个 \texttt{\&mut T} 类型也都实现了 \texttt{Borrow<T>}，它会像往常一样返回一个共享引用 \texttt{\&T}。这样你就可以给集合的查找函数传入可变引用，而不必重新借入共享引用，以模拟 Rust 通常会从可变引用到共享引用进行的隐式转换。
+
+\texttt{BorrowMut} 特型则类似于针对可变引用的 \texttt{Borrow}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{BorrowMut}\PYG{o}{\PYGZlt{}}\PYG{n}{Borrowed}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Borrow}\PYG{o}{\PYGZlt{}}\PYG{n}{Borrowed}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{borrow\PYGZus{}mut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Borrowed}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+刚才讲过的对 \texttt{Borrow} 的要求同样适用于 \texttt{BorrowMut}。
+
+\section{\texttt{From} 与 \texttt{Into}}
+
+\texttt{std::convert::From} 特型和 \texttt{std::convert::Into} 特型表示类型转换，这种转换会接受一种类型的值并返回另一种类型的值。\texttt{AsRef} 特型和 \texttt{AsMut} 特型用于从一种类型借入另一种类型的引用，而 \texttt{From} 和 \texttt{Into} 会获取其参数的所有权，对其进行转换，然后将转换结果的所有权返回给调用者。
+
+\texttt{From} 和 \texttt{Into} 的定义是对称的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Into}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{into}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{From}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{from}\PYG{p}{(}\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+标准库自动实现了从每种类型到自身的简单转换：每种类型 \texttt{T} 都实现了 \texttt{From<T>} 和 \texttt{Into<T>}。
+
+虽然这两个特型看起来只是为做同一件事提供了两种方式，但其实它们有不同的用途。
+
+你通常可以使用 \texttt{Into} 来让你的函数在接受参数时更加灵活。如果你写如下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{net}\PYG{p}{::}\PYG{n}{Ipv4Addr}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{ping}\PYG{o}{\PYGZlt{}}\PYG{n}{A}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{address}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{A}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{bool}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{A}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Into}\PYG{o}{\PYGZlt{}}\PYG{n}{Ipv4Addr}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{ipv4\PYGZus{}address}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{address}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+那么 \texttt{ping} 不仅可以接受 \texttt{Ipv4Addr} 作为参数，还可以接受 \texttt{u32} 或 \texttt{[u8; 4]} 数组，因为这些类型都恰好实现了 \texttt{Into<Ipv4Addr>}。（有时将 IPv4 地址视为单个 32 位值或 4 字节数组会很有用。）因为 \texttt{ping} 对 \texttt{address} 的唯一了解就是它要实现 \texttt{Into<Ipv4Addr>}，所以在调用 \texttt{into} 时无须指定想要的是哪种类型。因为只会存在一种有效类型，所以类型推断会替你补全它。
+
+与 13.7 节中的 \texttt{AsRef} 一样，其效果很像 C++ 中的函数重载。使用之前的 \texttt{ping} 定义，可以进行以下任何调用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ping}\PYG{p}{(}\PYG{n}{Ipv4Addr}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+m+mi}{23}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{21}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{68}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{141}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 传入一个Ipv4Addr}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ping}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mi}{66}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{146}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{219}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{98}\PYG{p}{]}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{             }\PYG{c+c1}{// 传入一个[u8; 4]}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ping}\PYG{p}{(}\PYG{l+m+mh}{0xd076eb94\PYGZus{}}\PYG{k}{u32}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{                 }\PYG{c+c1}{// 传入一个u32}
+\end{Verbatim}
+
+而 \texttt{From} 特型扮演着另一种角色。\texttt{from} 方法会充当泛型构造函数，用于从另一个值生成本类型的实例。例如，虽然 \texttt{Ipv4Addr} 有两个名为 \texttt{from\_array} 和 \texttt{from\_u32} 的方法，但 \texttt{From} 只是简单地实现了 \texttt{From<[u8;4]>} 和 \texttt{From<u32>}，于是我们就能这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{addr1}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Ipv4Addr}\PYG{p}{::}\PYG{n}{from}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mi}{66}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{146}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{219}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{98}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{addr2}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Ipv4Addr}\PYG{p}{::}\PYG{n}{from}\PYG{p}{(}\PYG{l+m+mh}{0xd076eb94\PYGZus{}}\PYG{k}{u32}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+可以让类型推断找出适用于此的实现。
+
+给定适当的 \texttt{From} 实现，标准库会自动实现相应的 \texttt{Into} 特型。当你定义自己的类型时，如果它具有某些单参数构造函数，那么就应该将它们写成适当类型的 \texttt{From<T>} 的实现，这样你就会自动获得相应的 \texttt{Into} 实现。
+
+因为转换方法 \texttt{from} 和 \texttt{into} 会接手它们的参数的所有权，所以此转换可以复用原始值的资源来构造出转换后的值。假设你写如下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{text}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Beautiful Soup}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{bytes}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{text}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{String} 的 \texttt{Into<Vec<u8>>} 的实现只是获取 \texttt{String} 的堆缓冲区，并在不进行任何更改的情况下将其重新用作所返回向量的元素缓冲区。此转换既不需要分配内存，也不需要复制文本。这是通过移动进行高性能实现的另一个例子。
+
+这些转换还提供了一种很好的方式来将受限类型的值放宽为更灵活的值，而不会削弱受限类型提供的保证。例如，\texttt{String} 会保证其内容始终是有效的 UTF-8，它的可变方法会受到严格限制，以确保你所做的任何事情都不会引入错误的 UTF-8。但是这个例子有效地将 \texttt{String}“降级”为一个普通字节块，你可以用它做任何喜欢的事情：既可以压缩它，也可以将它与其他非 UTF-8 的二进制数据组合使用。因为 \texttt{into} 会按值接手其参数，所以转换后的 \texttt{text} 就成了未初始化状态，这意味着我们可以自由访问前一个 \texttt{String} 的缓冲区，而不会破坏任何现有 \texttt{String}。
+
+然而，\texttt{Into} 和 \texttt{From} 契约并不要求这种转换是低开销的。尽管对 \texttt{AsRef} 和 \texttt{AsMut} 的转换可以预期开销极低，但 \texttt{From} 和 \texttt{Into} 的转换可能会分配内存、复制或以其他方式处理值的内容。例如，\texttt{String} 实现了 \texttt{From<\&str>}，它会将字符串切片复制到 \texttt{String} 在堆上分配的新缓冲区中。\texttt{std::collections::BinaryHeap<T>} 实现了 \texttt{From<Vec<T>>}，它能根据算法的要求对元素进行比较和重新排序。
+
+通过在需要时自动将具体错误类型转换为一般错误类型，运算符 \texttt{?} 可以使用 \texttt{From} 和 \texttt{Into} 来帮助清理可能以多种方式失败的函数中的代码。
+
+假设一个系统需要读取二进制数据并将其中的某些部分从 UTF-8 文本中作为十进制数值转换出来。这意味着要使用 \texttt{std::str::from\_utf8} 和 \texttt{i32} 的 \texttt{FromStr} 实现，它们都可以返回不同类型的错误。假设讨论错误处理时使用的是第 7 章中定义的 \texttt{GenericError} 类型和 \texttt{GenericResult} 类型，那么运算符 \texttt{?} 将为我们进行这种转换：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{GenericError}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{error}\PYG{p}{::}\PYG{n}{Error}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Sync}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{GenericResult}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{GenericError}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{parse\PYGZus{}i32\PYGZus{}bytes}\PYG{p}{(}\PYG{n}{b}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{GenericResult}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{from\PYGZus{}utf8}\PYG{p}{(}\PYG{n}{b}\PYG{p}{)}\PYG{o}{?}\PYG{p}{.}\PYG{n}{parse}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+与大多数错误类型一样，\texttt{Utf8Error} 和 \texttt{ParseIntError} 也实现了 \texttt{Error} 特型，标准库为我们提供了 \texttt{From} 的通用实现，用于将任何实现了 \texttt{Error} 的类型转换为 \texttt{Box<dyn Error>} 类型，\texttt{?} 运算符会自动使用这种转换：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{E}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Error}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Sync}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{From}\PYG{o}{\PYGZlt{}}\PYG{n}{E}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{  }\PYG{k}{for}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Error}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Sync}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{from}\PYG{p}{(}\PYG{n}{err}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{E}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Error}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Sync}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Box}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这能把具有两个 \texttt{match} 语句的大函数变成单行函数。
+
+在 \texttt{From} 和 \texttt{Into} 被加入标准库之前，Rust 代码充满了专用的转换特型和构造方法，每一个都专用于一种类型。为了让你的类型更容易使用，\texttt{From} 和 \texttt{Into} 明确写出了可以遵循的约定，因为你的用户已经熟悉它们了。其他库以及语言自身也可以依赖这些特型，将其作为一种规范化、标准化的方式来对转换进行编码。
+
+\texttt{From} 和 \texttt{Into} 是不会失败的特型——它们的 API 要求这种转换不会失败。不过很遗憾，许多转换远比这复杂得多。例如，像 \texttt{i64} 这样的大整数可以存储比 \texttt{i32} 大得多的数值，如果没有一些额外的信息，那么将像 \texttt{2\_000\_000\_000\_000i64} 这样的数值转换成 \texttt{i32} 就没有多大意义。如果进行简单的按位转换，那么其中前 32 位就会被丢弃，通常不会产生我们预期的结果：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{huge}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{2\PYGZus{}000\PYGZus{}000\PYGZus{}000\PYGZus{}000}\PYG{k}{i64}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{smaller}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{huge}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{;}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{smaller}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// \PYGZhy{}1454759936}
+\end{Verbatim}
+
+有很多选项可以处理这种情况。根据上下文的不同，“回绕型”转换可能比较合适。另外，像数字信号处理和控制系统这样的应用程序通常会使用“饱和型”转换，它会把比可能的最大值还要大的数值限制为最大值。
+
+\section{\texttt{TryFrom} 与 \texttt{TryInto}}
+
+由于转换的行为方式不够清晰，因此 Rust 没有为 \texttt{i32} 实现 \texttt{From<i64>}，也没有实现任何其他可能丢失信息的数值类型之间的转换，而是为 \texttt{i32} 实现了 \texttt{TryFrom<i64>}。\texttt{TryFrom} 和 \texttt{TryInto} 是 \texttt{From} 和 \texttt{Into} 的容错版“表亲”，这种转换同样是双向的，实现了 \texttt{TryFrom} 也就意味着实现了 \texttt{TryInto}。
+
+\texttt{TryFrom} 和 \texttt{TryInto} 的定义比 \texttt{From} 和 \texttt{Into} 稍微复杂一点儿。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{TryFrom}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Error}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{try\PYGZus{}from}\PYG{p}{(}\PYG{n}{value}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{TryInto}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Error}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{try\PYGZus{}into}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{try\_into()} 方法给了我们一个 \texttt{Result}，因此我们可以选择在异常情况下该怎么做，比如处理一个因为太大而无法放入结果类型的数值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 溢出时饱和，而非回绕}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{smaller}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{huge}\PYG{p}{.}\PYG{n}{try\PYGZus{}into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap\PYGZus{}or}\PYG{p}{(}\PYG{k+kt}{i32}\PYG{p}{::}\PYG{n}{MAX}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如果还想处理负数的情况，那么可以使用 \texttt{Result} 的 \texttt{unwrap\_or\_else()} 方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{smaller}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{huge}\PYG{p}{.}\PYG{n}{try\PYGZus{}into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap\PYGZus{}or\PYGZus{}else}\PYG{p}{(}\PYG{o}{|}\PYG{n}{\PYGZus{}}\PYG{o}{|}\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{huge}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kt}{i32}\PYG{p}{::}\PYG{n}{MAX}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kt}{i32}\PYG{p}{::}\PYG{n}{MIN}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+为你自己的类型实现容错的转换也很容易。\texttt{Error} 类型既可以很简单，也可以很复杂，具体取决于特定应用程序的要求。标准库使用的是一个空结构体，除了发生过错误这一事实之外没有提供任何信息，因为唯一可能的错误就是溢出。另外，更复杂类型之间的转换可能需要返回更多信息：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{TryInto}\PYG{o}{\PYGZlt{}}\PYG{n}{LinearShift}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Transform}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Error}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{TransformError}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{try\PYGZus{}into}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{LinearShift}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{o}{!}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{normalized}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{TransformError}\PYG{p}{::}\PYG{n}{NotNormalized}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{From} 和 \texttt{Into} 可以将类型与简单转换关联起来，而 \texttt{TryFrom} 和 \texttt{TryInto} 通过 \texttt{Result} 提供的富有表现力的错误处理扩展了 \texttt{From} 和 \texttt{Into} 的简单转换。这 4 个特型可以一起使用，在同一个 crate 中关联多个类型。
+
+\section{\texttt{ToOwned}}
+
+给定一个引用，如果此类型实现了 \texttt{std::clone::Clone}，则生成其引用目标的拥有型副本的常用方法是调用 \texttt{clone}。但是当你想克隆一个 \texttt{\&str} 或 \texttt{\&[i32]} 时该怎么办呢？你想要的可能是 \texttt{String} 或 \texttt{Vec<i32>}，但 \texttt{Clone} 的定义不允许这样做：根据定义，克隆 \texttt{\&T} 必须始终返回 \texttt{T} 类型的值，并且 \texttt{str} 和 \texttt{[u8]} 是无固定大小类型，它们甚至都不是函数所能返回的类型。
+
+\texttt{std::borrow::ToOwned} 特型提供了一种稍微宽松的方式来将引用转换为拥有型的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{ToOwned}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Owned}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Borrow}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{to\PYGZus{}owned}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Owned}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+与必须精确返回 \texttt{Self} 类型的 \texttt{clone} 不同，\texttt{to\_owned} 可以返回任何能让你从中借入 \texttt{\&Self} 的类型：\texttt{Owned} 类型必须实现 \texttt{Borrow<Self>}。你可以从 \texttt{Vec<T>} 借入 \texttt{\&[T]}，所以只要 \texttt{T} 实现了 \texttt{Clone}，\texttt{[T]} 就能实现 \texttt{ToOwned<Owned=Vec<T>>}，这样就可以将切片的元素复制到向量中了。同样，\texttt{str} 实现了 \texttt{ToOwned<Owned=String>}，\texttt{Path} 实现了 \texttt{ToOwned<Owned=PathBuf>}，等等。
+
+\section{\texttt{Borrow} 与 \texttt{ToOwned} 的实际运用：谦卑  的 \texttt{Cow}}
+
+\footnote{指不会主动占有资源，直到确有必要。——译者注}要想用好 Rust，就必然涉及对所有权问题的透彻思考，比如函数应该通过引用还是值接受参数。通常你可以任选一种方式，让参数的类型反映你的决定。但在某些情况下，在程序开始运行之前你无法决定是该借用还是该拥有，\texttt{std::borrow::Cow} 类型（用于“写入时克隆”，clone on write 的缩写）提供了一种兼顾两者的方式。
+
+\texttt{std::borrow::Cow} 的定义如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Cow}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{B}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{B}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{ToOwned}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Borrowed}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n}{B}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Owned}\PYG{p}{(}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n+nb}{ToOwned}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{Owned}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Cow<B>} 要么借入对 \texttt{B} 的共享引用，要么拥有可供借入此类引用的值。由于 \texttt{Cow} 实现了 \texttt{Deref}，因此你可以像对 \texttt{B} 的共享引用一样调用它的方法：如果它是 \texttt{Owned}，就会借入对拥有值的共享引用；如果它是 \texttt{Borrowed}，就会转让自己持有的引用。
+
+还可以通过调用 \texttt{Cow} 的 \texttt{to\_mut} 方法来获取对 \texttt{Cow} 值的可变引用，这个方法会返回 \texttt{\&mut B}。如果 \texttt{Cow} 恰好是 \texttt{Cow::Borrowed}，那么 \texttt{to\_mut} 只需调用引用的 \texttt{to\_owned} 方法来获取其引用目标的副本，将 \texttt{Cow} 更改为 \texttt{Cow::Owned}，并借入对新创建的这个拥有型值的可变引用即可。这就是此类型名称所指的“写入时克隆”行为。
+
+类似地，\texttt{Cow} 还有一个 \texttt{into\_owned} 方法，该方法会在必要时提升对所拥有值的引用并返回此引用，这会将所有权转移给调用者并在此过程中消耗掉 \texttt{Cow}。
+
+\texttt{Cow} 的一个常见用途是返回静态分配的字符串常量或由计算得来的字符串。假设你需要将错误枚举转换为错误消息。大多数变体可以用固定字符串来处理，但有些也需要在消息中包含附加数据。你可以返回一个 \texttt{Cow<'static, str>}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{path}\PYG{p}{::}\PYG{n}{PathBuf}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{borrow}\PYG{p}{::}\PYG{n}{Cow}\PYG{p}{;}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{describe}\PYG{p}{(}\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Error}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Cow}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{error}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Error}\PYG{p}{::}\PYG{n}{OutOfMemory}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{out of memory}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Error}\PYG{p}{::}\PYG{n}{StackOverflow}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{stack overflow}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Error}\PYG{p}{::}\PYG{n}{MachineOnFire}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{machine on fire}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Error}\PYG{p}{::}\PYG{n}{Unfathomable}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{machine bewildered}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Error}\PYG{p}{::}\PYG{n}{FileNotFound}\PYG{p}{(}\PYG{k}{ref}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{file not found: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{.}\PYG{n}{display}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+上述代码使用了 \texttt{Cow} 的 \texttt{Into} 实现来构造出值。此 \texttt{match} 语句的大多数分支会返回 \texttt{Cow::Borrowed} 来引用静态分配的字符串。但是当我们得到一个 \texttt{FileNotFound} 变体时，会使用 \texttt{format!} 来构建包含给定文件名的消息。\texttt{match} 语句的这个分支会生成一个 \texttt{Cow::Owned} 值。
+
+如果 \texttt{describe} 的调用者不打算更改值，就可以直接把此 \texttt{Cow} 看作 \texttt{\&str}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Disaster has struck: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{describe}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{error}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如果调用者确实需要一个拥有型的值，那么也能很容易地生成一个：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{log}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\PYG{n}{log}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{describe}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{error}\PYG{p}{)}\PYG{p}{.}\PYG{n}{into\PYGZus{}owned}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+使用 \texttt{Cow}，\texttt{describe} 及其调用者可以把分配的时机推迟到确有必要的时候。
+

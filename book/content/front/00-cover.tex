@@ -1,0 +1,10 @@
+% book/content/front/00-cover.tex —— 封面（整页出血；换封面只替换 images/cover.jpg）
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture, overlay]
+  \begin{scope}
+    \clip (current page.south west) rectangle (current page.north east);
+    \node[anchor=center, inner sep=0pt] at (current page.center)
+      {\includegraphics[width=\paperwidth]{images/cover.jpg}};
+  \end{scope}
+\end{tikzpicture}%
+\clearpage

@@ -1,0 +1,1631 @@
+% chapter16 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_138.html, part0000_split_139.html, part0000_split_140.html, part0000_split_141.html, part0000_split_142.html, part0000_split_143.html, part0000_split_144.html, part0000_split_145.html, part0000_split_146.html, part0000_split_147.html
+
+\begin{myEpigraph}{——James Gleick，《信息简史》\footnote{此书已由人民邮电出版社出版，详见 \href{http://ituring.cn/book/731}{http://ituring.cn/\allowbreak{}book/\allowbreak{}731}。——编者注}}
+我们都像物理学假想中的麦克斯韦妖一样活动。正是在日常经验中，我们可以发现一向冷静的物理学家在两个世纪里对这个卡通形象一直难以忘怀的原因。生物体（organism），顾名思义，时刻在组织（organize）。我们分拣邮件、堆造沙堡、拼凑拼图、复盘棋局、收集邮票、给麦穗脱粒、按字母表顺序排列图书、创造对称形式、创作十四行诗和奏鸣曲，以及整理自己的房间。所有这些活动并不需要巨大的能量，只需保障我们能够发挥智能便可。
+\end{myEpigraph}
+
+Rust 标准库包含多个\textbf{集合}，这些集合是泛型类型，用于在内存中存储各种数据。在本书中，我们已经用到了一些集合，比如 \texttt{Vec} 和 \texttt{HashMap}。本章将详细介绍这两种类型的方法，以及另外 6 个标准集合。在开始之前，我们先来辨析一下 Rust 的集合与其他语言的集合之间的一些系统性差异。
+
+首先，移动和借用无处不在。Rust 使用移动来避免对值做深拷贝。这就是 \texttt{Vec<T>::push(item)} 方法会按值而非按引用来获取参数的原因。这样值就会移动到向量中。第 4 章中的示意图展示了这在实践中是如何实现的：将 Rust \texttt{String} 压入 \texttt{Vec<String>} 中会很快，因为 Rust 不必复制字符串的字符数据，并且字符串的所有权始终是明晰的。
+
+其次，Rust 没有失效型错误，也就是当程序仍持有指向集合内部数据的指针时，集合被重新调整大小或发生其他变化而导致的那种悬空指针错误。失效型错误是 C++ 中未定义行为的另一个来源，即使在内存安全的语言中，它们也会偶尔导致 \texttt{ConcurrentModificationException}\footnote{这是 Java 中的异常类。——译者注}。Rust 的借用检查器在编译期就可以排除这些错误。
+
+最后，Rust 没有 \texttt{null}，因此在其他语言使用 \texttt{null} 的地方 Rust 会使用 \texttt{Option}。
+
+除了这些差异，Rust 的集合与你预期的差不多。如果你是一位经验丰富的程序员，而且时间有限，那么可以快速浏览本章，但不要错过 16.5.1 节。
+
+\section{概述}
+
+表 16-1 展示了 Rust 的 8 个标准集合，它们都是泛型类型。
+
+\myCaption{表 16-1：标准集合汇总表}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=1.324\hsize\raggedright\arraybackslash}X>{\hsize=0.777\hsize\raggedright\arraybackslash}X>{\hsize=0.966\hsize\raggedright\arraybackslash}X>{\hsize=0.924\hsize\raggedright\arraybackslash}X>{\hsize=1.008\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\multirow{2}{81.3bp}{\textcolor{white}{集合}} & \multirow{2}{42.0bp}{\textcolor{white}{描述}} & \multicolumn{3}{>{\raggedright\arraybackslash}X}{\textcolor{white}{其他语言中类似的集合类型}} \\
+ &  & C++ & Java & Python \\
+\texttt{Vec<T>} & 可增长数组 & \texttt{vector} & \texttt{ArrayList} & \texttt{list} \\
+\texttt{VecDeque<T>} & 双端队列（可增长的环形缓冲区） & \texttt{deque} & \texttt{ArrayDeque} & \texttt{collections.deque} \\
+\texttt{LinkedList<T>} & 双向链表 & \texttt{list} & \texttt{LinkedList} & — \\
+\texttt{BinaryHeap<T> where T: Ord} & 最大堆 & \texttt{priority\_queue} & \texttt{PriorityQueue} & \texttt{heapq} \\
+\texttt{HashMap<K, V> where K: Eq + Hash} & 键值哈希表 & \texttt{unordered\_map} & \texttt{HashMap} & \texttt{dict} \\
+\texttt{BTreeMap<K, V> where K: Ord} & 有序键值表 & \texttt{map} & \texttt{TreeMap} & — \\
+\texttt{HashSet<T> where T: Eq + Hash} & 无序的、基于哈希的集 & \texttt{unordered\_set} & \texttt{HashSet} & \texttt{set} \\
+\texttt{BTreeSet<T> where T: Ord} & 有序集 & \texttt{set} & \texttt{TreeSet} & — \\
+\end{tabularx}
+\myTableEnd
+
+\texttt{Vec<T>}、\texttt{HashMap<K, V>} 和 \texttt{HashSet<T>} 是最常用的集合类型，其余的都各自有其基本应用场景。本章会依次讨论每种集合类型。
+
+\begin{mySidenote}
+\texttt{Vec<T>}（普通向量）
+\end{mySidenote}
+
+可增长的、分配在堆上的 \texttt{T} 类型值数组。本章会用大约一半的篇幅专门介绍 \texttt{Vec} 及其众多实用方法。
+
+\begin{mySidenote}
+\texttt{VecDeque<T>}（双端队列向量）
+\end{mySidenote}
+
+与 \texttt{Vec<T>} 类似，但更适合用作先入先出队列。它支持在列表的前面和后面高效地添加值和移除值，但代价是会让所有其他的操作都稍微变慢一些。
+
+\begin{mySidenote}
+\texttt{BinaryHeap<T>}（二叉堆）
+\end{mySidenote}
+
+优先级队列。\texttt{BinaryHeap} 中的值是精心组织过的，因此始终可以高效地查找和移除其最大值。
+
+\begin{mySidenote}
+\texttt{HashMap<K, V>}（哈希 \texttt{Map}）
+\end{mySidenote}
+
+由键-值对构成的表。通过键查找值很快。其条目会以任意顺序存储。
+
+\begin{mySidenote}
+\texttt{BTreeMap<K, V>}（\texttt{B} 树 \texttt{Map}）
+\end{mySidenote}
+
+与 \texttt{HashMap<K, V>} 类似，但它会根据键来对条目进行排序。\texttt{BTreeMap<String, i32>} 会以 \texttt{String} 的比较顺序来存储其条目。除非需要让条目保持排序状态，否则用 \texttt{HashMap} 更快一些。
+
+\begin{mySidenote}
+\texttt{HashSet<T>}（哈希 \texttt{Set}）
+\end{mySidenote}
+
+由 \texttt{T} 类型的值组成的 \texttt{Set}。它既能很快地添加值和移除值，也能很快地查询给定值是否在此 \texttt{Set} 中。
+
+\begin{mySidenote}
+\texttt{BTreeSet<T>}（\texttt{B} 树 \texttt{Set}）
+\end{mySidenote}
+
+与 \texttt{HashSet<T>} 类似，但它会让元素按值排序。同样，除非需要让数据保持排序状态，否则用 \texttt{HashSet} 更快一些。
+
+因为 \texttt{LinkedList} 很少使用（对于大多数用例，在性能和接口方面有更好的替代方案），所以这里就不展开讲解了。
+
+\section{\texttt{Vec<T>}}
+
+因为本书中一直在使用 \texttt{Vec}，所以我们假设你对它已经比较熟悉了。有关介绍，请参阅 3.6.2 节。下面我们将详细讲解 \texttt{Vec} 的方法及内部工作原理。
+
+创建向量的最简单方法是使用 \texttt{vec!} 宏：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 创建一个空向量}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{numbers}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{c+c1}{// 使用给定内容创建一个向量}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{words}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{step}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{on}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{no}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{pets}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buffer}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{k}{u8}\PYG{p}{;}\PYG{+w}{ }\PYG{l+m+mi}{1024}\PYG{p}{]}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 1024个内容为0的字节}
+\end{Verbatim}
+
+如第 4 章所述，向量具有 3 个字段：长度、容量和指向用于存储元素的堆分配内存的指针。图 16-1 展示了前面的向量在内存中的布局方式。空向量 \texttt{numbers} 最初的容量为 0。直到添加第一个元素之前，不会为其分配堆内存。
+
+\myFigure{images/ch16/fig-16-1.jpeg}{图 16-1：向量的内存布局：\texttt{words} 的每个元素都是一个由指针和长度组成的 \texttt{\&str} 值}
+
+与所有集合一样，\texttt{Vec} 也实现了 \texttt{std::iter::FromIterator}，所以可以使用迭代器的 \texttt{.collect()} 方法从任意迭代器创建向量，详情请参阅 15.4.13 节。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 把另一个集合转换成向量}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{my\PYGZus{}vec}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{my\PYGZus{}set}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{访问元素}
+
+通过索引来获取数组、切片或向量的元素非常简单：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 获取某个元素的引用}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{first\PYGZus{}line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{lines}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{c+c1}{// 获取某个元素的副本}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{fifth\PYGZus{}number}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{numbers}\PYG{p}{[}\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{;}\PYG{+w}{       }\PYG{c+c1}{// 要求实现了Copy特型}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{second\PYGZus{}line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{lines}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 要求实现了Clone特型}
+
+\PYG{c+c1}{// 获取切片的引用}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{my\PYGZus{}ref}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{buffer}\PYG{p}{[}\PYG{l+m+mi}{4}\PYG{o}{..}\PYG{l+m+mi}{12}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{c+c1}{// 获取切片的副本}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{my\PYGZus{}copy}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{buffer}\PYG{p}{[}\PYG{l+m+mi}{4}\PYG{o}{..}\PYG{l+m+mi}{12}\PYG{p}{]}\PYG{p}{.}\PYG{n}{to\PYGZus{}vec}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 要求实现了Clone特型}
+\end{Verbatim}
+
+如果索引超出了范围，则所有这些形式都会引发 panic。
+
+Rust 对数值类型很挑剔，对向量也不例外。向量的长度和索引都是 \texttt{usize} 类型。试图用 \texttt{u32}、\texttt{u64} 或 \texttt{isize} 作为向量索引会导致出错。可以根据需要使用 \texttt{n as usize} 来转换，详情请参阅 6.14 节。
+
+下面这些方法可以轻松访问向量或切片的特定元素（请注意，所有的切片方法也都适用于数组和向量）。
+
+\begin{mySidenote}
+\texttt{slice.first()}（第一个）
+\end{mySidenote}
+
+返回对 \texttt{slice} 的第一个元素的引用（如果有的话）。
+
+返回类型为 \texttt{Option<\&T>}，所以如果 \texttt{slice} 为空则返回值为 \texttt{None}，如果不为空则返回 \texttt{Some(\&slice[0])}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{item}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{.}\PYG{n}{first}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{We got one! \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{item}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{slice.last()}（最后一个）
+\end{mySidenote}
+
+与 \texttt{first} 类似，但会返回对最后一个元素的引用。
+
+\begin{mySidenote}
+\texttt{slice.get(index)}（获取）
+\end{mySidenote}
+
+如果其存在，就返回 \texttt{slice[index]} 引用的 \texttt{Some} 值。如果 \texttt{slice} 的元素少于 \texttt{index+1} 个，则返回 \texttt{None}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{slice}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{slice}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{2}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{slice}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.first\_mut()}（第一个可变）、\texttt{slice.last\_mut()}（最后一个可变）和 \texttt{slice.get\_mut(index)}（获取可变）
+\end{myNote}
+
+这些方法是前述 \texttt{slice.first()} 等方法的变体，但借入的是可变引用。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{slice}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{;}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{last}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{slice}\PYG{p}{.}\PYG{n}{last\PYGZus{}mut}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{   }\PYG{c+c1}{// last的类型是\PYGZam{}mut i32}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{*}\PYG{n}{last}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{*}\PYG{n}{last}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{100}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{slice}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{100}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+因为按值返回 \texttt{T} 就意味着移动它，所以一些需要就地访问元素的方法通常会按引用返回这些元素。
+
+\texttt{.to\_vec()} 方法是一个例外，它会复制这些元素。
+
+\begin{mySidenote}
+\texttt{slice.to\_vec()}（转向量）
+\end{mySidenote}
+
+克隆整个切片，返回一个新向量：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{p}{]}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{.}\PYG{n}{to\PYGZus{}vec}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{l+m+mi}{6}\PYG{p}{]}\PYG{p}{.}\PYG{n}{to\PYGZus{}vec}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+此方法只能用在元素可以克隆的情况下，也就是需满足 \texttt{where T: Clone} 限界。
+
+\subsection{迭代}
+
+向量、数组和切片是可迭代的，要么按值迭代\footnote{作者在这里只是泛泛而言，其实除非元素是 \texttt{Copy} 类型，否则切片并不能按值迭代（情形 1）。——译者注}，要么按引用迭代，但都要遵循 15.2.2 节描述的模式。
+
+\begin{itemize}
+\item 遍历 \texttt{Vec<T>} 或数组 \texttt{[T; N]} 会生成 \texttt{T} 类型的条目。这些元素会逐个从向量或数组中移动出来并被消耗掉。
+\item 遍历 \texttt{\&[T; N]}、\texttt{\&[T]} 或 \texttt{\&Vec<T>} 类型的值（对数组、切片或向量的引用）会生成 \texttt{\&T} 类型的条目，即对单个元素的引用，这些元素不会移动出来。
+\item 遍历 \texttt{\&mut [T; N]}、\texttt{\&mut [T]} 或 \texttt{\&mut Vec<T>} 类型的值会生成 \texttt{\&mut T} 类型的条目。
+\end{itemize}
+
+数组、切片和向量也有 \texttt{.iter()} 方法和 \texttt{.iter\_mut()} 方法（参见 15.2.1 节），以用于创建一个会生成对其元素的引用的迭代器。
+
+稍后本章将在 16.2.5 节中介绍一些更高级的方法来迭代切片。
+
+\subsection{扩大向量与收缩向量}
+
+数组、切片或向量的\textbf{长度}是它们所包含的元素数量。
+
+\begin{mySidenote}
+\texttt{slice.len()}（长度）
+\end{mySidenote}
+
+返回 \texttt{slice} 的长度，类型为 \texttt{usize}。
+
+\begin{mySidenote}
+\texttt{slice.is\_empty()}（为空？）
+\end{mySidenote}
+
+如果 \texttt{slice} 未包含任何元素（\texttt{slice.len() == 0}）则为真。
+
+本节中的其余方法是关于扩大向量和收缩向量的。但数组和切片中没有这些方法，因为数组和切片一旦创建就无法调整大小。
+
+向量的所有元素都存储在连续的、分配在堆上的内存块中。向量的\textbf{容量}就是该内存块可以容纳的最大元素数量。\texttt{Vec} 通常会替你管理容量，当需要更多空间时它会自动分配更大的缓冲区并将元素移入其中。下面是一些显式管理容量的方法。
+
+\begin{mySidenote}
+\texttt{Vec::with\_capacity(n)}（自带容量）
+\end{mySidenote}
+
+创建一个容量为 \texttt{n} 的新的空向量。
+
+\begin{mySidenote}
+\texttt{vec.capacity()}（取容量）
+\end{mySidenote}
+
+返回 \texttt{vec} 的容量，类型为 \texttt{usize}。\texttt{vec.capacity() >= vec.len()} 始终是成立的。
+
+\begin{mySidenote}
+\texttt{vec.reserve(n)}（预留）
+\end{mySidenote}
+
+确保向量至少有足够的备用容量来容纳另外 \texttt{n} 个元素，也就是说，\texttt{vec.capacity()} 至少等于 \texttt{vec.len() + n}。如果已经有足够的空间，就什么也不做。如果没有，则会分配一个更大的缓冲区并将向量的内容移入其中。
+
+\begin{mySidenote}
+\texttt{vec.reserve\_exact(n)}（精确预留）
+\end{mySidenote}
+
+与 \texttt{vec.reserve(n)} 类似，但要求 \texttt{vec} 不要为未来的增长分配任何多于 \texttt{n} 的额外容量。调用此方法后，\texttt{vec.capacity()} 应该精确等于 \texttt{vec.len() + n}。
+
+\begin{myNote}
+\texttt{vec.shrink\_to\_fit()}（缩小到刚好够）
+\end{myNote}
+
+如果 \texttt{vec.capacity()} 大于 \texttt{vec.len()}，则尝试释放额外的内存。
+
+\texttt{Vec<T>} 还有许多用来添加或移除元素的方法，它们可以改变向量的长度。所有这些方法都可以通过可变引用获取其 \texttt{self} 参数。
+
+下面这两个方法会在向量的末尾添加或移除单个值。
+
+\begin{mySidenote}
+\texttt{vec.push(value)}（推入）
+\end{mySidenote}
+
+将给定 \texttt{value} 添加到 \texttt{vec} 的末尾。
+
+\begin{mySidenote}
+\texttt{vec.pop()}（弹出）
+\end{mySidenote}
+
+移除并返回最后一个元素。返回类型是 \texttt{Option<T>}。如果弹出的元素是 \texttt{x}，则返回 \texttt{Some(x)}；如果向量已经为空，则返回 \texttt{None}。
+
+请注意，\texttt{.push()} 会按值而不是按引用接受其参数。同样，\texttt{.pop()} 会返回弹出的值，而不是引用。本节中剩下的大部分方法也是如此。它们可以将值移动进和移动出向量。
+
+下面这两个方法会在向量的任意位置添加或移除一个值。
+
+\begin{mySidenote}
+\texttt{vec.insert(index, value)}（插入）
+\end{mySidenote}
+
+在 \texttt{vec[index]} 处插入给定的 \texttt{value}，将 \texttt{vec[index..]} 中的所有当前值向右平移一个位置以腾出空间。
+
+如果 \texttt{index > vec.len()}，则会引发 panic。
+
+\begin{mySidenote}
+\texttt{vec.remove(index)}（移除）
+\end{mySidenote}
+
+移除并返回 \texttt{vec[index]}，将 \texttt{vec[index+1..]} 中的所有当前值向左平移一个位置以填补空白。
+
+如果 \texttt{index >= vec.len()}，则会引发 panic，因为在这种情况下要移除的 \texttt{vec[index]} 元素并不存在。
+
+向量越长，这个操作就越慢。如果需要经常执行 \texttt{vec.remove(0)}，请考虑使用 \texttt{VecDeque}（参见 16.3 节）来代替 \texttt{Vec}。
+
+需要移动的元素越多，\texttt{.insert()} 和 \texttt{.remove()} 的速度就会越慢。
+
+下面这 4 个方法可以把向量的长度更改为特定值。
+
+\begin{myNote}
+\texttt{vec.resize(new\_len, value)}（调整大小）
+\end{myNote}
+
+将 \texttt{vec} 的长度设置为 \texttt{new\_len}。如果该操作会增加 \texttt{vec} 的长度，则以 \texttt{value} 的副本填补新空间。元素类型必须实现 \texttt{Clone} 特型。
+
+\begin{myNote}
+\texttt{vec.resize\_with(new\_len, closure)}（以……调整大小）
+\end{myNote}
+
+与 \texttt{vec.resize} 类似，但会调用闭包来构造每个新元素。它能用于不可 \texttt{Clone} 的元素构成的向量。
+
+\begin{mySidenote}
+\texttt{vec.truncate(new\_len)}（截断）
+\end{mySidenote}
+
+将 \texttt{vec} 的长度减少到 \texttt{new\_len}，丢弃 \texttt{vec[new\_len..]} 范围内的任何元素。
+
+如果 \texttt{vec.len()} 已经小于或等于 \texttt{new\_len}，则什么也不会发生。
+
+\begin{mySidenote}
+\texttt{vec.clear()}（清空）
+\end{mySidenote}
+
+从 \texttt{vec} 中移除所有元素。此方法的效果和 \texttt{vec.truncate(0)} 一样。
+
+下面这 4 个方法可以一次添加或移除多个值。
+
+\begin{mySidenote}
+\texttt{vec.extend(iterable)}（扩展）
+\end{mySidenote}
+
+按顺序在 \texttt{vec} 末尾添加来自给定 \texttt{iterable} 值的所有条目。此方法就像 \texttt{.push()} 的多值版本。\texttt{iterable} 参数可以是实现了 \texttt{IntoIterator<Item=T>} 的任何值。
+
+此方法非常有用，所以我们为其定义了一个标准特型 \texttt{Extend}，所有标准集合都实现了该特型。不过很遗憾，这会导致 \texttt{rustdoc} 在其生成的 HTML 底部将 \texttt{.extend()} 与其他特型方法混排在一起，因此在需要时很难找到它。我也只能告诉你：请记住它在那里。有关详细信息，请参见 15.4.14 节。
+
+\begin{mySidenote}
+\texttt{vec.split\_off(index)}（拆分出）
+\end{mySidenote}
+
+与 \texttt{vec.truncate(index)} 类似，但此方法会返回一个 \texttt{Vec<T>}，其中包含从 \texttt{vec} 末尾移除的那些值。此方法就像是 \texttt{.pop()} 的多值版本。
+
+\begin{mySidenote}
+\texttt{vec.append(\&mut vec2)}（追加）
+\end{mySidenote}
+
+这会将 \texttt{vec2} 的所有元素移动到 \texttt{vec} 中，其中 \texttt{vec2} 是 \texttt{Vec<T>} 类型的另一个向量。之后，\texttt{vec2} 会被清空。
+
+此方法与 \texttt{vec.extend(vec2)} 类似，不同之处在于调用 \texttt{extend} 之后 \texttt{vec2} 仍然存在，其容量也不受影响。
+
+\begin{mySidenote}
+\texttt{vec.drain(range)}（抽取）
+\end{mySidenote}
+
+这将从 \texttt{vec} 中移除 \texttt{range} 范围内的切片 \texttt{vec[range]}，并返回对所移除元素的迭代器，其中 \texttt{range} 是范围值，类似 \texttt{..} 或 \texttt{0..4}。
+
+还有一些略显古怪的方法可以从向量中选择性地移除一些元素。
+
+\begin{mySidenote}
+\texttt{vec.retain(test)}（留下）
+\end{mySidenote}
+
+移除所有未通过给定测试的元素。\texttt{test} 参数是实现了 \texttt{FnMut(\&T) -> bool} 的函数或闭包。针对 \texttt{vec} 的每个元素，此方法都会调用 \texttt{test(\&element)}，如果函数或闭包返回了 \texttt{false}，就会从向量中移除并丢弃此元素。
+
+除了性能上略有差异，此方法和下面的写法很像。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{vec}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{vec}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{filter}\PYG{p}{(}\PYG{n}{test}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{vec.dedup()}（去重）
+\end{mySidenote}
+
+丢弃重复的元素，类似于 Unix shell 实用程序 \texttt{uniq}。此方法会扫描 \texttt{vec} 以查找彼此相等的相邻元素，然后会从这些相等值中保留一个并丢弃多余的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{byte\PYGZus{}vec}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{Misssssssissippi}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}vec}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{byte\PYGZus{}vec}\PYG{p}{.}\PYG{n}{dedup}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{byte\PYGZus{}vec}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{Misisipi}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+请注意，输出中仍然有两个 \texttt{'s'} 字符。这是因为此方法只会移除\textbf{相邻}的重复项。要想消除所有重复项，你有 3 个选择：在调用 \texttt{.dedup()} 之前对向量进行排序、将数据移动到一个 \texttt{Set} 中，或者（为了保持元素的原始顺序）使用如下 \texttt{.retain()} 技巧：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{byte\PYGZus{}vec}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{Misssssssissippi}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}vec}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{seen}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashSet}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{byte\PYGZus{}vec}\PYG{p}{.}\PYG{n}{retain}\PYG{p}{(}\PYG{o}{|}\PYG{n}{r}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{seen}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{o}{*}\PYG{n}{r}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{byte\PYGZus{}vec}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{Misp}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+上述代码的工作原理是当 \texttt{Set} 已经包含我们要插入的条目时 \texttt{.insert()} 就会返回 \texttt{false}。
+
+\begin{myNote}
+\texttt{vec.dedup\_by(same)}（根据 \texttt{same} 调用结果去重）
+\end{myNote}
+
+与 \texttt{vec.dedup()} 类似，但此方法会使用函数或闭包 \texttt{same(\&mut elem1, \&mut elem2)} 而不是 \texttt{==} 运算符来检查两个元素是否应被视为相等。
+
+\begin{myNote}
+\texttt{vec.dedup\_by\_key(key)}（根据 \texttt{key} 属性去重）
+\end{myNote}
+
+与 \texttt{vec.dedup()} 类似，但此方法会在 \texttt{key(\&mut elem1) == key(\&mut elem2)} 时将两个元素视为相等。
+
+如果 \texttt{errors} 是一个 \texttt{Vec<Box<dyn Error>>}，你可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 移除带有相同信息的多余错误（error）}
+\PYG{n}{errors}\PYG{p}{.}\PYG{n}{dedup\PYGZus{}by\PYGZus{}key}\PYG{p}{(}\PYG{o}{|}\PYG{n}{err}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{err}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+在本节涵盖的所有方法中，只有 \texttt{.resize()} 会克隆值，其他方法都是将值从一个地方移动到另一个地方。
+
+\subsection{联结}
+
+以下两个方法可用于\textbf{数组的数组}，即其元素本身也是数组、切片或向量的数组、切片或向量。
+
+\begin{mySidenote}
+\texttt{slices.concat()}（串联）
+\end{mySidenote}
+
+返回通过串联所有切片组装成的新向量。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{p}{[}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{]}\PYG{p}{]}\PYG{p}{.}\PYG{n}{concat}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{slices.join(\&separator)}（联结）
+\end{mySidenote}
+
+与 \texttt{concat} 类似，只是在这些切片之间插入了值 \texttt{separator} 的副本。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{p}{[}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{]}\PYG{p}{]}\PYG{p}{.}\PYG{n}{join}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{拆分}
+
+同时获得多个对数组、切片或向量中元素的不可变引用是比较容易的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{v}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{b}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{v}\PYG{p}{[}\PYG{n}{j}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{mid}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{front\PYGZus{}half}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{v}\PYG{p}{[}\PYG{o}{..}\PYG{n}{mid}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{back\PYGZus{}half}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{v}\PYG{p}{[}\PYG{n}{mid}\PYG{o}{..}\PYG{p}{]}\PYG{p}{;}
+\end{Verbatim}
+
+但获取多个可变引用就不那么容易了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{v}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{b}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{[}\PYG{n}{j}\PYG{p}{]}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：不能同时把`v`借入为多个可变引用}
+
+\PYG{o}{*}\PYG{n}{a}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{;}\PYG{+w}{             }\PYG{c+c1}{// 这里用到了引用`a`和引用`b`，}
+\PYG{o}{*}\PYG{n}{b}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{;}\PYG{+w}{             }\PYG{c+c1}{// 所以它们的生命周期必然重叠}
+\end{Verbatim}
+
+Rust 禁止这样做，因为如果 \texttt{i == j}，那么 \texttt{a} 和 \texttt{b} 就是对同一个整数的两个可变引用，这违反了 Rust 的安全规则。（参见 5.4 节。）
+
+Rust 有几种方法可以同时借入对数组、切片或向量的两个或多个部分的可变引用。与前面的代码不同，这些方法是安全的，因为根据设计，它们总会把数据拆分成几个\textbf{不重叠}的区域。这里的大部分方法在处理非 \texttt{mut} 切片时也很方便，因此每个方法都有 \texttt{mut} 版本和非 \texttt{mut} 版本。
+
+图 16-2 展示了这些方法。
+
+\myFigure{images/ch16/fig-16-2.jpeg}{图 16-2：对几个拆分型方法的说明（注意：\texttt{slice.split(|\&x|x==0)} 输出中的小矩形是由于存在两个相邻的分隔符而生成的空切片，并且 \texttt{rsplitn} 会按从后向前的顺序生成其输出，这与另外几个方法不同）}
+
+这些方法都没有直接修改数组、切片或向量，它们只是返回了对内部数据中各部分的新引用。
+
+\begin{myNote}
+\texttt{slice.iter()}（迭代器）和 \texttt{slice.iter\_mut()}（可变迭代器）
+\end{myNote}
+
+生成对 \texttt{slice} 中每个元素的引用。16.2.2 节介绍过它们。
+
+\begin{myNote}
+\texttt{slice.split\_at(index)}（拆分于）和 \texttt{slice.split\_at\_mut(index)}（可变拆分于）
+\end{myNote}
+
+将一个切片分成两半，返回一个值对。\texttt{slice.split\_at(index)} 等价于 \texttt{(\&slice[..index], \&slice[index..])}。如果 \texttt{index} 超出了限界，这两个方法就会发生 panic。
+
+\begin{myNote}
+\texttt{slice.split\_first()}（拆分首个）和 \texttt{slice.split\_first\_mut()}（可变拆分首个）
+\end{myNote}
+
+同样会返回一个值对：对首个元素（\texttt{slice[0]}）的引用和对所有其余元素（\texttt{slice[1..]}）的切片的引用。
+
+\texttt{.split\_first()} 的返回类型是 \texttt{Option<(\&T, \&[T])>}，如果 \texttt{slice} 为空，则结果为 \texttt{None}。
+
+\begin{myNote}
+\texttt{slice.split\_last()}（拆分末尾）和 \texttt{slice.split\_last\_mut()}（可变拆分末尾）
+\end{myNote}
+
+与 \texttt{slice.split\_first()} 和 \texttt{slice.split\_first\_mut()} 类似，但这两个方法拆分出的是最后一个元素而不是首个元素。
+
+\texttt{.split\_last()} 的返回类型是 \texttt{Option<(\&T, \&[T])>}。
+
+\begin{myNote}
+\texttt{slice.split(is\_sep)}（拆分）和 \texttt{slice.split\_mut(is\_sep)}（可变拆分）
+\end{myNote}
+
+将 \texttt{slice} 拆分为一个或多个子切片，使用函数或闭包 \texttt{is\_sep} 确定拆分位置。这两个方法会返回一个遍历这些子切片的迭代器。
+
+当你消耗此迭代器时，这些方法会为切片中的每个元素调用 \texttt{is\_sep(\&element)}。如果 \texttt{is\_sep(\&element)} 为 \texttt{true}，则认为该元素是分隔符。分隔符不会包含在输出的任何子切片中。
+
+输出总是至少包含一个子切片，每遇到一个分隔符就额外加一个。如果有多个分隔符彼此相邻，或者有分隔符出现在 \texttt{slice} 的两端，则每对分隔符和两端的分隔符分别会对应输出一个空的子切片。
+
+\begin{myNote}
+\texttt{slice.split\_inclusive(is\_sep)}（拆分，含分隔符）和 \texttt{slice.split\_inclusive\_mut(is\_sep)}（可变拆分，含分隔符）
+\end{myNote}
+
+与 \texttt{split} 和 \texttt{split\_mut} 类似，但这两个方法会在前一个子切片的结尾包含分隔符而不会排除它。
+
+\begin{myNote}
+\texttt{slice.rsplit(is\_sep)}（右起拆分）和 \texttt{slice.rsplit\_mut(is\_sep)}（右起可变拆分）
+\end{myNote}
+
+与 \texttt{split} 和 \texttt{split\_mut} 类似，但这两个方法会从切片的末尾开始往前拆分。
+
+\begin{myNote}
+\texttt{slice.splitn(n, is\_sep)}（拆分为 \emph{n} 片）和 \texttt{slice.splitn\_mut(n, is\_sep)}（可变拆为 \emph{n} 片）
+\end{myNote}
+
+与 \texttt{slice.rsplit(is\_sep)} 和 \texttt{slice.rsplit\_mut(is\_sep)} 类似，但这两个方法最多会生成 \texttt{n} 个子切片。在找到前 \texttt{n-1} 个切片后，不会再调用 \texttt{is\_sep}。最后一个子切片中会包含剩下的所有元素。
+
+\begin{myNote}
+\texttt{slice.rsplitn(n, is\_sep)}（右起拆分为 \emph{n} 片）和 \texttt{slice.rsplitn\_mut(n, is\_sep)}（右起可变拆分为 \emph{n} 片）
+\end{myNote}
+
+与 \texttt{.splitn()} 和 \texttt{.splitn\_mut()} 类似，但是在使用这两个方法时，切片会以相反的顺序扫描。也就是说，这两个方法会在切片中的\textbf{最后}而不是最前 \texttt{n-1} 个分隔符上进行拆分，并且子切片是从末尾开始向前生成的。
+
+\begin{myNote}
+\texttt{slice.chunks(n)}（分为长度为 \emph{n} 的块）和 \texttt{slice.chunks\_mut(n)}（分为长度为 \emph{n} 的可变块）
+\end{myNote}
+
+返回长度为 \texttt{n} 的非重叠子切片上的迭代器。如果 \texttt{n} 不能被 \texttt{slice.len()} 整除，则最后一个块包含的元素将不足 \texttt{n} 个。
+
+\begin{myNote}
+\texttt{slice.rchunks(n)}（右起分为长度为 \emph{n} 的块）和 \texttt{slice.rchunks\_mut(n)}（右起分为长度为 \emph{n} 的可变块）
+\end{myNote}
+
+与 \texttt{slice.chunks} 和 \texttt{slice.chunks\_mut} 类似，但会从切片的末尾开始向前拆分。
+
+\begin{myNote}
+\texttt{slice.chunks\_exact(n)}（精确分为长度为 \emph{n} 的块）和 \texttt{slice.chunks\_exact\_mut(n)}（精确分为长度为 \emph{n} 的可变块）
+\end{myNote}
+
+返回长度为 \texttt{n} 的非重叠子切片上的迭代器。如果 \texttt{n} 不能被 \texttt{slice.len()} 整除，则最后一个块（少于 \texttt{n} 个元素）可以在其结果的 \texttt{remainder()} 方法中获取。
+
+\begin{myNote}
+\texttt{slice.rchunks\_exact(n)}（右起精确分为长度为 \emph{n} 的块）和 \texttt{slice.rchunks\_exact\_mut(n)}（右起精确分为长度为 \emph{n} 的可变块）
+\end{myNote}
+
+与 \texttt{slice.chunks\_exact} 和 \texttt{slice.chunks\_exact\_mut} 类似，但会从切片的末尾开始拆分。
+
+还有一个迭代子切片的方法。
+
+\begin{mySidenote}
+\texttt{slice.windows(n)}（滑动窗口）
+\end{mySidenote}
+
+返回一个其行为类似于 \texttt{slice} 中数据的“滑动窗口”的迭代器。这个迭代器会生成一些横跨此 \texttt{slice} 中 \texttt{n} 个连续元素的子切片。它生成的第一个值是 \texttt{\&slice[0..n]}，第二个值是 \texttt{\&slice[1..n+1]}，以此类推。
+
+如果 \texttt{n} 大于 \texttt{slice} 的长度，则不会生成任何切片。如果 \texttt{n} 为 \texttt{0}，则此方法会发生 panic。
+
+如果 \texttt{days.len() == 31}，那么就可以通过调用 \texttt{days.windows(7)} 来生成 \texttt{days} 中所有相隔 7 天的时间段。
+
+大小为 \texttt{2} 的滑动窗口可用于探究数据序列如何从一个数据点变化到下一个数据点：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{changes}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{daily\PYGZus{}high\PYGZus{}temperatures}
+\PYG{+w}{                  }\PYG{p}{.}\PYG{n}{windows}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{p}{)}\PYG{+w}{             }\PYG{c+c1}{// 获得两个相邻的最高气温}
+\PYG{+w}{                  }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{w}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{w}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{w}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{   }\PYG{c+c1}{// 气温变化了多少？}
+\PYG{+w}{                  }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+因为各个子切片会重叠，所以此方法并没有返回可变引用的变体。
+
+\subsection{交换}
+
+下面是交换切片内容的一些便利方法。
+
+\begin{mySidenote}
+\texttt{slice.swap(i, j)}（交换元素）
+\end{mySidenote}
+
+交换 \texttt{slice[i]} 和 \texttt{slice[j]} 这两个元素。
+
+\begin{myNote}
+\texttt{slice\_a.swap\_with\_slice(slice\_b)}（互换内容）
+\end{myNote}
+
+交换 \texttt{slice\_a} 和 \texttt{slice\_b} 的全部内容。\texttt{slice\_a} 和 \texttt{slice\_b} 的长度必须相同。
+
+向量有一个关联方法，该方法可以高效地移除任何元素。
+
+\begin{mySidenote}
+\texttt{vec.swap\_remove(i)}（交换后移除）
+\end{mySidenote}
+
+移除并返回 \texttt{vec[i]}。与 \texttt{vec.remove(i)} 类似，但此方法不会将向量中剩余的元素平移过来以填补空缺，而是简单地将 \texttt{vec} 的最后一个元素移动到空缺中。如果不关心向量中剩余条目的顺序，那么此方法会很有用，因为性能更高。
+
+\subsection{填充}
+
+下面是替换可变切片内容的两种便利方法。
+
+\begin{mySidenote}
+\texttt{slice.fill(value)}（填充）
+\end{mySidenote}
+
+用 \texttt{value} 的克隆体填充切片。
+
+\begin{myNote}
+\texttt{slice.fill\_with(function)}（以 \texttt{function} 回调填充）
+\end{myNote}
+
+使用调用给定函数生成的值来填充切片。这对于实现了 \texttt{Default} 但未实现 \texttt{Clone} 的类型很有用，比如当 \texttt{T} 为不可复制类型时的 \texttt{Option<T>} 或 \texttt{Vec<T>}。
+
+\subsection{排序与搜索}
+
+下面是切片提供的 3 个排序方法。
+
+\begin{mySidenote}
+\texttt{slice.sort()}（排序）
+\end{mySidenote}
+
+将元素按升序排列。此方法仅当元素类型实现了 \texttt{Ord} 时才存在。
+
+\begin{myNote}
+\texttt{slice.sort\_by(cmp)}（按 \texttt{cmp} 回调排序）
+\end{myNote}
+
+对 \texttt{slice} 中的元素按函数或闭包 \texttt{cmp} 指定的顺序进行排序。\texttt{cmp} 必须实现 \texttt{Fn(\&T, \&T) -> std::cmp::Ordering}。
+
+手动实现 \texttt{cmp} 是一件痛苦的事，不过可以把它委托给别的 \texttt{.cmp()} 方法来实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{students}\PYG{p}{.}\PYG{n}{sort\PYGZus{}by}\PYG{p}{(}\PYG{o}{|}\PYG{n}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{a}\PYG{p}{.}\PYG{n}{last\PYGZus{}name}\PYG{p}{.}\PYG{n}{cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{b}\PYG{p}{.}\PYG{n}{last\PYGZus{}name}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如果想按一个字段排序，但当该字段相同时按另一个字段判定先后，则可以先把它们做成元组然后再进行比较。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{students}\PYG{p}{.}\PYG{n}{sort\PYGZus{}by}\PYG{p}{(}\PYG{o}{|}\PYG{n}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{a\PYGZus{}key}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{a}\PYG{p}{.}\PYG{n}{last\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{a}\PYG{p}{.}\PYG{n}{first\PYGZus{}name}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{b\PYGZus{}key}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{b}\PYG{p}{.}\PYG{n}{last\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{b}\PYG{p}{.}\PYG{n}{first\PYGZus{}name}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{a\PYGZus{}key}\PYG{p}{.}\PYG{n}{cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{b\PYGZus{}key}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.sort\_by\_key(key)}（按 \texttt{key} 回调排序）
+\end{myNote}
+
+使用由函数或闭包型参数 \texttt{key} 给出的排序键对 \texttt{slice} 的元素按递增顺序排序。\texttt{key} 的类型必须实现 \texttt{Fn(\&T) -> K}，这里要满足 \texttt{K: Ord}。
+
+这在 \texttt{T} 包含一个或多个有序字段时会很有用，因此它可以按多种方式排序：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 按平均学分绩点排序，低分在前}
+\PYG{n}{students}\PYG{p}{.}\PYG{n}{sort\PYGZus{}by\PYGZus{}key}\PYG{p}{(}\PYG{o}{|}\PYG{n}{s}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{.}\PYG{n}{grade\PYGZus{}point\PYGZus{}average}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+请注意，在排序过程中不会缓存这些排序键值，因此 \texttt{key} 函数可能会被调用 \emph{n} 次以上。
+
+出于技术原因，\texttt{key(element)} 无法返回从元素借来的任何引用。下面这种写法行不通：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{students}\PYG{p}{.}\PYG{n}{sort\PYGZus{}by\PYGZus{}key}\PYG{p}{(}\PYG{o}{|}\PYG{n}{s}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{.}\PYG{n}{last\PYGZus{}name}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：无法推断生命周期}
+\end{Verbatim}
+
+Rust 无法推算出生命周期。但在这些情况下，很容易把 \texttt{.sort\_by()} 作为后备方案。
+
+以上 3 个方法都会执行稳定排序。
+
+要想以相反的顺序排序，可以将 \texttt{sort\_by} 与交换了两个参数的 \texttt{cmp} 闭包一起使用。传入参数 \texttt{|b, a|} 而不是 \texttt{|a, b|} 可以有效地生成相反的顺序。或者，也可以在排序之后调用 \texttt{.reverse()} 方法。
+
+\begin{mySidenote}
+\texttt{slice.reverse()}（逆转）
+\end{mySidenote}
+
+就地逆转切片。
+
+一旦切片排序完毕，就可以高效地进行搜索了。
+
+\begin{myNote}
+\texttt{slice.binary\_search(\&value)}（二分搜索）、\texttt{slice.binary\_search\_by(\&value, cmp)}（按 \texttt{cmp} 回调二分搜索）和 \texttt{slice.binary\_search\_by\_key(\&value, key)}（按 \texttt{key} 闭包二分搜索）
+\end{myNote}
+
+以上 3 个方法都会在给定的已排序 \texttt{slice} 中搜索 \texttt{value}。请注意，\texttt{value} 是按引用传递的。
+
+这些方法的返回类型是 \texttt{Result<usize, usize>}。如果在指定排序顺序中 \texttt{slice[index]} 等于 \texttt{value}，那么这些方法就会返回 \texttt{Ok(index)}。如果找不到这样一个索引，那么这些方法就会返回 \texttt{Err(insertion\_point)}，这样当你在 \texttt{insertion\_point} 中插入 \texttt{value} 后，向量仍然会保持排好序的状态。
+
+当然，只有在切片确实已经按指定顺序排序时二分搜索才有效。否则，结果将是没有意义的，因为如果输入无效，则输出也无效。
+
+由于 \texttt{f32} 和 \texttt{f64} 具有 NaN 值，因此它们无法实现 \texttt{Ord} 并且不能直接用作排序和二分搜索方法的键。要获得适用于浮点数据的类似方法，请使用 \texttt{ord\_subset} crate。
+
+可以用另一个方法在未排过序的向量中搜索。
+
+\begin{mySidenote}
+\texttt{slice.contains(\&value)}（包含）
+\end{mySidenote}
+
+如果 \texttt{slice} 中有任何元素等于 \texttt{value}，则返回 \texttt{true}。这会简单地检查切片的每个元素，直到找到匹配项。\texttt{value} 同样是按引用传递的。
+
+如果要在切片中查找值的位置（类似 JavaScript 中的 \texttt{array.indexOf(value)}），请使用迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{slice}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{position}\PYG{p}{(}\PYG{o}{|}\PYG{n}{x}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{)}
+\end{Verbatim}
+
+这将返回 \texttt{Option<usize>}。
+
+\subsection{比较切片}
+
+如果类型 \texttt{T} 支持 \texttt{==} 运算符和 \texttt{!=} 运算符（\texttt{PartialEq} 特型，参见 12.2 节），那么数组 \texttt{[T; N]}、切片 \texttt{[T]} 和向量 \texttt{Vec<T>} 也会支持这两个运算符。如果两个切片的长度相同并且对应的元素也相等，那它们就是相等的。数组和向量也是如此。
+
+如果 \texttt{T} 支持运算符 \texttt{<}、\texttt{<=}、\texttt{>} 和 \texttt{>=}（\texttt{PartialOrd} 特型，参见 12.3 节），那么 \texttt{T} 的数组、切片和向量也会支持这些运算符。切片之间是按字典序比较的（从左到右逐个比较）。
+
+下面是执行常见的切片比较的两个便捷方法。
+
+\begin{myNote}
+\texttt{slice.starts\_with(other)}（以 \texttt{other} 开头）
+\end{myNote}
+
+如果 \texttt{slice} 的起始值序列等于 \texttt{other} 切片中的相应元素，则返回 \texttt{true}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{.}\PYG{n}{starts\PYGZus{}with}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{]}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{.}\PYG{n}{starts\PYGZus{}with}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.ends\_with(other)}（以 \texttt{other} 结尾）
+\end{myNote}
+
+与上一个方法类似，但会检查 \texttt{slice} 的结尾值。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{.}\PYG{n}{ends\PYGZus{}with}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{随机元素}
+
+随机数并未内置在 Rust 标准库中，但在 \texttt{rand} crate 中可以找到它们。\texttt{rand} crate 提供了以下两个方法，用于从数组、切片或向量中获取随机输出。
+
+\begin{myNote}
+\texttt{slice.choose(\&mut rng)}（随机选取）
+\end{myNote}
+
+返回对切片中随机元素的引用。与 \texttt{slice.first()} 和 \texttt{slice.last()} 类似，此方法会返回 \texttt{Option<\&T>}，只有当切片为空时才返回 \texttt{None}。
+
+\begin{myNote}
+\texttt{slice.shuffle(\&mut rng)}（随机洗牌）
+\end{myNote}
+
+就地随机重排切片中的元素。切片必须通过可变引用传递。
+
+这两个都是 \texttt{rand::Rng} 特型的方法，所以你需要一个 \texttt{Rng}（random number generator，随机数生成器），以便调用它们。幸运的是，通过调用 \texttt{rand::thread\_rng()} 很容易得到一个生成器。要对向量 \texttt{my\_vec} 进行洗牌，可以像下面这样写。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{rand}\PYG{p}{::}\PYG{n}{seq}\PYG{p}{::}\PYG{n}{SliceRandom}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{rand}\PYG{p}{::}\PYG{n}{thread\PYGZus{}rng}\PYG{p}{;}
+
+\PYG{n}{my\PYGZus{}vec}\PYG{p}{.}\PYG{n}{shuffle}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{thread\PYGZus{}rng}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{Rust 中不存在失效型错误}
+
+大多数主流编程语言有集合和迭代器，它们为排除失效型错误做了一点儿变化：不要在迭代集合时修改它。例如，在 Python 中，与向量等价的是列表：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{my\PYGZus{}list}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{p}{]}
+\end{Verbatim}
+
+假设我们试图从 \texttt{my\_list} 中移除所有大于 4 的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{index}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{val}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{enumerate}\PYG{p}{(}\PYG{n}{my\PYGZus{}list}\PYG{p}{)}\PYG{p}{:}
+\PYG{+w}{    }\PYG{n+nc}{if}\PYG{+w}{ }\PYG{n}{val}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{:}
+\PYG{+w}{        }\PYG{n+nc}{del}\PYG{+w}{ }\PYG{n}{my\PYGZus{}list}\PYG{p}{[}\PYG{n}{index}\PYG{p}{]}\PYG{+w}{  }\PYG{p}{\PYGZsh{}}\PYG{+w}{ }\PYG{n}{bug}\PYG{err}{：}\PYG{err}{在}\PYG{err}{迭}\PYG{err}{代}\PYG{err}{过}\PYG{err}{程}\PYG{err}{中}\PYG{err}{修}\PYG{err}{改}\PYG{err}{列}\PYG{err}{表}
+
+\PYG{n}{print}\PYG{p}{(}\PYG{n}{my\PYGZus{}list}\PYG{p}{)}
+\end{Verbatim}
+
+（Python 中的 \texttt{enumerate} 函数相当于 Rust 中的 \texttt{.enumerate()} 方法，参见 15.3.11 节。）
+
+令人惊讶的是，这个程序打印出了 \texttt{[1, 3, 7]}。但是 7 显然大于 4。为什么失控了？这就是失效型错误：程序在迭代数据时修改了数据，让迭代器\textbf{失效}了。在 Java 中，结果将是一个异常。在 C++ 中，这是未定义行为。在 Python 中，虽然此行为有明确定义，但不直观：迭代器会跳过一个元素。这样一来，\texttt{val} 永远不会等于 \texttt{7}，因此也就没有机会删除它了。
+
+我们试着在 Rust 中重现这个 bug：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{my\PYGZus{}vec}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{index}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{val}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{my\PYGZus{}vec}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{enumerate}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{val}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{my\PYGZus{}vec}\PYG{p}{.}\PYG{n}{remove}\PYG{p}{(}\PYG{n}{index}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：不能把`my\PYGZus{}vec`借用为可变的}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{my\PYGZus{}vec}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当然，Rust 在编译时就会拒绝这个程序。当我们调用 \texttt{my\_vec.iter()} 时，它借用了一个共享（非 \texttt{mut}）的向量引用。引用与迭代器的生命周期一样长，直到 \texttt{for} 循环结束。当存在不可变引用时，不能通过调用 \texttt{my\_vec.remove(index)} 来修改向量。
+
+帮你指出错误固然有用，但你还是得想方设法达成自己的目标。最简单的修复方法是写成如下形式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{my\PYGZus{}vec}\PYG{p}{.}\PYG{n}{retain}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{n}{val}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{val}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+或者，也可以像在 Python 或任何其他语言中那样使用 \texttt{filter} 创建一个新向量。
+
+\section{\texttt{VecDeque<T>}}
+
+\texttt{Vec} 只支持在末尾高效地添加元素和移除元素。当程序需要一个地方来存储“排队等候”的值时，\texttt{Vec} 可能会很慢。
+
+Rust 的 \texttt{std::collections::VecDeque<T>} 是一个\textbf{双端队列}（deque，double-ended queue 的缩写，发音为 /'dek/）。它支持在首端和尾端进行高效的添加操作和移除操作。
+
+\begin{myNote}
+\texttt{deque.push\_front(value)}（队首推入）
+\end{myNote}
+
+在队列的首端添加一个值。
+
+\begin{myNote}
+\texttt{deque.push\_back(value)}（队尾推入）
+\end{myNote}
+
+在队列的尾端添加一个值。（此方法比 \texttt{.push\_front()} 更常用，因为队列通常的习惯是在尾端添加值，在首端移除值，就像人们在排队等候一样。）
+
+\begin{mySidenote}
+\texttt{deque.pop\_front()}（队首弹出）
+\end{mySidenote}
+
+移除并返回队列的首端值，如果队列为空则返回一个为 \texttt{None} 的 \texttt{Option<T>}，就像 \texttt{vec.pop()} 那样。
+
+\begin{mySidenote}
+\texttt{deque.pop\_back()}（队尾弹出）
+\end{mySidenote}
+
+移除并返回队列的尾端值，同样返回 \texttt{Option<T>}。
+
+\begin{myNote}
+\texttt{deque.front()}（队首）和 \texttt{deque.back()}（队尾）
+\end{myNote}
+
+与 \texttt{vec.first()} 和 \texttt{vec.last()} 类似，这两个方法会返回对队列首端或尾端元素的引用。返回值是一个 \texttt{Option<\&T>}，如果队列为空则为 \texttt{None}。
+
+\begin{myNote}
+\texttt{deque.front\_mut()}（队首，可变版）和 \texttt{deque.back\_mut()}（队尾，可变版）
+\end{myNote}
+
+与 \texttt{vec.first\_mut()} 和 \texttt{vec.last\_mut()} 类似，这两个方法会返回 \texttt{Option<\&mut T>}。
+
+\texttt{VecDeque} 的实现是一个环形缓冲区，如图 16-3 所示。
+
+\myFigure{images/ch16/fig-16-3.jpeg}{图 16-3：\texttt{VecDeque} 在内存中的存储情况}
+
+和 \texttt{Vec} 一样，\texttt{VecDeque} 用一块分配在堆上的内存来存储元素。与 \texttt{Vec} 不同，\texttt{VecDeque} 的数据并不总是从该区域的开头开始，它可以“回绕”到末尾。这个双端队列的元素按顺序排列是 \texttt{['A', 'B', 'C', 'D', 'E']}。\texttt{VecDeque} 有两个私有字段，在图 16-3 中被标记为 \texttt{start} 和 \texttt{stop}，用于记住数据在缓冲区中的首端位置和尾端位置。
+
+从任一端向队列中添加一个值都意味着占用一个未使用的插槽，如图 16-3 中的深灰色色块所示。如果需要，可以回绕或分配更大的内存块。
+
+\texttt{VecDeque} 会管理回绕，因此你不必费心于此。图 16-3 展示了 Rust 如何让 \texttt{.pop\_front()} 更快的幕后原理。
+
+通常，当你需要用到双端队列时，基本上只是需要 \texttt{.push\_back()} 和 \texttt{.pop\_front()} 这两个方法。用于创建队列的类型关联函数 \texttt{VecDeque::new()} 和 \texttt{VecDeque::with\_capacity(n)} 和它们在 \texttt{Vec} 中的对应函数一样。\texttt{VecDeque} 还实现了 \texttt{Vec} 中的许多方法，比如 \texttt{.len()} 和 \texttt{.is\_empty()}、\texttt{.insert(index, value)}、\texttt{.remove(index)}、\texttt{.extend(iterable)} 等。
+
+和向量一样，双端队列可以按值、共享引用或可变引用进行迭代。它们有 3 个迭代器方法，即 \texttt{.into\_iter()}、\texttt{.iter()} 和 \texttt{.iter\_mut()}。它们可以按通常的方式通过索引来访问：\texttt{deque[index]}。
+
+因为双端队列不会将自己的元素存储在连续的内存中，所以它们无法继承切片的所有方法。但是，如果你愿意承受移动内容的开销，则可以通过 \texttt{VecDeque} 提供的如下方法来解决此问题。
+
+\begin{myNote}
+\texttt{deque.make\_contiguous()}（变连续）
+\end{myNote}
+
+获取 \texttt{\&mut self} 并将 \texttt{VecDeque} 重新排列到连续的内存中，返回 \texttt{\&mut [T]}。
+
+\texttt{Vec} 和 \texttt{VecDeque} 紧密相关，为了轻松地在两者之间进行转换，标准库提供了两个特型实现。
+
+\begin{mySidenote}
+\texttt{Vec::from(deque)}（来自双端队列）
+\end{mySidenote}
+
+\texttt{Vec<T>} 实现了 \texttt{From<VecDeque<T>>}，因此 \texttt{Vec::from(deque)} 能将双端队列变成向量。这个操作的时间复杂度是 \emph{O}(\emph{n})，因为可能要重新排列元素。
+
+\begin{mySidenote}
+\texttt{VecDeque::from(vec)}（来自向量）
+\end{mySidenote}
+
+\texttt{VecDeque<T>} 实现了 \texttt{From<Vec<T>>}，因此 \texttt{VecDeque::from(vec)} 能把向量变成双端队列。这个操作的时间复杂度是 \emph{O}(1)，因为 Rust 会直接把向量缓冲区转移给 \texttt{VecDeque}，而不会重新分配。
+
+这个方法使得创建具有指定元素的双端队列变得很容易，哪怕并没有标准的 \texttt{vec\_deque![]} 宏。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{VecDeque}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{VecDeque}\PYG{p}{::}\PYG{n}{from}\PYG{p}{(}\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\section{\texttt{BinaryHeap<T>}}
+
+\texttt{BinaryHeap}（二叉堆）是一种元素组织会保持松散的集合，这样最大值便能总是冒泡到队列的首部。以下是 3 个最常用的 \texttt{BinaryHeap} 方法。
+
+\begin{mySidenote}
+\texttt{heap.push(value)}（压入）
+\end{mySidenote}
+
+向堆中添加一个值。
+
+\begin{mySidenote}
+\texttt{heap.pop()}（弹出）
+\end{mySidenote}
+
+从堆中移除并返回最大值。如果堆为空，则会返回一个为 \texttt{None} 的 \texttt{Option<T>}。
+
+\begin{mySidenote}
+\texttt{heap.peek()}（窥视）
+\end{mySidenote}
+
+返回对堆中最大值的引用。返回类型是 \texttt{Option<\&T>}。
+
+\begin{mySidenote}
+\texttt{heap.peek\_mut()}（窥视，可变版）
+\end{mySidenote}
+
+返回一个 \texttt{PeekMut<T>}，它会返回对堆中最大值的可变引用，并提供类型关联函数 \texttt{pop()} 以从堆中弹出该值。使用此方法，我们可以根据最大值来决定是否将其从堆中弹出。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{binary\PYGZus{}heap}\PYG{p}{::}\PYG{n}{PeekMut}\PYG{p}{;}
+
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{top}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{heap}\PYG{p}{.}\PYG{n}{peek\PYGZus{}mut}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{top}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{PeekMut}\PYG{p}{::}\PYG{n}{pop}\PYG{p}{(}\PYG{n}{top}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{BinaryHeap} 还支持 \texttt{Vec} 上的部分方法，包括 \texttt{BinaryHeap::new()}、\texttt{.len()}、\texttt{.is\_empty()}、\texttt{.capacity()}、\texttt{.clear()} 和 \texttt{.append(\&mut heap2)}。
+
+假设我们用一堆数值填充了 \texttt{BinaryHeap}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{BinaryHeap}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{heap}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BinaryHeap}\PYG{p}{::}\PYG{n}{from}\PYG{p}{(}\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+值 \texttt{9} 会位于堆顶：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{heap}\PYG{p}{.}\PYG{n}{peek}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{9}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{heap}\PYG{p}{.}\PYG{n}{pop}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{9}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+移除了 \texttt{9} 之后也会稍微重新排列其他元素，以便让 \texttt{8} 位于最前面，以此类推：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{heap}\PYG{p}{.}\PYG{n}{pop}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{8}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{heap}\PYG{p}{.}\PYG{n}{pop}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{6}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{heap}\PYG{p}{.}\PYG{n}{pop}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{5}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+当然，\texttt{BinaryHeap} 并不局限于数值。它可以包含实现了内置特型 \texttt{Ord} 的任意类型的值。
+
+这使得 \texttt{BinaryHeap} 可用作工作队列。你可以定义一个基于优先级实现 \texttt{Ord} 的任务结构体，以便高优先级任务比低优先级任务大一些。然后，创建一个 \texttt{BinaryHeap} 来保存所有待处理的任务。它的 \texttt{.pop()} 方法将始终返回最重要的条目，也就是你的程序下一步就应该处理的任务。
+
+注意：\texttt{BinaryHeap} 是可迭代的，它有一个 \texttt{.iter()} 方法，但此迭代器会以任意顺序而不是从大到小生成堆的元素。要按优先顺序消耗 \texttt{BinaryHeap} 中的值，请使用 \texttt{while} 循环。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{task}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{heap}\PYG{p}{.}\PYG{n}{pop}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{handle}\PYG{p}{(}\PYG{n}{task}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\section{\texttt{HashMap<K, V>} 与 \texttt{BTreeMap<K, V>}}
+
+\texttt{Map} 是键-值对［称为\textbf{条目}（entry）］的集合。任何两个条目都不会有相同的键，并且这些条目会始终按某种数据结构进行组织，从而使你可以通过键在 \texttt{Map} 中高效地查找对应的值。简而言之，\texttt{Map} 就是一个查找表。
+
+Rust 提供了两种 \texttt{Map} 类型：\texttt{HashMap<K, V>} 和 \texttt{BTreeMap<K, V>}。这两种类型共享许多相同的方法，区别在于它们如何组织条目以便进行快速查找。
+
+\texttt{HashMap} 会将键和值存储在哈希表中，因此它需要一个实现了 \texttt{Hash} 和 \texttt{Eq} 的键类型 \texttt{K}，即用来求哈希与判断相等性的标准库特型。
+
+图 16-4 展示了 \texttt{HashMap} 在内存中的排列方式。深灰色区域表示未使用。所有键、值和缓存的哈希码都存储在一个分配在堆上的表中。添加条目最终会迫使 \texttt{HashMap} 分配一个更大的表并将所有数据移入其中。
+
+\myFigure{images/ch16/fig-16-4.jpeg}{图 16-4：内存中的 \texttt{HashMap}}
+
+\texttt{BTreeMap} 会在树结构中按键的顺序存储条目，因此它需要一个实现了 \texttt{Ord} 的键类型 \texttt{K}。图 16-5 展示了一个 \texttt{BTreeMap}。同样，深灰色区域表示未使用的备用容量。
+
+\texttt{BTreeMap} 中存储条目的单元称为\textbf{节点}。\texttt{BTreeMap} 中的大多数节点仅包含键-值对。非叶节点（比如图 16-5 中所示的根节点）中也有一些空间用于存储指向子节点的指针。\texttt{(20, 'q')} 和 \texttt{(30, 'r')} 之间的指针会指向包含 \texttt{20} 和 \texttt{30} 之间所有键的子节点。添加条目通常需要将节点的一些现有条目向右平移，以保持它们的顺序，并且偶尔需要创建新节点。
+
+为了适合页面大小，图 16-5 已略作简化。例如，真正的 \texttt{BTreeMap} 节点会有 11 个条目的空间，而不是 4 个。
+
+Rust 标准库采用了 B 树而不是平衡二叉树，因为 B 树在现代硬件上速度更快。两相对比，二叉树固然在每次搜索时的比较次数较少，但 B 树具有更好的\textbf{局部性}（也就是说，内存访问被分组在一起，而不是分散在整个堆中）。这使得 CPU 缓存未命中的情况更为罕见。这会带来显著的速度提升。
+
+\myFigure{images/ch16/fig-16-5.jpeg}{图 16-5：内存中的 BTreeMap}
+
+下面是创建 \texttt{Map} 的几种方法。
+
+\begin{myNote}
+\texttt{HashMap::new()}（新建）和 \texttt{BTreeMap::new()}（新建）
+\end{myNote}
+
+创建新的空 \texttt{Map}。
+
+\begin{mySidenote}
+\texttt{iter.collect()}（收集）
+\end{mySidenote}
+
+可用于从键-值对创建和填充新的 \texttt{HashMap} 或 \texttt{BTreeMap}。\texttt{iter} 必须是 \texttt{Iterator<Item=(K, V)>} 类型的。
+
+\begin{myNote}
+\texttt{HashMap::with\_capacity(n)}（自带容量）
+\end{myNote}
+
+创建一个新的空 \texttt{HashMap}，其中至少有 \texttt{n} 个条目的空间。与向量一样，\texttt{HashMap} 会将数据存储在分配在堆上的单块内存中，因此它们有容量及其相关方法 \texttt{hash\_map.capacity()}、\texttt{hash\_map.reserve(additional)} 和 \texttt{hash\_map.shrink\_to\_fit()}。\texttt{BTreeMap} 则没有这些。
+
+\texttt{HashMap} 和 \texttt{BTreeMap} 用于处理键和值的核心方法是一样的。
+
+\begin{mySidenote}
+\texttt{map.len()}（长度）
+\end{mySidenote}
+
+返回条目数。
+
+\begin{mySidenote}
+\texttt{map.is\_empty()}（为空？）
+\end{mySidenote}
+
+如果 \texttt{map} 没有条目，则返回 \texttt{true}。
+
+\begin{myNote}
+\texttt{map.contains\_key(\&key)}（包含 \texttt{key}？）
+\end{myNote}
+
+如果 \texttt{map} 具有给定 \texttt{key} 的条目，则返回 \texttt{true}。
+
+\begin{mySidenote}
+\texttt{map.get(\&key)}（按 \texttt{key} 获取）
+\end{mySidenote}
+
+在 \texttt{map} 中搜索具有给定 \texttt{key} 的条目。如果找到匹配的条目，就返回 \texttt{Some(r)}，其中 \texttt{r} 是对相应值的引用。如果没找到，则返回 \texttt{None}。
+
+\begin{myNote}
+\texttt{map.get\_mut(\&key)}（按 \texttt{key} 获取，可变版）
+\end{myNote}
+
+与 \texttt{map.get(\&key)} 类似，但此方法会返回对值的可变引用。
+
+一般来说，\texttt{Map} 允许对其存储的值进行可变访问，但不允许对键进行可变访问。你可以随意修改这些值，但键属于 \texttt{Map} 本身，需要确保它们不会改变，因为条目是根据对应的键来组织的。对键进行就地修改是错误的。
+
+\begin{mySidenote}
+\texttt{map.insert(key, value)}（插入）
+\end{mySidenote}
+
+将条目 \texttt{(key, value)} 插入 \texttt{map} 并返回旧值（如果有的话）。返回类型是 \texttt{Option<V>}。如果 \texttt{Map} 中已有 \texttt{key} 条目，则新插入的 \texttt{value} 会覆盖旧值。
+
+\begin{myNote}
+\texttt{map.extend(iterable)}（用 \texttt{iterable} 扩展）
+\end{myNote}
+
+遍历 \texttt{iterable} 中的 \texttt{(K, V)} 项并将这些键和值逐个插入 \texttt{map} 中。
+
+\begin{myNote}
+\texttt{map.append(\&mut map2)}（从 \texttt{map2} 追加）
+\end{myNote}
+
+将所有条目从 \texttt{map2} 移动到 \texttt{map} 中。之后，\texttt{map2} 会变空。
+
+\begin{myNote}
+\texttt{map.remove(\&key)}（按 \texttt{key} 移除值）
+\end{myNote}
+
+从 \texttt{map} 中查找并移除具有给定 \texttt{key} 的任何条目，如果存在，就返回刚刚移除的值。返回类型是 \texttt{Option<V>}。
+
+\begin{myNote}
+\texttt{map.remove\_entry(\&key)}（按 \texttt{key} 移除条目）
+\end{myNote}
+
+从 \texttt{map} 中查找并移除具有给定 \texttt{key} 的任何条目，返回刚刚移除的键和值（如果有的话）。返回类型是 \texttt{Option<(K, V)>}。
+
+\begin{mySidenote}
+\texttt{map.retain(test)}（留下）
+\end{mySidenote}
+
+移除所有未通过给定测试的元素。\texttt{test} 参数是实现了 \texttt{FnMut(\&K, \&mut V) -> bool} 的函数或闭包。对于 \texttt{map} 中的每个元素，都会调用 \texttt{test(\&key, \&mut value)}，如果此函数或闭包返回 \texttt{false}，则从 \texttt{map} 中移除并丢弃该元素。
+
+除了性能上有些许区别，此方法和下面的写法很像。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{map}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{map}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{filter}\PYG{p}{(}\PYG{n}{test}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{map.clear()}（清空）
+\end{mySidenote}
+
+移除所有条目。
+
+也可以使用方括号来查询 \texttt{Map}，比如 \texttt{map[\&key]}。也就是说，\texttt{Map} 实现了内置特型 \texttt{Index}。但是，如果给定 \texttt{key} 还没有条目（就像越界数组访问），则会出现 panic，因此只有在要查找的条目肯定已填充过时才应使用此语法。
+
+\texttt{.contains\_key()}、\texttt{.get()}、\texttt{.get\_mut()} 和 \texttt{.remove()} 的 \texttt{key} 参数不必具有确切的类型 \texttt{\&K}。这些方法对可以从 \texttt{K} 借用来的类型来说是通用的。可以在 \texttt{HashMap<String, Fish>} 上调用 \texttt{fish\_map.contains\_key("conger")}，即便 \texttt{"conger"} 不是确切的 \texttt{String} 类型也没问题，因为 \texttt{String} 实现了 \texttt{Borrow<\&str>}。有关详细信息，请参阅 13.8 节。
+
+因为 \texttt{BTreeMap<K, V>} 会始终保持其条目是根据键排序的，所以它支持一些额外的操作。
+
+\begin{myNote}
+\texttt{btree\_map.split\_off(\&key)}（拆分出）
+\end{myNote}
+
+把 \texttt{btree\_map} 一分为二。将键小于 \texttt{key} 的条目留在 \texttt{btree\_map} 中。返回包含其他条目的新 \texttt{BTreeMap<K, V>}。
+
+\subsection{条目}
+
+\texttt{HashMap} 和 \texttt{BTreeMap} 都有其对应的 \texttt{Entry}（条目）类型。条目的作用旨在消除冗余的 \texttt{Map} 查找。例如，下面是一些获取或创建学生记录的代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 已经有关于此学生的记录了吗？}
+\PYG{k}{if}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{student\PYGZus{}map}\PYG{p}{.}\PYG{n}{contains\PYGZus{}key}\PYG{p}{(}\PYG{n}{name}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// 没有：创建一个}
+\PYG{+w}{    }\PYG{n}{student\PYGZus{}map}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{n}{name}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Student}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\PYG{c+c1}{// 现在，肯定存在一条记录了}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{record}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{student\PYGZus{}map}\PYG{p}{.}\PYG{n}{get\PYGZus{}mut}\PYG{p}{(}\PYG{n}{name}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+这固然可以正常工作，但它会访问 \texttt{student\_map} 两次或 3 次，每次都进行同样的查找。
+
+对于这些条目，我们应该只进行一次查找，生成一个 \texttt{Entry} 值，然后将其用于所有后续操作。下面这个单行代码等效于上一段代码，但它只会执行一次查找：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{record}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{student\PYGZus{}map}\PYG{p}{.}\PYG{n}{entry}\PYG{p}{(}\PYG{n}{name}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{or\PYGZus{}insert\PYGZus{}with}\PYG{p}{(}\PYG{n}{Student}\PYG{p}{::}\PYG{n}{new}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{student\_map.entry(name.to\_string())} 返回的 \texttt{Entry} 值就像对 \texttt{Map} 中某个位置的可变引用，该位置要么由键-值对\textbf{占用}着，要么是\textbf{空}的（意味着那里还没有条目）。如果为空，那么条目的 \texttt{.or\_insert\_with()} 方法就会插入一个新的 \texttt{Student}。\texttt{Entry} 的大多数用法也是这样的：小而美。
+
+所有 \texttt{Entry} 值都是由同一个方法创建的。
+
+\begin{mySidenote}
+\texttt{map.entry(key)}（按 \texttt{key} 取条目）
+\end{mySidenote}
+
+返回给定 \texttt{key} 的 \texttt{Entry}。如果 \texttt{Map} 中没有这样的键，则返回一个空的 \texttt{Entry}。
+
+此方法会通过可变引用获取其 \texttt{self} 参数并返回与其生命周期一致的 \texttt{Entry}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{entry}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{key}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{K}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Entry}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}
+\end{Verbatim}
+
+\texttt{Entry} 类型有一个生命周期参数 \texttt{'a}，因为它实际上是一种奇特的对 \texttt{Map} 的可变引用。只要 \texttt{Entry} 存在，它就拥有对此 \texttt{Map} 的独占访问权。
+
+通过 5.3.5 节，我们已经了解了如何在类型中存储引用以及这会如何影响生命周期。现在我们正在从用户的视角来看待它。\texttt{Entry} 就是一例。
+
+遗憾的是，如果 \texttt{Map} 具有 \texttt{String} 型的键，则无法将 \texttt{\&str} 类型的引用传给此方法。在这种情况下，\texttt{.entry()} 方法需要一个真正的 \texttt{String} 型的值。
+
+\texttt{Entry} 值提供了以下 3 个方法来处理空条目。
+
+\begin{myNote}
+\texttt{map.entry(key).or\_insert(value)}（取条目或插入）
+\end{myNote}
+
+确保 \texttt{map} 包含具有给定 \texttt{key} 的条目，如果需要，就插入具有给定 \texttt{value} 的新条目。此方法会返回对新值或现有值的可变引用。
+
+假设我们需要统计选票。可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{vote\PYGZus{}counts}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{name}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{ballots}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{count}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{vote\PYGZus{}counts}\PYG{p}{.}\PYG{n}{entry}\PYG{p}{(}\PYG{n}{name}\PYG{p}{)}\PYG{p}{.}\PYG{n}{or\PYGZus{}insert}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{*}\PYG{n}{count}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{.or\_insert()} 会返回一个可变引用，所以 \texttt{count} 的类型是 \texttt{\&mut usize}。
+
+\begin{myNote}
+\texttt{map.entry(key).or\_default()}（取条目或插入默认值）
+\end{myNote}
+
+确保 \texttt{map} 包含具有给定键的条目，如果需要，就插入一个具有 \texttt{Default::default()} 返回值的新条目。这仅适用于实现了 \texttt{Default} 的类型。与 \texttt{or\_insert} 类似，此方法会返回对新值或现有值的可变引用。
+
+\begin{myNote}
+\texttt{map.entry(key).or\_insert\_with(default\_fn)}（取条目或借助 \texttt{default\_fn} 插入）
+\end{myNote}
+
+与前两个方法类似，不过当需要创建一个新条目时，此方法会调用 \texttt{default\_fn()} 来生成默认值。如果 \texttt{map} 中已经有了 \texttt{key} 条目，则不会调用 \texttt{default\_fn}。
+
+假设我们想知道哪些词出现在了哪些文件中。可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 对于每个单词，这个`Map`包含一组曾出现过此单词的文件}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{word\PYGZus{}occurrence}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{HashSet}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{HashMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{file}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{files}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{word}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{read\PYGZus{}words}\PYG{p}{(}\PYG{n}{file}\PYG{p}{)}\PYG{o}{?}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{set}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{word\PYGZus{}occurrence}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{entry}\PYG{p}{(}\PYG{n}{word}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{or\PYGZus{}insert\PYGZus{}with}\PYG{p}{(}\PYG{n}{HashSet}\PYG{p}{::}\PYG{n}{new}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{set}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{n}{file}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Entry} 还提供了一个仅修改现有字段的便捷方法。
+
+\begin{myNote}
+\texttt{map.entry(key).and\_modify(closure)}（取条目并修改）
+\end{myNote}
+
+如果存在具有键 \texttt{key} 的条目，则调用 \texttt{closure}，并传入对该值的可变引用。此方法会返回 \texttt{Entry}，因此可以与其他方法做链式调用。
+
+例如，可以使用此方法来计算字符串中单词出现的次数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 这个`Map`包含给定字符串的所有单词以及单词的出现次数}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{word\PYGZus{}frequency}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{c}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{text}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{word\PYGZus{}frequency}\PYG{p}{.}\PYG{n}{entry}\PYG{p}{(}\PYG{n}{c}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{and\PYGZus{}modify}\PYG{p}{(}\PYG{o}{|}\PYG{n}{count}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{count}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{or\PYGZus{}insert}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Entry} 类型是为 \texttt{HashMap} 专门定义的一个枚举（\texttt{BTreeMap} 也类似）：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// (in std::collections::hash\PYGZus{}map)}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Entry}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Occupied}\PYG{p}{(}\PYG{n}{OccupiedEntry}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Vacant}\PYG{p}{(}\PYG{n}{VacantEntry}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{OccupiedEntry} 类型和 \texttt{VacantEntry} 类型都有一些无须重复查找即可插入、移除和访问条目的方法。可以在在线文档中找到这些方法。这些额外的方法有时可用于消除一两次冗余查找，不过 \texttt{.or\_insert()} 和 \texttt{.or\_insert\_with()} 已经涵盖了几种常见情况。
+
+\subsection{对 \texttt{Map} 进行迭代}
+
+以下几个方法可以对 \texttt{Map} 进行迭代。
+
+\begin{itemize}
+\item 按值迭代（\texttt{for (k, v) in map}）以生成 \texttt{(K, V)} 对。这会消耗 \texttt{Map}。
+\item 按共享引用迭代（\texttt{for (k, v) in \&map}）以生成 \texttt{(\&K, \&V)} 对。
+\item 按可变引用迭代（\texttt{for (k, v) in \&mut map}）以生成 \texttt{(\&K, \&mut V)} 对。（同样，无法对存储在 \texttt{Map} 中的键进行可变访问，因为这些条目是通过它们的键进行组织的。）
+\end{itemize}
+
+与向量类似，\texttt{Map} 也有 \texttt{.iter()} 方法和 \texttt{.iter\_mut()} 方法，它们会返回针对“条目引用”的迭代器，可用来迭代 \texttt{\&map} 或 \texttt{\&mut map}。此外，还有以下迭代方法。
+
+\begin{mySidenote}
+\texttt{map.keys()}（所有键的迭代器）
+\end{mySidenote}
+
+返回只有“键引用”的迭代器。
+
+\begin{mySidenote}
+\texttt{map.values()}（所有值的迭代器）
+\end{mySidenote}
+
+返回只有“值引用”的迭代器。
+
+\begin{mySidenote}
+\texttt{map.values\_mut()}（所有值的可变迭代器）
+\end{mySidenote}
+
+返回只有“值可变引用”的迭代器。
+
+\begin{myNote}
+\texttt{map.into\_iter()}（转为迭代器）、\texttt{map.into\_keys()}（转为键迭代器）和 \texttt{map.into\_values()}（转为值迭代器）
+\end{myNote}
+
+消耗此 \texttt{Map}，分别返回遍历键值元组 \texttt{(K, V)}、键或值的迭代器。
+
+所有 \texttt{HashMap} 迭代器都会以任意顺序访问 \texttt{Map} 的条目，而 \texttt{BTreeMap} 迭代器会按 \texttt{key} 的顺序访问它们。
+
+\section{\texttt{HashSet<T>} 与 \texttt{BTreeSet<T>}}
+
+\texttt{Set} 是用于快速进行元素存在性测试的集合：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{b1}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{large\PYGZus{}vector}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{needle}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{    }\PYG{c+c1}{// 慢，会检查每一个元素}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{b2}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{large\PYGZus{}hash\PYGZus{}set}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{needle}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 快，会按哈希查找}
+\end{Verbatim}
+
+\texttt{Set} 中永远不会包含相同值的多个副本。
+
+\texttt{Map} 和 \texttt{Set} 有一些不同的方法，但在幕后，\texttt{Set} 就像一个只有键（而非键-值对）的 \texttt{Map}。事实上，Rust 的两个 \texttt{Set} 类型 \texttt{HashSet<T>} 和 \texttt{BTreeSet<T>} 都是通过对 \texttt{HashMap<T, ()>} 和 \texttt{BTreeMap<T, ()>} 的浅层包装实现的。
+
+\begin{myNote}
+\texttt{HashSet::new()}（新建）和 \texttt{BTreeSet::new()}（新建）
+\end{myNote}
+
+创建新 \texttt{Set}。
+
+\begin{mySidenote}
+\texttt{iter.collect()}（收集）
+\end{mySidenote}
+
+可用于从任意迭代器创建出新 \texttt{Set}。如果 \texttt{iter} 多次生成了同一个值，则重复项将被丢弃。
+
+\begin{myNote}
+\texttt{HashSet::with\_capacity(n)}（自带容量）
+\end{myNote}
+
+创建一个至少有 \texttt{n} 个值空间的空 \texttt{HashSet}。
+
+\texttt{HashSet<T>} 和 \texttt{BTreeSet<T>} 有以下几个公共的基本方法。
+
+\begin{mySidenote}
+\texttt{set.len()}（长度）
+\end{mySidenote}
+
+返回 \texttt{set} 中值的数量。
+
+\begin{mySidenote}
+\texttt{set.is\_empty()}（为空？）
+\end{mySidenote}
+
+如果 \texttt{set} 不包含任何元素，就返回 \texttt{true}。
+
+\begin{mySidenote}
+\texttt{set.contains(\&value)}（包含）
+\end{mySidenote}
+
+如果 \texttt{set} 包含给定 \texttt{value}，就返回 \texttt{true}。
+
+\begin{mySidenote}
+\texttt{set.insert(value)}（插入）
+\end{mySidenote}
+
+向 \texttt{set} 中添加一个 \texttt{value}。如果新增了一个值，就返回 \texttt{true}；如果它先前已是此 \texttt{set} 的成员，则返回 \texttt{false}。
+
+\begin{mySidenote}
+\texttt{set.remove(\&value)}（移除）
+\end{mySidenote}
+
+从 \texttt{set} 中移除一个 \texttt{value}。如果移除了一个值，就返回 \texttt{true}；如果它之前不是此 \texttt{set} 的成员，则返回 \texttt{false}。
+
+\begin{mySidenote}
+\texttt{set.retain(test)}（留下）
+\end{mySidenote}
+
+移除所有未通过给定测试的元素。\texttt{test} 参数是实现了 \texttt{FnMut(\&T) -> bool} 的函数或闭包。对于 \texttt{set} 中的每个元素，此方法都会调用 \texttt{test(\&value)}，如果它返回 \texttt{false}，则该元素将被从此 \texttt{set} 中移除并丢弃。
+
+除了性能上略有差异，此方法和下面的写法很像。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{set}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{set}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{filter}\PYG{p}{(}\PYG{n}{test}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+与 \texttt{Map} 一样，通过引用查找值的方法对于可以从 \texttt{T} 借用来的类型都是通用的。有关详细信息，请参阅 13.8 节。
+
+\subsection{对 \texttt{Set} 进行迭代}
+
+以下两个方法可以迭代 \texttt{Set}。
+
+\begin{itemize}
+\item 按值迭代（\texttt{for v in set}）会生成 \texttt{Set} 的成员并消耗掉此 \texttt{Set}。
+\item 按共享引用（\texttt{for v in \&set}）迭代会生成对 \texttt{Set} 成员的共享引用。
+\end{itemize}
+
+不支持通过可变引用迭代 \texttt{Set}。无法获取对存储在 \texttt{Set} 中的值的可变引用。
+
+\begin{mySidenote}
+\texttt{set.iter()}（迭代器）
+\end{mySidenote}
+
+返回 \texttt{set} 中成员引用的迭代器。
+
+与 \texttt{HashMap} 迭代器类似，\texttt{HashSet} 迭代器会以任意顺序生成它们的值。\texttt{BTreeSet} 迭代器会按顺序生成值，就像一个排好序的向量。
+
+\subsection{当相等的值不完全相同时}
+
+\texttt{Set} 有一些奇怪的方法，只有当你关心“相等”的值之间的差异时才需要使用这些方法。
+
+这种差异确实经常存在。例如，两个内容相同的 \texttt{String} 值会将它们的字符存储在内存中的不同位置：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{s1}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{s2}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:p\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{s1}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 0x7f8b32060008}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:p\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{s2}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 0x7f8b32060010}
+\end{Verbatim}
+
+通常，我们不必在乎这种差异。
+
+但如果确实需要关心这两个 \texttt{String} 的存储位置，就可以用以下方法访问存储在 \texttt{Set} 中的实际值。如果 \texttt{set} 不包含匹配值，则每个方法都会返回一个为 \texttt{None} 的 \texttt{Option}。
+
+\begin{mySidenote}
+\texttt{set.get(\&value)}（取值）
+\end{mySidenote}
+
+返回对等于 \texttt{value} 的 \texttt{set} 成员的共享引用（如果有的话）。返回类型是 \texttt{Option<\&T>}。
+
+\begin{mySidenote}
+\texttt{set.take(\&value)}（拿出值）
+\end{mySidenote}
+
+与 \texttt{set.remove(\&value)} 类似，但此方法会返回所移除的值（如果有的话）。返回类型是 \texttt{Option<T>}。
+
+\begin{mySidenote}
+\texttt{set.replace(value)}（替换为）
+\end{mySidenote}
+
+与 \texttt{set.insert(value)} 类似，但如果 \texttt{set} 已经包含一个等于 \texttt{value} 的值，那么此方法就会替代并返回原来的值。返回类型是 \texttt{Option<T>}。
+
+\subsection{针对整个 \texttt{Set} 的运算}
+
+迄今为止，我们看到的大多数 \texttt{set} 方法专注于单个 \texttt{Set} 中的单个值。\texttt{Set} 还有一些对整个 \texttt{Set} 进行运算的方法。
+
+\begin{myNote}
+\texttt{set1.intersection(\&set2)}（交集）
+\end{myNote}
+
+返回同时出现在 \texttt{set1} 和 \texttt{set2} 中的值的迭代器。
+
+如果想打印同时参加脑外科和火箭科学课程的所有学生的姓名，可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{student}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{brain\PYGZus{}class}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{rocket\PYGZus{}class}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{n}{student}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{student}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+或者，再精简一些：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{student}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{brain\PYGZus{}class}\PYG{p}{.}\PYG{n}{intersection}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{rocket\PYGZus{}class}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{student}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+令人惊讶的是，有一个运算符能实现同样的效果。
+
+\texttt{\&set1 \& \&set2} 会返回一个新 \texttt{Set}，该 \texttt{Set} 是 \texttt{set1} 和 \texttt{set2} 的交集。这是把“二进制按位与”运算符应用在了两个引用之间。这样就会找到同时存在于 \texttt{set1} \textbf{和} \texttt{set2} 中的值。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{overachievers}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{brain\PYGZus{}class}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{rocket\PYGZus{}class}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{set1.union(\&set2)}（并集）
+\end{mySidenote}
+
+返回存在于 \texttt{set1} 或 \texttt{set2} 中或者同时存在于两者中的值的迭代器。
+
+\texttt{\&set1 | \&set2} 会返回包含所有这些值的新 \texttt{Set}。它会找出所有存在于 \texttt{set1} \textbf{或} \texttt{set2} 中的值。
+
+\begin{mySidenote}
+\texttt{set1.difference(\&set2)}（差集）
+\end{mySidenote}
+
+返回存在于 \texttt{set1} 但不在于 \texttt{set2} 中的值的迭代器。
+
+\texttt{\&set1 - \&set2} 会返回包含所有此类值的新 \texttt{Set}。
+
+\begin{myNote}
+\texttt{set1.symmetric\_difference(\&set2)}（对称差集，异或）
+\end{myNote}
+
+返回存在于 \texttt{set1} 或 \texttt{set2} 中但不同时存在于两者中的迭代器。
+
+\texttt{\&set1 \textasciicircum{} \&set2} 会返回包含所有此类值的新 \texttt{Set}。
+
+以下是测试 \texttt{Set} 之间关系的 3 个方法。
+
+\begin{myNote}
+\texttt{set1.is\_disjoint(set2)}（有交集？）
+\end{myNote}
+
+如果 \texttt{set1} 和 \texttt{set2} 没有共同的值，就返回 \texttt{true}——它们之间的交集为空。
+
+\begin{mySidenote}
+\texttt{set1.is\_subset(set2)}（是子集？）
+\end{mySidenote}
+
+如果 \texttt{set1} 是 \texttt{set2} 的子集，就返回 \texttt{true}。也就是说，\texttt{set1} 中的所有值都在 \texttt{set2} 中。
+
+\begin{myNote}
+\texttt{set1.is\_superset(set2)}（是超集？）
+\end{myNote}
+
+与上一个方法相反：如果 \texttt{set1} 是 \texttt{set2} 的超集，就返回 \texttt{true}。
+
+\texttt{Set} 还支持使用 \texttt{==} 和 \texttt{!=} 进行相等性测试。如果两个 \texttt{Set} 包含完全相同的一组值，那它们就是相等的。
+
+\section{哈希}
+
+\texttt{std::hash::Hash} 是可哈希类型的标准库特型。\texttt{HashMap} 的键和 \texttt{HashSet} 的元素都必须实现 \texttt{Hash} 和 \texttt{Eq}。
+
+大多数实现了 \texttt{Eq} 的内置类型也会实现 \texttt{Hash}。整数、\texttt{char} 和 \texttt{String} 都是可哈希的。对元组、数组、切片和向量来说，只要它们的元素是可哈希的，它们自身就是可哈希的。
+
+标准库的一个设计原则是，无论将值存储在何处或如何指向它，都应具有相同的哈希码。因此，引用与其引用的值具有相同的哈希码，而 \texttt{Box} 与其封装的值也具有相同的哈希码。向量 \texttt{vec} 与包含其所有数据的切片 \texttt{\&vec[..]} 具有相同的哈希码。\texttt{String} 与具有相同字符的 \texttt{\&str} 具有相同的哈希码。
+
+默认情况下，结构体和枚举没有实现 \texttt{Hash}，但可以派生一个实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 大英博物馆藏品中某件物品的ID号}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Clone, PartialEq, Eq, Hash)}\PYG{c+cp}{]}
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{MuseumNumber}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+只要此类型的字段都是可哈希的，就可以这样用。
+
+如果为一个类型手动实现了 \texttt{PartialEq}，那么也应该手动实现 \texttt{Hash}。假设我们有一个代表无价历史宝藏的类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Artifact}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{id}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{MuseumNumber}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{cultures}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{Culture}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{date}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{RoughTime}\PYG{p}{,}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果两个 \texttt{Artifact} 具有相同的 ID，那么就认为它们是相等的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{PartialEq}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Artifact}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{eq}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Artifact}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{id}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{.}\PYG{n}{id}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Artifact}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+由于我们仅是根据这些收藏品的 ID 来比较它们，因此也必须以相同的方式对这些收藏品进行哈希处理：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{hash}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Hash}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Hasher}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Hash}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Artifact}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{hash}\PYG{o}{\PYGZlt{}}\PYG{n}{H}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Hasher}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{hasher}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{H}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{c+c1}{// 把哈希工作委托给藏品编号}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{id}\PYG{p}{.}\PYG{n}{hash}\PYG{p}{(}\PYG{n}{hasher}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+（否则，\texttt{HashSet<Artifact>} 将无法正常工作。与所有哈希表一样，它要求如果 \texttt{a == b}，则必然 \texttt{hash(a) == hash(b)}。）
+
+这允许我们创建一个 \texttt{Artifact} 的 \texttt{HashSet}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{collection}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashSet}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{Artifact}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如上述代码的前一段代码所示，即使要手动实现 \texttt{Hash}，也不需要了解任何有关哈希算法的知识。\texttt{.hash()} 会接收一个表示哈希算法的 \texttt{Hasher} 引用作为参数。你只需将与 \texttt{==} 运算符相关的所有数据提供给这个 \texttt{Hasher} 即可。\texttt{Hasher} 会根据你提供的任何内容计算哈希码。
+
+\section{使用自定义哈希算法}
+
+\texttt{hash} 方法是泛型的，因此 16.7 节展示的 \texttt{Hash} 实现可以将数据提供给实现了 \texttt{Hasher} 的任何类型。这就是 Rust 支持可替换哈希算法的方式。
+
+第三个特型 \texttt{std::hash::BuildHasher} 是表示哈希算法初始状态的类型的特型。每个 \texttt{Hasher} 都是单次使用的，就像迭代器一样：用过一次就扔掉了。而 \texttt{BuildHasher} 是可重用的。
+
+每个 \texttt{HashMap} 都包含一个 \texttt{BuildHasher}，每次需要计算哈希码时都会用到。\texttt{BuildHasher} 值包含哈希算法每次运行时所需的键、初始状态或其他参数。
+
+计算哈希码的完整协议如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{hash}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Hash}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Hasher}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{BuildHasher}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{compute\PYGZus{}hash}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{builder}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{B}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{u64}
+\PYG{+w}{    }\PYG{n+nc}{where}\PYG{+w}{ }\PYG{n}{B}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BuildHasher}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Hash}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{hasher}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{builder}\PYG{p}{.}\PYG{n}{build\PYGZus{}hasher}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 1. 开始此算法}
+\PYG{+w}{    }\PYG{n}{value}\PYG{p}{.}\PYG{n}{hash}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{hasher}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{                  }\PYG{c+c1}{// 2. 填入数据}
+\PYG{+w}{    }\PYG{n}{hasher}\PYG{p}{.}\PYG{n}{finish}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{                           }\PYG{c+c1}{// 3. 结束，生成u64}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{HashMap} 每次需要计算哈希码时都会调用这 3 个方法。所有的方法都是可内联的，所以速度非常快。
+
+Rust 的默认哈希算法是著名的 SipHash-1-3 算法。SipHash 的速度很快，而且非常擅长减少哈希冲突。事实上，它也是一个加密算法：目前还没有已知的有效方法能刻意生成与 SipHash-1-3 冲突的值。只要每个哈希表使用不同且无法预测的密钥，Rust 就可以安全地抵御一种称为 HashDoS 的拒绝服务攻击，在这种攻击中，攻击者会故意使用哈希冲突来触发服务器的最坏性能。
+
+不过，也许你的应用程序不需要此算法。如果要存储诸如整数或非常短的字符串之类的小型键，则可以实现更快的哈希函数，但代价是要牺牲 HashDoS 的安全性。\texttt{fnv} crate 实现了这样的一个算法，即 Fowler-Noll-Vo (FNV) 哈希。要尝试此算法，请将如下内容添加到你的 Cargo.toml 中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{[}\PYG{k}{dependencies}\PYG{k}{]}
+\PYG{n}{fnv}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1.0}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+然后从 \texttt{fnv} 中导入 \texttt{Map} 类型和 \texttt{Set} 类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{fnv}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{FnvHashMap}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{FnvHashSet}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+可以使用这两种类型作为 \texttt{HashMap} 和 \texttt{HashSet} 的无缝替代品。浏览一下 \texttt{fnv} 源代码，就会发现它们是如何定义的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 使用默认FNV哈希器的`HashMap`}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{FnvHashMap}\PYG{o}{\PYGZlt{}}\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n}{K}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{V}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{FnvBuildHasher}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 使用默认FNV哈希器的`HashSet`}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{FnvHashSet}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashSet}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{FnvBuildHasher}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+标准的 \texttt{HashMap} 集合和 \texttt{HashSet} 集合会接受一个可选的额外类型参数来指定哈希算法，\texttt{FnvHashMap} 和 \texttt{FnvHashSet} 是 \texttt{HashMap} 和 \texttt{HashSet} 的泛型类型别名，用于为那个参数指定一个 FNV 哈希器。
+
+\section{在标准集合之外}
+
+在 Rust 中创建一个新的自定义集合类型和在其他语言中非常相似。你可以通过组合语言提供的部件（结构体和枚举、标准集合、\texttt{Option}、\texttt{Box} 等）来组织数据。有关示例，请参阅 10.1.4 节定义的 \texttt{BinaryTree<T>} 类型。
+
+如果你习惯于在 C++ 中实现数据结构，使用裸指针、手动内存管理、定位放置（placement）\texttt{new} 和显式析构函数调用来获得最佳性能，那么你无疑会发现这在安全的 Rust 中处处受限。所有这些工具本质上都是不安全的。可以在 Rust 中使用它们，但前提是要使用不安全的代码。第 22 章展示了如何通过不安全的代码实现它们，其中包括一个示例，该示例使用了一些不安全的代码来实现安全的自定义集合。
+
+现在，我们将沐浴在标准集合及其安全、高效 API 的和煦阳光中。与 Rust 标准库中的许多 API 一样，这些 API 旨在让你尽可能少写一点儿 \texttt{unsafe} 代码。
+

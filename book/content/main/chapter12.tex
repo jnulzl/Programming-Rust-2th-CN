@@ -1,0 +1,625 @@
+% chapter12 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_106.html, part0000_split_107.html, part0000_split_108.html, part0000_split_109.html, part0000_split_110.html, part0000_split_111.html
+
+在第 2 章展示的曼德博集绘图器中，我们使用了 \texttt{num} crate 的 \texttt{Complex} 类型来表示复平面上的数值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Clone, Copy, Debug)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 复数的实部}
+\PYG{+w}{    }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 复数的虚部}
+\PYG{+w}{    }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+使用 Rust 的 \texttt{+} 运算符和 \texttt{*} 运算符，可以像对任何内置数值类型一样对 \texttt{Complex} 进行加法运算和乘法运算：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{z}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{;}
+\end{Verbatim}
+
+你也可以让自己的类型支持算术运算符和其他运算符，只要实现一些内置特型即可。这叫作\textbf{运算符重载}，其效果跟 C++、C\#、Python 和 Ruby 中的运算符重载很相似。
+
+运算符重载的特型可以根据其支持的语言特性分为几类，如表 12-1 所示。本章将逐一介绍每个类别。我们不仅要帮你把自己的类型很好地集成到语言中，而且要让你更好地了解如何编写泛型函数，比如 11.1.2 节讲过的 \texttt{dot\_product} 函数，该函数能使用运算符自然而然地对自定义类型进行运算。本章还会深入讲解语言本身的某些特性是如何实现的。
+
+\myCaption{表 12-1：运算符重载的特型汇总表}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.371\hsize\raggedright\arraybackslash}X>{\hsize=1.315\hsize\raggedright\arraybackslash}X>{\hsize=1.315\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{类别} & \textcolor{white}{特型} & \textcolor{white}{运算符} \\
+一元运算符 & \texttt{std::ops::Neg}\newline{}\texttt{std::ops::Not} & \texttt{-x}\newline{}\texttt{!x} \\
+算术运算符 & \texttt{std::ops::Add}\newline{}\texttt{std::ops::Sub}\newline{}\texttt{std::ops::Mul}\newline{}\texttt{std::ops::Div}\newline{}\texttt{std::ops::Rem} & \texttt{x + y}\newline{}\texttt{x - y}\newline{}\texttt{x * y}\newline{}\texttt{x / y}\newline{}\texttt{x \% y} \\
+按位运算符 & \texttt{std::ops::BitAnd}\newline{}\texttt{std::ops::BitOr}\newline{}\texttt{std::ops::BitXor}\newline{}\texttt{std::ops::Shl}\newline{}\texttt{std::ops::Shr} & \texttt{x \& y}\newline{}\texttt{x | y}\newline{}\texttt{x \textasciicircum{} y}\newline{}\texttt{x << y}\newline{}\texttt{x >> y} \\
+复合赋值算术运算符 & \texttt{std::ops::AddAssign}\newline{}\texttt{std::ops::SubAssign}\newline{}\texttt{std::ops::MulAssign}\newline{}\texttt{std::ops::DivAssign}\newline{}\texttt{std::ops::RemAssign} & \texttt{x += y}\newline{}\texttt{x -= y}\newline{}\texttt{x *= y}\newline{}\texttt{x /= y}\newline{}\texttt{x \%= y} \\
+复合赋值按位运算符 & \texttt{std::ops::BitAndAssign}\newline{}\texttt{std::ops::BitOrAssign}\newline{}\texttt{std::ops::BitXorAssign}\newline{}\texttt{std::ops::ShlAssign}\newline{}\texttt{std::ops::ShrAssign} & \texttt{x \&= y}\newline{}\texttt{x |= y}\newline{}\texttt{x \textasciicircum{}= y}\newline{}\texttt{x <<= y}\newline{}\texttt{x >>= y} \\
+比较 & \texttt{std::cmp::PartialEq}\newline{}\texttt{std::cmp::PartialOrd} & \texttt{x == y}、\texttt{x != y}\newline{}\texttt{x < y}、\texttt{x <= y}、\texttt{x > y}、\texttt{x >= y} \\
+索引 & \texttt{std::ops::Index}\newline{}\texttt{std::ops::IndexMut} & \texttt{x[y]}、\texttt{\&x[y]}\newline{}\texttt{x[y] = z}、\texttt{\&mut x[y]} \\
+\end{tabularx}
+\myTableEnd
+
+\section{算术运算符与按位运算符}
+
+在 Rust 中，表达式 \texttt{a + b} 实际上是 \texttt{a.add(b)} 的简写形式，也就是对标准库中 \texttt{std::ops::Add} 特型的 \texttt{add} 方法的调用。Rust 的标准数值类型都实现了 \texttt{std::ops::Add}。为了使表达式 \texttt{a + b} 适用于 \texttt{Complex} 值，\texttt{num} crate 也为 \texttt{Complex} 实现了这个特型。还有一些类似的特型覆盖了其他运算符：\texttt{a * b} 是 \texttt{a.mul(b)} 的简写形式，也就是对 \texttt{std::ops::Mul} 特型的 \texttt{mul} 方法的调用，\texttt{std::ops::Neg} 实现了前缀取负运算符 \texttt{-}，等等。
+
+如果试图写出 \texttt{z.add(c)}，就要将 \texttt{Add} 特型引入作用域，以便它的方法在此可见。做完这些，就可以将所有算术运算视为函数调用了：\footnote{Lisp 程序员应该很熟悉这种写法。表达式 \texttt{<i32 as Add>::add} 就是 \texttt{i32} 的 \texttt{+} 运算符，其结果是函数的返回值。}
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Add}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mf}{4.125}\PYG{k}{f32}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{l+m+mf}{5.75}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{9.875}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mf}{10.}\PYG{n}{add}\PYG{p}{(}\PYG{l+m+mi}{20}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这是 \texttt{std::ops::Add} 的定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Rhs}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+也就是说，\texttt{Add<T>} 特型代表给自己的类型加上一个 \texttt{T} 值的能力。如果希望把 \texttt{i32} 和 \texttt{u32} 型的值加到你的类型上，就必须同时实现 \texttt{Add<i32>} 和 \texttt{Add<u32>}。特型的类型参数 \texttt{Rhs} 默认为 \texttt{Self}，因此如果想在两个相同类型的值之间实现加法，那么可以仅为这种情况编写 \texttt{Add}。关联类型 \texttt{Output} 描述了加法结果的类型。
+
+例如，为了能把两个 \texttt{Complex<i32>} 值加到一起，\texttt{Complex<i32>} 就必须实现 \texttt{Add<Complex<i32>>}。由于我们想为自身加上同类型的值，因此只需像下面这样编写 \texttt{Add} 即可：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Add}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Add}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{self}\PYG{p}{.}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{.}\PYG{n}{re}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{self}\PYG{p}{.}\PYG{n}{im}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{.}\PYG{n}{im}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当然，不必为 \texttt{Complex<i32>}、\texttt{Complex<f32>}、\texttt{Complex<f64>} 等逐个实现 \texttt{Add}。除了所涉及的类型不一样，所有定义看起来都完全相同，因此我们可以写一个涵盖所有这些定义的泛型实现，只要复数的各个组件本身的类型都支持加法就可以：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Add}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Add}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{self}\PYG{p}{.}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{.}\PYG{n}{re}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{self}\PYG{p}{.}\PYG{n}{im}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{.}\PYG{n}{im}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+通过编写 \texttt{where T: Add<Output=T>}，我们将 \texttt{T} 限界到能与自身相加并产生另一个 \texttt{T} 值的类型。虽然这是一个合理的限制，但还可以将条件进一步放宽，因为 \texttt{Add} 特型不要求 \texttt{+} 的两个操作数具有相同的类型，也不限制结果类型。因此，一个尽可能泛化的实现可以让左右操作数独立变化，并生成加法所能生成的任何组件类型的 \texttt{Complex} 值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Add}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{L}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{R}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{R}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{L}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{L}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Add}\PYG{o}{\PYGZlt{}}\PYG{n}{R}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{L}\PYG{p}{::}\PYG{n}{Output}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{R}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{self}\PYG{p}{.}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{.}\PYG{n}{re}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{self}\PYG{p}{.}\PYG{n}{im}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{.}\PYG{n}{im}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+然而，在实践中，Rust 更倾向于避免混合类型运算。由于我们的类型参数 \texttt{L} 必须实现 \texttt{Add<R>}，因此通常情况下 \texttt{L} 和 \texttt{R} 将是相同的类型。这是因为对 \texttt{L} 而言，该限制太严格了，不大可能实现其他类型的 \texttt{Add}。最终，这个尽可能泛化版本的泛型定义，其实并不比之前的简单版本有用多少。
+
+Rust 的算术运算符和按位运算符的内置特型分为 3 组：一元运算符、二元运算符和复合赋值运算符。在每一组中，特型及其方法都具有相同的形式，因此接下来我们将各举一例。
+
+\subsection{一元运算符}
+
+除了我们将在 13.5 节单独介绍的解引用运算符 \texttt{*}，Rust 还有两个可以自定义的一元运算符，如表 12-2 所示。
+
+\myCaption{表 12-2：一元运算符的内置特型}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=1.148\hsize\raggedright\arraybackslash}X>{\hsize=0.861\hsize\raggedright\arraybackslash}X>{\hsize=0.991\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{特型名称} & \textcolor{white}{表达式} & \textcolor{white}{等效表达式} \\
+\texttt{std::ops::Neg} & \texttt{-x} & \texttt{x.neg()} \\
+\texttt{std::ops::Not} & \texttt{!x} & \texttt{x.not()} \\
+\end{tabularx}
+\myTableEnd
+
+Rust 的所有带符号数值类型都实现了 \texttt{std::ops::Neg}，以支持一元取负运算符 \texttt{-}；整数类型和 \texttt{bool} 实现了 \texttt{std::ops::Not}，以支持一元取反运算符 \texttt{!}。还有一些是针对这些类型的引用的实现。
+
+请注意，\texttt{!} 运算符会对 \texttt{bool} 值进行取反，而对整数执行按位取反，它同时扮演着 C 和 C++ 中的 \texttt{!} 运算符和 \texttt{\textasciitilde{}} 运算符的角色。
+
+这些特型的定义很简单：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Neg}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{neg}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Not}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{not}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+对一个复数取负就是对它的每个组件取负。以下是对 \texttt{Complex} 值进行取负的泛型实现。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Neg}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Neg}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Neg}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{neg}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{re}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{im}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{二元运算符}
+
+Rust 的二元算术运算符和二元按位运算符及它们对应的内置特型参见表 12-3。
+
+\myCaption{表 12-3：二元运算符的内置特型}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.303\hsize\raggedright\arraybackslash}X>{\hsize=1.232\hsize\raggedright\arraybackslash}X>{\hsize=1.232\hsize\raggedright\arraybackslash}X>{\hsize=1.232\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{类别} & \textcolor{white}{特型名称} & \textcolor{white}{表达式} & \textcolor{white}{等效表达式} \\
+算术运算符 & \texttt{std::ops::Add}\newline{}\texttt{std::ops::Sub}\newline{}\texttt{std::ops::Mul}\newline{}\texttt{std::ops::Div}\newline{}\texttt{std::ops::Rem} & \texttt{x + y}\newline{}\texttt{x - y}\newline{}\texttt{x * y}\newline{}\texttt{x / y}\newline{}\texttt{x \% y} & \texttt{x.add(y)}\newline{}\texttt{x.sub(y)}\newline{}\texttt{x.mul(y)}\newline{}\texttt{x.div(y)}\newline{}\texttt{x.rem(y)} \\
+按位运算符 & \texttt{std::ops::BitAnd}\newline{}\texttt{std::ops::BitOr}\newline{}\texttt{std::ops::BitXor}\newline{}\texttt{std::ops::Shl}\newline{}\texttt{std::ops::Shr} & \texttt{x \& y}\newline{}\texttt{x | y}\newline{}\texttt{x \textasciicircum{} y}\newline{}\texttt{x << y}\newline{}\texttt{x >> y} & \texttt{x.bitand(y)}\newline{}\texttt{x.bitor(y)}\newline{}\texttt{x.bitxor(y)}\newline{}\texttt{x.shl(y)}\newline{}\texttt{x.shr(y)} \\
+\end{tabularx}
+\myTableEnd
+
+Rust 的所有数值类型都实现了算术运算符。Rust 的整数类型和 \texttt{bool} 类型都实现了按位运算符。此外，还有一些运算符能接受“对这些类型的引用”作为一个或两个操作数。
+
+这里的所有特型，其一般化形式都是一样的。例如，对于 \texttt{\textasciicircum{}} 运算符，\texttt{std::ops::BitXor} 的定义如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{BitXor}\PYG{o}{\PYGZlt{}}\PYG{n}{Rhs}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{bitxor}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+本章开头还展示过此类别中的另一个特型 \texttt{std::ops::Add}，以及几个范例实现。
+
+你可以使用 \texttt{+} 运算符将 \texttt{String} 与 \texttt{\&str} 切片或另一个 \texttt{String} 连接起来。但是，Rust 不允许 \texttt{+} 的左操作数是 \texttt{\&str} 类型，以防止通过在左侧重复接入小型片段来构建长字符串。（这种方式性能不佳，其时间复杂度是字符串最终长度的平方。）一般来说，\texttt{write!} 宏更适合从小型片段构建出字符串，17.3.3 节会展示如何执行此操作。
+
+\subsection{复合赋值运算符}
+
+复合赋值表达式形如 \texttt{x += y} 或 \texttt{x \&= y}：它接受两个操作数，先对它们执行加法或按位与等操作，然后再将结果写回左操作数。在 Rust 中，复合赋值表达式自身的值总是 \texttt{()}，而不是所存入的值。
+
+许多语言有这样的运算符，并且通常会将它们定义为 \texttt{x = x + y} 或 \texttt{x = x \& y} 等表达式的简写形式。但是，Rust 没有采用这种方式。在 Rust 中，\texttt{x += y} 是方法调用 \texttt{x.add\_assign(y)} 的简写形式，其中 \texttt{add\_assign} 是 \texttt{std::ops::AddAssign} 特型的唯一方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{AddAssign}\PYG{o}{\PYGZlt{}}\PYG{n}{Rhs}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add\PYGZus{}assign}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+表 12-4 展示了 Rust 的所有复合赋值运算符和实现了它们的内置特型。
+
+\myCaption{表 12-4：复合赋值运算符的内置特型}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.303\hsize\raggedright\arraybackslash}X>{\hsize=1.232\hsize\raggedright\arraybackslash}X>{\hsize=1.232\hsize\raggedright\arraybackslash}X>{\hsize=1.232\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{类别} & \textcolor{white}{特型名称} & \textcolor{white}{表达式} & \textcolor{white}{等效表达式} \\
+算术运算符 & \texttt{std::ops::AddAssign}\newline{}\texttt{std::ops::SubAssign}\newline{}\texttt{std::ops::MulAssign}\newline{}\texttt{std::ops::DivAssign}\newline{}\texttt{std::ops::RemAssign} & \texttt{x += y}\newline{}\texttt{x -= y}\newline{}\texttt{x \textbackslash{}*= y}\newline{}\texttt{x /= y}\newline{}\texttt{x \%= y} & \texttt{x.add\_assign(y)}\newline{}\texttt{x.sub\_assign(y)}\newline{}\texttt{x.mul\_assign(y)}\newline{}\texttt{x.div\_assign(y)}\newline{}\texttt{x.rem\_assign(y)} \\
+按位运算符 & \texttt{std::ops::BitAndAssign}\newline{}\texttt{std::ops::BitOrAssign}\newline{}\texttt{std::ops::BitXorAssign}\newline{}\texttt{std::ops::ShlAssign}\newline{}\texttt{std::ops::ShrAssign} & \texttt{x \&= y}\newline{}\texttt{x |= y}\newline{}\texttt{x \textasciicircum{}= y}\newline{}\texttt{x <<= y}\newline{}\texttt{x >>= y} & \texttt{x.bitand\_assign(y)}\newline{}\texttt{x.bitor\_assign(y)}\newline{}\texttt{x.bitxor\_assign(y)}\newline{}\texttt{x.shl\_assign(y)}\newline{}\texttt{x.shr\_assign(y)} \\
+\end{tabularx}
+\myTableEnd
+
+Rust 的所有数值类型都实现了算术复合赋值运算符。Rust 的整数类型和 \texttt{bool} 类型都实现了按位复合赋值运算符。
+
+为 \texttt{Complex} 类型实现 \texttt{AddAssign} 的泛型代码一目了然：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{AddAssign}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{AddAssign}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{AddAssign}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add\PYGZus{}assign}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{.}\PYG{n}{re}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{im}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{.}\PYG{n}{im}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+复合赋值运算符的内置特型完全独立于相应二元运算符的内置特型。实现 \texttt{std::ops::Add} 并不会自动实现 \texttt{std::ops::AddAssign}，如果想让 Rust 允许你的类型作为 \texttt{+=} 运算符的左操作数，就必须自行实现 \texttt{AddAssign}。
+
+\section{相等性比较}
+
+Rust 的相等性运算符 \texttt{==} 和 \texttt{!=} 是对调用 \texttt{std::cmp::PartialEq} 特型的 \texttt{eq} 和 \texttt{ne} 这两个方法的简写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{.}\PYG{n}{eq}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{y}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{x}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{.}\PYG{n}{ne}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{y}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+下面是 \texttt{std::cmp::PartialEq} 的定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{PartialEq}\PYG{o}{\PYGZlt{}}\PYG{n}{Rhs}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{Rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{eq}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{ne}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{!}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{eq}\PYG{p}{(}\PYG{n}{other}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+由于 \texttt{ne} 方法有一个默认定义，因此你只需定义 \texttt{eq} 来实现 \texttt{PartialEq} 特型即可。下面是 \texttt{Complex} 的完整实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{PartialEq}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{PartialEq}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{eq}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{.}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{im}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{.}\PYG{n}{im}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+换句话说，对于自身可以做相等性比较的任意组件类型 \texttt{T}，这个实现就能为 \texttt{Complex<T>} 提供比较功能。假设我们还在某处为 \texttt{Complex} 实现了 \texttt{std::ops::Mul}，那么现在就可以这样写了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{y}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{x}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{29}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{PartialEq} 的实现几乎就是这里展示的形式，即将左操作数的每个字段与右操作数的相应字段进行比较。手写这些代码很枯燥，而相等性是一个常见的支持性操作，所以只要提出要求，Rust 就会自动为你生成一个 \texttt{PartialEq} 的实现。只需把 \texttt{PartialEq} 添加到类型定义的 \texttt{derive} 属性中即可，如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Clone, Copy, Debug, PartialEq)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+Rust 自动生成的实现与手写的代码本质上是一样的，都会依次比较每个字段或类型的元素。Rust 还可以为 \texttt{enum} 类型派生出 \texttt{PartialEq} 实现。同样，该类型含有（对于 \texttt{enum} 则是所有可能含有）的每个值本身必须实现 \texttt{PartialEq}。
+
+与按值获取操作数的算术特型和按位运算特型不同，\texttt{PartialEq} 会通过引用获取其操作数。这意味着在比较诸如 \texttt{String}、\texttt{Vec} 或 \texttt{HashMap} 之类的非 \texttt{Copy} 值时并不会导致它们被移动，否则就会很麻烦：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{d}\PYG{l+s+se}{\PYGZbs{}x6f}\PYG{l+s}{v}\PYG{l+s+se}{\PYGZbs{}x65}\PYG{l+s}{t}\PYG{l+s+se}{\PYGZbs{}x61}\PYG{l+s}{i}\PYG{l+s+se}{\PYGZbs{}x6c}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{t}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s+se}{\PYGZbs{}x64}\PYG{l+s}{o}\PYG{l+s+se}{\PYGZbs{}x76}\PYG{l+s}{e}\PYG{l+s+se}{\PYGZbs{}x74}\PYG{l+s}{a}\PYG{l+s+se}{\PYGZbs{}x69}\PYG{l+s}{l}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{t}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// s和t都是借用来的……}
+
+\PYG{c+c1}{// ……所以，在这里它们仍然拥有自己的值}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{t}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{dovetail dovetail}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+注意 \texttt{Rhs} 类型参数上的特型限界，这是一种我们从未见过的类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{Rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{p}{,}
+\end{Verbatim}
+
+这放宽了 Rust 对类型参数必须有固定大小的常规要求，能让我们写出像 \texttt{PartialEq<str>} 或 \texttt{PartialEq<[T]>} 这样的特型。\texttt{eq} 方法和 \texttt{ne} 方法会接受 \texttt{\&Rhs} 类型的参数，因为将某些类型的值与 \texttt{\&str} 或 \texttt{\&[T]} 进行比较是完全合理的。由于 \texttt{str} 实现了 \texttt{PartialEq<str>}，因此以下断言是等效的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ungula}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ungulate}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ungula}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{ne}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ungulate}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+在这里，\texttt{Self} 和 \texttt{Rhs} 都是无固定大小类型 \texttt{str}，这就令 \texttt{ne} 的 \texttt{self} 参数和 \texttt{rhs} 参数都是 \texttt{\&str} 值。13.2 节会详细讨论固定大小类型、无固定大小类型和 \texttt{Sized} 特型。
+
+为什么这个特型叫作 \texttt{PartialEq}？这是因为\textbf{等价关系}（相等就是其中之一）的传统数学定义提出了 3 个要求。对于任意值 \texttt{x} 和 \texttt{y}，需满足以下条件。
+
+\begin{itemize}
+\item 如果 \texttt{x == y} 为真，则 \texttt{y == x} 也必然为真。换句话说，交换相等性比较的两个操作数不会影响比较结果。
+\item 如果 \texttt{x == y} 且 \texttt{y == z}，则 \texttt{x == z} 一定成立。给定任何值组成的链，其中的每个值必然等于下一个值，链中的每个值都直接等于其他值。相等性是可传递的。
+\item \texttt{x == x} 必须始终为真。
+\end{itemize}
+
+最后一个要求可能看起来过于显而易见而不值一提，但这正是容易出错的地方。Rust 的 \texttt{f32} 和 \texttt{f64} 是 IEEE 标准浮点值。根据该标准，像 \texttt{0.0/0.0} 和其他没有适当值的表达式必须生成特殊的\textbf{非数值}，通常叫作 NaN 值。该标准进一步要求将 NaN 值视为与包括其自身在内的所有其他值都不相等。例如，标准要求以下所有断言都成立：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{is\PYGZus{}nan}\PYG{p}{(}\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+此外，任何值与 NaN 值进行有序比较都必须返回 \texttt{false}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+因此，虽然 Rust 的 \texttt{==} 运算符满足等价关系的前两个要求，但当用于 IEEE 浮点值时，它显然不满足第三个要求。这称为\textbf{部分相等关系}，因此 Rust 使用名称 \texttt{PartialEq} 作为 \texttt{==} 运算符的内置特型。如果要用仅支持 \texttt{PartialEq} 类型的参数编写泛型代码，那么可以假设前两个要求一定成立，但不应假设任何值一定等于它自身。
+
+这有点儿反直觉，如果不提高警惕，就可能带来 bug。如果你的泛型代码想要“完全相等”关系，那么可以改用 \texttt{std::cmp::Eq} 特型作为限界，它表示完全相等关系：如果类型实现了 \texttt{Eq}，则对于该类型的每个值 \texttt{x}，\texttt{x == x} 都必须为 \texttt{true}。实际上，几乎所有实现了 \texttt{PartialEq} 的类型都实现了 \texttt{Eq}，而 \texttt{f32} 和 \texttt{f64} 是标准库中仅有的两个属于 \texttt{PartialEq} 却不属于 \texttt{Eq} 的类型。
+
+标准库将 \texttt{Eq} 定义为 \texttt{PartialEq} 的扩展，而且未添加新方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{PartialEq}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果你的类型是 \texttt{PartialEq} 并且希望它也是 \texttt{Eq}，就必须显式实现 \texttt{Eq}，不过你并不需要实际为此定义任何新函数或类型。所以要为 \texttt{Complex} 类型实现 \texttt{Eq} 很简单：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+甚至可以通过在 \texttt{Complex} 类型定义的 \texttt{derive} 属性中包含 \texttt{Eq} 来更简洁地实现它：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Clone, Copy, Debug, Eq, PartialEq)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+泛型类型的派生实现可能取决于类型参数。使用 \texttt{derive} 属性，\texttt{Complex<i32>} 将实现 \texttt{Eq}，因为 \texttt{i32} 实现了它，但 \texttt{Complex<f32>} 只能实现 \texttt{PartialEq}，因为 \texttt{f32} 没有实现 \texttt{Eq}。
+
+当你自己实现 \texttt{std::cmp::PartialEq} 时，Rust 无法检查你对 \texttt{eq} 方法和 \texttt{ne} 方法的定义是否真的符合部分相等或完全相等的要求。你的实现可以“为所欲为”。Rust 只会接受你给出的结果，因为它假设你已经以满足特型用户期望的方式实现了相等性。
+
+尽管 \texttt{PartialEq} 已经为 \texttt{ne} 提供了默认定义，但你也可以根据需要提供自己的实现。不过，你必须确保 \texttt{ne} 和 \texttt{eq} 彼此精确互补，因为 \texttt{PartialEq} 特型的用户会认为理当如此。
+
+\section{有序比较}
+
+Rust 会根据单个特型 \texttt{std::cmp::PartialOrd} 来定义全部的有序比较运算符 \texttt{<}、\texttt{>}、\texttt{<=} 和 \texttt{>=} 的行为：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{PartialOrd}\PYG{o}{\PYGZlt{}}\PYG{n}{Rhs}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{PartialEq}\PYG{o}{\PYGZlt{}}\PYG{n}{Rhs}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{Rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{partial\PYGZus{}cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{Ordering}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{lt}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{le}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{gt}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{ge}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Rhs}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+请注意，\texttt{PartialOrd<Rhs>} 扩展了 \texttt{PartialEq<Rhs>}：只有可以比较相等性的类型才能比较顺序性。
+
+\texttt{PartialOrd} 中必须自行实现的唯一方法是 \texttt{partial\_cmp}。当 \texttt{partial\_cmp} 返回 \texttt{Some(o)} 时，\texttt{o} 应该指出 \texttt{self} 与 \texttt{other} 之间的关系：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Ordering}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Less}\PYG{p}{,}\PYG{+w}{       }\PYG{c+c1}{// self \PYGZlt{} other}
+\PYG{+w}{    }\PYG{n}{Equal}\PYG{p}{,}\PYG{+w}{      }\PYG{c+c1}{// self == other}
+\PYG{+w}{    }\PYG{n}{Greater}\PYG{p}{,}\PYG{+w}{    }\PYG{c+c1}{// self \PYGZgt{} other}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+但是如果 \texttt{partial\_cmp} 返回 \texttt{None}，那么就意味着 \texttt{self} 和 \texttt{other} 相对于彼此是无序的，即两者都不大于对方，但也不相等。在 Rust 的所有原始类型中，只有浮点值之间的比较会返回 \texttt{None}：具体来说，将 NaN 值与任何其他值进行比较都会返回 \texttt{None}。有关 NaN 值的更多背景知识，请参见 12.2 节。
+
+和其他二元运算符一样，如果要比较 \texttt{Left} 和 \texttt{Right} 这两种类型的值，那么 \texttt{Left} 就必须实现 \texttt{PartialOrd<Right>}。像 \texttt{x < y} 或 \texttt{x >= y} 这样的表达式都是调用 \texttt{PartialOrd} 方法的简写形式，如表 12-5 所示。
+
+\myCaption{表 12-5：有序比较运算符和 \texttt{PartialOrd} 方法}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.703\hsize\raggedright\arraybackslash}X>{\hsize=0.722\hsize\raggedright\arraybackslash}X>{\hsize=1.576\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{表达式} & \textcolor{white}{相等性方法调用} & \textcolor{white}{默认定义} \\
+\texttt{x < y} & \texttt{x.lt(y)} & \texttt{x.partial\_cmp(\&y) == Some(Less)} \\
+\texttt{x > y} & \texttt{x.gt(y)} & \texttt{x.partial\_cmp(\&y) == Some(Greater)} \\
+\texttt{x <= y} & \texttt{x.le(y)} & \texttt{matches!(x.partial\_cmp(\&y), Some(Less | Equal))} \\
+\texttt{x >= y} & \texttt{x.ge(y)} & \texttt{matches!(x.partial\_cmp(\&y), Some(Greater | Equal))} \\
+\end{tabularx}
+\myTableEnd
+
+与前面的示例一样，这里的相等性方法调用代码也假定当前作用域中已经引入了 \texttt{std::cmp::PartialOrd} 和 \texttt{std::cmp::Ordering}。
+
+如果你知道两种类型的值总能确定相对于彼此的顺序，那么就可以实现更严格的 \texttt{std::cmp::Ord} 特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Ord}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Eq}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{PartialOrd}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Ordering}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里的 \texttt{cmp} 方法只会返回 \texttt{Ordering}，而不会像 \texttt{partial\_cmp} 那样返回 \texttt{Option<Ordering>}：\texttt{cmp} 总会声明它的两个参数相等或指出它们的相对顺序。几乎所有实现了 \texttt{PartialOrd} 的类型都应该实现 \texttt{Ord}。在标准库中，\texttt{f32} 和 \texttt{f64} 是该规则的例外情况。
+
+由于复数没有自然顺序，因此我们无法使用前几节中的 \texttt{Complex} 类型来展示 \texttt{PartialOrd} 的示例实现。相反，假设你正在使用以下类型表示落在给定左闭右开区间内的一组数值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Debug, PartialEq)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Interval}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{c+c1}{// 闭区间}
+\PYG{+w}{    }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{c+c1}{// 开区间}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+你希望对这种类型的值进行部分排序，即如果一个区间完全落在另一个区间之前，并且没有重叠，则认为这个区间小于另一个区间。如果两个不相等的区间有重叠（每一侧都有某些元素小于另一侧的某些元素），则认为它们是无序的。而两个相等的区间必然是完全相等的。以下 \texttt{PartialOrd} 代码实现了这些规则：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{cmp}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Ordering}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{PartialOrd}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{PartialOrd}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{PartialOrd}\PYG{o}{\PYGZlt{}}\PYG{n}{Interval}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Interval}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{partial\PYGZus{}cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Interval}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{Ordering}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{other}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Ordering}\PYG{p}{::}\PYG{n}{Equal}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{lower}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{.}\PYG{n}{upper}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Ordering}\PYG{p}{::}\PYG{n}{Greater}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{upper}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{.}\PYG{n}{lower}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Ordering}\PYG{p}{::}\PYG{n}{Less}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{None}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+有了这个实现，你就可以写出如下代码了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{Interval}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{  }\PYG{n}{Interval}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{40}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{Interval}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{  }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{+w}{  }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Interval}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{  }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{  }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{Interval}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{  }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{+w}{  }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Interval}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{  }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{+w}{  }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 两个存在重叠的区间相对彼此没有顺序可言}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{left}\PYG{+w}{  }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Interval}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{30}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{right}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Interval}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{lower}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{upper}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{40}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{o}{!}\PYG{p}{(}\PYG{n}{left}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{right}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{o}{!}\PYG{p}{(}\PYG{n}{left}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{right}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+虽然通常我们会使用 \texttt{PartialOrd}，但在某些情况下，用 \texttt{Ord} 定义的完全排序也是有必要的，比如在标准库中实现的那些排序方法。但不可能仅通过 \texttt{PartialOrd} 来对区间进行排序。如果你确实想对它们进行排序，则必须想办法填补这些无法确定顺序的情况。如果你希望按上限排序，那么很容易用 \texttt{sort\_by\_key} 来实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{intervals}\PYG{p}{.}\PYG{n}{sort\PYGZus{}by\PYGZus{}key}\PYG{p}{(}\PYG{o}{|}\PYG{n}{i}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{.}\PYG{n}{upper}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+包装器类型 \texttt{Reverse} 就利用了这一点，借助一个简单的逆转任何顺序的方法来实现 \texttt{Ord}。对于任何实现了 \texttt{Ord} 的类型 \texttt{T}，\texttt{std::cmp::Reverse<T>} 也会实现 \texttt{Ord}，只是顺序相反。例如，可以简单地按下限从高到低对这些区间进行排序。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{cmp}\PYG{p}{::}\PYG{n}{Reverse}\PYG{p}{;}
+\PYG{n}{intervals}\PYG{p}{.}\PYG{n}{sort\PYGZus{}by\PYGZus{}key}\PYG{p}{(}\PYG{o}{|}\PYG{n}{i}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{Reverse}\PYG{p}{(}\PYG{n}{i}\PYG{p}{.}\PYG{n}{lower}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\section{\texttt{Index} 与 \texttt{IndexMut}}
+
+通过实现 \texttt{std::ops::Index} 特型和 \texttt{std::ops::IndexMut} 特型，你可以规定像 \texttt{a[i]} 这样的索引表达式该如何作用于你的类型。数组可以直接支持 \texttt{[]} 运算符，但对其他类型来说，表达式 \texttt{a[i]} 通常是 \texttt{*a.index(i)} 的简写形式，其中 \texttt{index} 是 \texttt{std::ops::Index} 特型的方法。但是，如果表达式被赋值或借用成了可变形式，那么 \texttt{a[i]} 就是对调用 \texttt{std::ops::IndexMut} 特型方法的 \texttt{*a.index\_mut(i)} 的简写。
+
+以下是 \texttt{Index} 和 \texttt{IndexMut} 这两个特型的定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Index}\PYG{o}{\PYGZlt{}}\PYG{n}{Idx}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{index}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{index}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Idx}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{IndexMut}\PYG{o}{\PYGZlt{}}\PYG{n}{Idx}\PYG{o}{\PYGZgt{}}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Index}\PYG{o}{\PYGZlt{}}\PYG{n}{Idx}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{index\PYGZus{}mut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{index}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Idx}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+请注意，这些特型会以索引表达式的类型作为参数。你可以使用单个 \texttt{usize} 对切片进行索引，以引用单个元素，因为切片实现了 \texttt{Index<usize>}。还可以使用像 \texttt{a[i..j]} 这样的表达式来引用子切片，因为切片也实现了 \texttt{Index<Range<usize>>}。该表达式是以下内容的简写形式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{o}{*}\PYG{n}{a}\PYG{p}{.}\PYG{n}{index}\PYG{p}{(}\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Range}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{start}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{i}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{end}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{j}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\end{Verbatim}
+
+Rust 的 \texttt{HashMap} 集合和 \texttt{BTreeMap} 集合允许使用任何可哈希类型或有序类型作为索引。以下代码之所以能运行，是因为 \texttt{HashMap<\&str, i32>} 实现了 \texttt{Index<\&str>}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashMap}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{m}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{十}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{m}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{百}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{100}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{m}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{千}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{m}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{万}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1\PYGZus{}0000}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{m}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{億}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1\PYGZus{}0000\PYGZus{}0000}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{m}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{十}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{m}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{千}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这些索引表达式等效于如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Index}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{*}\PYG{n}{m}\PYG{p}{.}\PYG{n}{index}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{十}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{*}\PYG{n}{m}\PYG{p}{.}\PYG{n}{index}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{千}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{Index} 特型的关联类型 \texttt{Output} 指定了索引表达式要生成的类型：对这个 \texttt{HashMap} 而言，\texttt{Index} 实现的 \texttt{Output} 类型是 \texttt{i32}。
+
+\texttt{IndexMut} 特型使用 \texttt{index\_mut} 方法（该方法接受对 \texttt{self} 的可变引用）扩展了 \texttt{Index}，并返回了对 \texttt{Output} 值的可变引用。当索引表达式出现在需要可变引用的上下文中时，Rust 会自动选择 \texttt{index\_mut}。假设我们编写了如下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{desserts}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Howalon}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Soan papdi}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{]}\PYG{p}{;}
+\PYG{n}{desserts}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{.}\PYG{n}{push\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ (fictional)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{desserts}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{.}\PYG{n}{push\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ (real)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+因为 \texttt{push\_str} 方法要对 \texttt{\&mut self} 进行操作，所以最后两行代码等效于如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{IndexMut}\PYG{p}{;}
+\PYG{p}{(}\PYG{o}{*}\PYG{n}{desserts}\PYG{p}{.}\PYG{n}{index\PYGZus{}mut}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{push\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ (fictional)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{(}\PYG{o}{*}\PYG{n}{desserts}\PYG{p}{.}\PYG{n}{index\PYGZus{}mut}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{push\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ (real)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{IndexMut} 有一个限制，即根据设计，它必须返回对某个值的可变引用。这就是不能使用像 \texttt{m[" 十 "] = 10;} 这样的表达式来将值插入 \texttt{m} 这个 \texttt{HashMap} 中的原因：该表需要先为 \texttt{" 十 "} 创建一个带有默认值的条目，然后再返回一个对它的可变引用。但并不是所有的类型都有开销很低的默认值，有些可能开销很高，创建这么一个马上就会因赋值而被丢弃的值是一种浪费。（Rust 计划在更高版本中对此进行改进。）
+
+索引最常用于各种集合。假设我们要处理第 2 章中曼德博集绘图器那样的位图图像。当时我们的程序中包含如下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{pixels}\PYG{p}{[}\PYG{n}{row}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{column}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{p}{;}
+\end{Verbatim}
+
+如果有一个像二维数组一样的 \texttt{Image<u8>} 类型肯定会更好，这样就可以访问像素而不必写出所有的算法了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{p}{[}\PYG{n}{row}\PYG{p}{]}\PYG{p}{[}\PYG{n}{column}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{p}{;}
+\end{Verbatim}
+
+为此，需要声明一个结构体：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Image}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{width}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{pixels}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Copy}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Image}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 创建一个给定大小的新图像}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{new}\PYG{p}{(}\PYG{n}{width}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{height}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Image}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Image}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{width}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{pixels}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{vec}\PYG{o}{!}\PYG{p}{[}\PYG{n}{P}\PYG{p}{::}\PYG{n}{default}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{width}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{height}\PYG{p}{]}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+以下是符合要求的 \texttt{Index} 和 \texttt{IndexMut} 的实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Index}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Image}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{n}{P}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{index}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{row}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{P}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{start}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{row}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{width}\PYG{p}{;}
+\PYG{+w}{        }\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{pixels}\PYG{p}{[}\PYG{n}{start}\PYG{o}{..}\PYG{n}{start}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{width}\PYG{p}{]}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{IndexMut}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Image}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{index\PYGZus{}mut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{row}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{p}{[}\PYG{n}{P}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{start}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{row}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{width}\PYG{p}{;}
+\PYG{+w}{        }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{pixels}\PYG{p}{[}\PYG{n}{start}\PYG{o}{..}\PYG{n}{start}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{width}\PYG{p}{]}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+对 \texttt{Image} 进行索引时，你会得到一些像素的切片，再索引此切片会返回一个单独的像素。
+
+请注意，在编写 \texttt{image[row][column]} 时，如果 \texttt{row} 超出范围，那么 \texttt{.index()} 方法在试图索引 \texttt{self.pixels} 时也会超出范围，从而引发 panic。这就是 \texttt{Index} 实现和 \texttt{IndexMut} 实现的行为方式：检测到越界访问并导致 panic，就像索引数组、切片或向量时越界一样。
+
+\section{其他运算符}
+
+并非所有运算符都可以在 Rust 中重载。从 Rust 1.50 开始，错误检查运算符 \texttt{?} 仅适用于 \texttt{Result} 值和 \texttt{Option} 值，不过 Rust 也在努力将其扩展到用户定义类型。同样，逻辑运算符 \texttt{\&\&} 和 \texttt{||} 仅限于 \texttt{bool} 值。\texttt{..} 运算符和 \texttt{..=} 运算符总会创建一个表示范围边界的结构体，\texttt{\&} 运算符总是会借用引用，\texttt{=} 运算符总是会移动值或复制值。它们都不能重载。
+
+解引用运算符 \texttt{*val} 和用于访问字段和调用方法的点运算符（如 \texttt{val.field} 和 \texttt{val.method()}）可以用 \texttt{Deref} 特型和 \texttt{DerefMut} 特型进行重载，这将在第 13 章中介绍。（之所以本章没有包含它们，是因为这两个特型不仅仅是重载几个运算符那么简单。）
+
+Rust 不支持重载函数调用运算符 \texttt{f(x)}。当你需要一个可调用的值时，通常只需编写一个闭包即可。第 14 章将解释它是如何工作的，同时会涵盖 \texttt{Fn}、\texttt{FnMut} 和 \texttt{FnOnce} 这几个特殊特型。
+

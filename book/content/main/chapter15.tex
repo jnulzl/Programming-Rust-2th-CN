@@ -1,0 +1,1720 @@
+% chapter15 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_132.html, part0000_split_133.html, part0000_split_134.html, part0000_split_135.html, part0000_split_136.html, part0000_split_137.html
+
+\begin{myEpigraph}{——Phil}
+漫长的一天结束了。
+\end{myEpigraph}
+
+\textbf{迭代器}是一个值，它可以生成一系列值，通常用来执行循环操作。Rust 的标准库不仅提供了用于遍历向量、字符串、哈希表和其他集合的迭代器，还提供了“从输入流中产生文本行”“从网络服务器中产生新的入站连接”“从通信通道中其他线程接收的值”等迭代器。当然，你也可以出于自己的目的实现迭代器。Rust 的 \texttt{for} 循环为使用迭代器提供了一种自然的语法，但迭代器本身也提供了一组丰富的方法，比如映射（\texttt{map}）、过滤（\texttt{filter}）、连接（\texttt{join}）、收集（\texttt{collect}）等。
+
+Rust 的各种迭代器灵活、富有表现力而且高效。考虑以下函数，它会返回前 \texttt{n} 个正整数之和（通常称为\textbf{第 \texttt{n} 个三角形数}）：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{triangle}\PYG{p}{(}\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{sum}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{o}{..=}\PYG{n}{n}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{sum}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{sum}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+表达式 \texttt{1..=n} 是一个 \texttt{RangeInclusive<i32>} 型的值。而 \texttt{RangeInclusive<i32>} 是一个迭代器，可以生成其起始值到结束值（包括两者）之间的整数，因此你可以将它用作 \texttt{for} 循环的操作数来对从 \texttt{1} 到 \texttt{n} 的值求和。
+
+但是迭代器还有一个 \texttt{fold} 方法，可以实现完全一样的效果：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{triangle}\PYG{p}{(}\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{o}{..=}\PYG{n}{n}\PYG{p}{)}\PYG{p}{.}\PYG{n}{fold}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{sum}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{item}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{sum}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{item}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+开始运行时以 \texttt{0} 作为总和，\texttt{fold} 会获取 \texttt{1..=n} 生成的每个值，并以总和（\texttt{sum}）跟当前值（\texttt{item}）为参数调用闭包 \texttt{|sum, item| sum + item}。闭包的返回值会作为新的总和。它返回的最后一个值就是 \texttt{fold} 自身要返回的值——在这个例子中，也就是整个序列的总和。如果你用惯了 \texttt{for} 循环和 \texttt{while} 循环，这种写法可能看起来很奇怪，但一旦习惯了 \texttt{fold}，你就会发现 \texttt{fold} 的表达方式更加清晰和简洁。
+
+这就是函数式编程语言的标准风格，非常注重表达能力。Rust 的迭代器都经过了精心设计，以确保编译器可以把它们翻译成优秀的机器码。例如前面展示的第二个定义，在发行版中，Rust 会理解 \texttt{fold} 的定义并将其内联到 \texttt{triangle} 中。接下来是将闭包 \texttt{|sum, item| sum + item} 内联到 \texttt{triangle} 中。最后，Rust 会检查合并后的代码并意识到有一种更简单的方法可以对从 \texttt{1} 到 \texttt{n} 的数值求和：其总和总会等于 \texttt{n * (n+1) / 2}。于是 Rust 将 \texttt{triangle} 的整个函数体，包括循环、闭包和所有内容，翻译成了单个乘法指令和几个算术运算。
+
+虽然这个例子只涉及简单的算术运算，但迭代器在重度使用时也同样表现出色。它们是 Rust 提供的另一种灵活抽象，在典型应用中几乎不会产生额外开销。
+
+在本章中，我们将解释以下核心知识点。
+
+\begin{itemize}
+\item \texttt{Iterator} 特型和 \texttt{IntoIterator} 特型，两者是 Rust 迭代器的基础。
+\item 一个典型的迭代器流水线通常有 3 个阶段：从某种“值源”创建迭代器，通过选择或处理从中流过的值来将一种迭代器适配成另一种迭代器，然后消耗此迭代器生成的值。
+\item 如何为自己的类型实现迭代器。
+\end{itemize}
+
+迭代器的方法非常多，不过只要你掌握了其基本思想，就可以粗略浏览相应的部分。但迭代器在 Rust 惯用法中非常常见，熟悉它们附带的工具对于掌握这门语言至关重要。
+
+\section{\texttt{Iterator} 特型与 \texttt{IntoIterator} 特型}
+
+迭代器是实现了 \texttt{std::iter::Iterator} 特型的任意值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{next}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{err}{…}\PYG{err}{…}\PYG{+w}{ }\PYG{c+c1}{// 很多默认方法}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Item} 是迭代器所生成的值的类型。\texttt{next} 方法要么返回 \texttt{Some(v)}（其中 \texttt{v} 是迭代器的下一个值），要么返回 \texttt{None}（作为序列结束的标志）。这里我们省略了 \texttt{Iterator} 的许多默认方法，本章的其余小节会分别介绍它们。
+
+只要可以用某种自然的方式来迭代某种类型，该类型就可以实现 \texttt{std::iter::IntoIterator}，其 \texttt{into\_iter} 方法会接受一个值并返回一个迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{+w}{ }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{IntoIter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{IntoIter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{into\PYGZus{}iter}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{IntoIter}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{IntoIter} 是迭代器本身的类型，而 \texttt{Item} 是它生成的值的类型。任何实现了 \texttt{IntoIterator} 的类型都称为\textbf{可迭代者}，因为你可以随意迭代它。
+
+Rust 的 \texttt{for} 循环会将所有这些部分很好地结合在一起。要遍历向量的元素，你可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{There\PYGZsq{}s:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{antimony}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{arsenic}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{aluminum}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{selenium}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{element}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{v}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{element}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在幕后，每个 \texttt{for} 循环都只是调用 \texttt{IntoIterator} 和 \texttt{Iterator} 中某些方法的简写形式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{iterator}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{v}\PYG{p}{)}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{element}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{element}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{for} 循环会使用 \texttt{IntoIterator::into\_iter} 将其操作数 \texttt{\&v} 转换为迭代器，然后重复调用 \texttt{Iterator::next}。每次返回 \texttt{Some(element)} 时，\texttt{for} 循环都会执行其循环体，如果返回 \texttt{None}，则循环结束。
+
+先记住这个例子，下面介绍迭代器的一些术语。
+
+\begin{itemize}
+\item 正如我们所说，\textbf{迭代器}是实现了 \texttt{Iterator} 的任意类型。
+\item \textbf{可迭代者}是任何实现了 \texttt{IntoIterator} 的类型：你可以通过调用它的 \texttt{into\_iter} 方法来获得一个迭代器。在这里，向量引用 \texttt{\&v} 就是可迭代者。
+\item 迭代器能\textbf{生成}值。
+\item 迭代器生成的值是\textbf{条目}。在这里，条目是 \texttt{"antimony"}、\texttt{"arsenic"} 等。
+\item 接收迭代器所生成条目的代码是\textbf{消费者}。在这里，\texttt{for} 循环体就是消费者。
+\end{itemize}
+
+虽然 \texttt{for} 循环总会在其操作数上调用 \texttt{into\_iter}，但你也可以直接把迭代器传给 \texttt{for} 循环，比如，在遍历 \texttt{Range} 时就是这样的。所有迭代器都自动实现了 \texttt{IntoIterator}，并带有一个直接返回迭代器的 \texttt{into\_iter} 方法。
+
+如果在返回 \texttt{None} 后再次调用迭代器的 \texttt{next} 方法，则 \texttt{Iterator} 特型没有规定它应该做什么。大多数迭代器只会再次返回 \texttt{None}，但也有例外。（如果这个过程中出了问题，可以参考一下 15.3.7 节中介绍的 \texttt{fuse} 适配器。）
+
+\section{创建迭代器}
+
+虽然 Rust 标准库文档对每个种类的迭代器类型都进行了详细解释，但标准库还是遵循了一些通用的约定，来帮助你定位并找到想要的东西。
+
+\subsection{\texttt{iter} 方法与 \texttt{iter\_mut} 方法}
+
+大多数集合类型提供了 \texttt{iter}（迭代器）方法和 \texttt{iter\_mut}（可变迭代器）方法，它们会返回该类型的自然迭代器，为每个条目生成共享引用或可变引用。像 \texttt{\&[T]} 和 \texttt{\&mut [T]} 这样的数组切片也有 \texttt{iter} 方法和 \texttt{iter\_mut} 方法。如果你不打算让 \texttt{for} 循环替你跟迭代器打交道，\texttt{iter} 方法和 \texttt{iter\_mut} 方法就是获取迭代器最常用的方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{12}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{iterator}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{20}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{12}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{8}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{6}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这个迭代器的条目类型是 \texttt{\&i32}：每次调用 \texttt{next} 都会生成对下一个元素的引用，直到抵达向量的末尾。
+
+每种类型都可以自由选用任何符合其设计意图的方式实现 \texttt{iter} 和 \texttt{iter\_mut}。\texttt{std::path::Path} 上的 \texttt{iter} 方法会返回一个迭代器，一次生成一个路径组件：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ffi}\PYG{p}{::}\PYG{n}{OsStr}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{path}\PYG{p}{::}\PYG{n}{Path}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{path}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Path}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{C:/Users/JimB/Downloads/Fedora.iso}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{iterator}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{OsStr}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{C:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{OsStr}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Users}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iterator}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{OsStr}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{JimB}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+这个迭代器的条目类型是 \texttt{\&std::ffi::OsStr}，是从操作系统调用所要求的那类字符串借用的切片类型。
+
+如果类型有不止一种常用的遍历方式，该类型通常会为每种遍历方式提供一个专门的方法，因为普通的 \texttt{iter} 方法会产生歧义。例如，\texttt{\&str} 字符串切片类型就没有 \texttt{iter} 方法——如果 \texttt{s} 是 \texttt{\&str}，则 \texttt{s.bytes()} 会返回一个能生成 \texttt{s} 中每字节的迭代器，而 \texttt{s.chars()} 则会将内容解释为 UTF-8 并生成每个 Unicode 字符。
+
+\subsection{\texttt{IntoIterator} 的实现}
+
+如果一个类型实现了 \texttt{IntoIterator}，你也可以自行调用它的 \texttt{into\_iter} 方法，就像 \texttt{for} 循环一样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 大家通常会使用HashSet，但它的迭代顺序是不确定的，}
+\PYG{c+c1}{// 因此在这个示例中用了BTreeSet，它的演示效果更好些}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{BTreeSet}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{favorites}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BTreeSet}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{favorites}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Lucy in the Sky With Diamonds}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{favorites}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Liebesträume No. 3}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{it}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{favorites}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{it}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Liebesträume No. 3}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{it}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Lucy in the Sky With Diamonds}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{it}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+大多数集合实际上提供了 \texttt{IntoIterator} 的几种实现，用于共享引用（\texttt{\&T}）、可变引用（\texttt{\&mut T}）和移动（\texttt{T}）。
+
+\begin{itemize}
+\item 给定一个集合的\textbf{共享引用}，\texttt{into\_iter} 会返回一个迭代器，该迭代器会生成对其条目的共享引用。例如，在前面的代码中，\texttt{(\&favorites).into\_iter()} 会返回一个 \texttt{Item} 类型为 \texttt{\&String} 的迭代器。
+\item 给定对集合的\textbf{可变引用}，\texttt{into\_iter} 会返回一个迭代器，该迭代器会生成对其条目的可变引用。如果 \texttt{vector} 是某个 \texttt{Vec<String>}，则调用 \texttt{(\&mut vector).into\_iter()} 会返回一个 \texttt{Item} 类型为 \texttt{\&mut String} 的迭代器。
+\item 当按值传递集合时，\texttt{into\_iter} 会返回一个迭代器，该迭代器会获取集合的所有权并按值返回这些条目，这些条目的所有权会从集合转移给消费者，原始集合在此过程中已被消耗掉了。例如，前面代码中的 \texttt{favorites.into\_iter()} 调用返回了一个迭代器，该迭代器会按值生成每个字符串，消费者会获得每个字符串的所有权。当迭代器被丢弃时，\texttt{BTreeSet} 中剩余的所有元素都将被丢弃，并且该集合的空壳也将被丢弃。
+\end{itemize}
+
+由于 \texttt{for} 循环会将 \texttt{IntoIterator::into\_iter} 作为它的操作对象，因此这 3 种实现创建了以下惯用法，用于迭代对集合的共享引用或可变引用，或者消耗该集合并获取其元素的所有权：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{element}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{collection}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{element}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{collection}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{element}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{collection}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+其中每种用法最终都会调用此处列出的三种 \texttt{IntoIterator} 实现之一。
+
+并非每种类型都提供了这 3 种实现，比如，\texttt{HashSet}、\texttt{BTreeSet} 和 \texttt{BinaryHeap} 不会在可变引用上实现 \texttt{IntoIterator}，因为修改它们的元素可能会违反类型自身的不变性规则——修改后的值很可能有不同的哈希值，或者相对于其邻居的顺序改变了，所以修改它会让该类型处于错误状态。另一部分类型确实支持修改，但只支持修改一部分，比如，\texttt{HashMap} 和 \texttt{BTreeMap} 会生成对其条目值的可变引用，但只能提供对其键的共享引用，原因与前面给出的相似。
+
+总体原则是，迭代应该是高效且可预测的，因此 Rust 不会提供昂贵或可能表现出意外行为的实现。（例如，对修改过的 \texttt{HashSet} 条目重新进行哈希，可能会导致在迭代中稍后再次遇到这些条目。）
+
+切片实现了 3 个 \texttt{IntoIterator} 变体中的两个，由于切片并不拥有自己的元素，因此不存在“按值”引用的情况。\texttt{\&[T]} 和 \texttt{\&mut [T]} 各自的 \texttt{into\_iter} 会分别返回一个迭代器，该迭代器会生成对其元素的共享引用和可变引用。如果你将底层的切片类型 \texttt{[T]} 想象成某种集合，那它就完美地遵循了集合的总体模式。\footnote{Rust 的总体模式是指，对于任何集合，都会有一种标准的方式可以迭代它的元素。但这种方式可能因具体集合类型而异。——译者注}
+
+你可能已经注意到了，对于共享引用和可变引用，前两个 \texttt{IntoIterator} 变体等效于在引用目标上调用 \texttt{iter} 或 \texttt{iter\_mut}。为什么 Rust 要同时提供 \texttt{into\_iter} 和 \texttt{iter} 这两种方式呢？
+
+\texttt{IntoIterator} 是确保 \texttt{for} 循环工作的关键，显而易见它是必要的。但当我们不用 \texttt{for} 循环时，写 \texttt{favorites.iter()} 会比 \texttt{(\&favorites).into\_iter()} 更清晰。我们会频繁通过共享引用进行迭代，因此 \texttt{iter} 和 \texttt{iter\_mut} 仍然具有很高的工效学价值。
+
+\texttt{IntoIterator} 在泛型代码中也很有用：你可以使用像 \texttt{T: IntoIterator} 这样的限界来将类型变量 \texttt{T} 限制为可以迭代的类型，还可以编写 \texttt{T: IntoIterator<Item=U>} 来进一步要求迭代时生成具有特定类型 \texttt{U} 的条目。例如，\texttt{dump} 函数可以转储任何其条目可用 \texttt{"\{:?\}"} 格式打印的可迭代者的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Debug}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{dump}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{U}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{t}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n}{U}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{U}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Debug}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{u}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{t}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{u}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+但你不能使用 \texttt{iter} 和 \texttt{iter\_mut} 来编写这个泛型函数，因为它们不是任何特型的方法：只是大多数可迭代类型恰好具有叫这两个名字的方法而已。
+
+\subsection{\texttt{from\_fn} 与 \texttt{successors}}
+
+要生成一系列值，有一种简单而通用的方法，那就是提供一个能返回这些值的闭包。
+
+给定返回 \texttt{Option<T>} 的函数，\texttt{std::iter::from\_fn}（来自 \texttt{fn}）就会返回一个迭代器，该迭代器会调用 \texttt{fn} 来生成条目。例如：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{rand}\PYG{p}{::}\PYG{n}{random}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 在Cargo.toml中添加dependencies: rand = \PYGZdq{}0.7\PYGZdq{}}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{iter}\PYG{p}{::}\PYG{n}{from\PYGZus{}fn}\PYG{p}{;}
+
+\PYG{c+c1}{// 产生1000条端点均匀分布在区间[0, 1]上的随机线段的长度（这并不是}
+\PYG{c+c1}{// `rand\PYGZus{}distr` crate中能找到的分布类型，但你可以轻易实现一个）}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{lengths}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{from\PYGZus{}fn}\PYG{p}{(}\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{n}{random}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{random}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{abs}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{l+m+mi}{1000}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+它会调用 \texttt{from\_fn} 来让迭代器产生随机数。由于迭代器总是返回 \texttt{Some}，因此序列永不结束，但我们调用 \texttt{take(1000)} 时会将其限制为前 1000 个元素。然后 \texttt{collect} 会从这 1000 次迭代中构建出向量。这是构造已初始化向量的有效方式，我们会在 15.4.13 节中解释原因。
+
+如果每个条目都依赖于其前一个条目，那么 \texttt{std::iter::successors} 函数很实用。只需要提供一个初始条目和一个函数，且该函数能接受一个条目并返回下一个条目的 \texttt{Option}。如果返回 \texttt{None}，则迭代结束。例如，下面是编写第 2 章中的曼德博集绘图器的 \texttt{escape\_time} 函数的另一种方式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{num}\PYG{p}{::}\PYG{n}{Complex}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{iter}\PYG{p}{::}\PYG{n}{successors}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{escape\PYGZus{}time}\PYG{p}{(}\PYG{n}{c}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{limit}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{zero}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{successors}\PYG{p}{(}\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{zero}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{n}{z}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{z}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{n}{limit}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{enumerate}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{o}{|}\PYG{p}{(}\PYG{n}{\PYGZus{}i}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{z}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{z}\PYG{p}{.}\PYG{n}{norm\PYGZus{}sqr}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mf}{4.0}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{p}{(}\PYG{n}{i}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}z}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+从零开始，\texttt{successors}（后继者）调用会通过反复对最后一个点求平方再加上参数 \texttt{c} 来生成复平面上的一系列点。在绘制曼德博集时，我们想看看这个序列是永远在原点附近打转还是“飞向”无穷远。调用 \texttt{take(limit)} 确定了我们追踪序列的次数限制，然后 \texttt{enumerate} 对每个点进行编号，将每个点 \texttt{z} 变成元组 \texttt{(i, z)}。我们使用 \texttt{find} 来寻找距离原点足够远的第一个点以判断是否逃逸。\texttt{find} 方法会返回一个 \texttt{Option}：如果这样的点存在就返回 \texttt{Some((i, z))}，否则返回 \texttt{None}。调用 \texttt{Option::map} 会将 \texttt{Some((i, z))} 变成 \texttt{Some(i)}，但不会改变 \texttt{None}，因为这正是我们想要的返回值。
+
+\texttt{from\_fn} 和 \texttt{successors} 都接受 \texttt{FnMut} 闭包，因此你的闭包可以捕获和修改周边作用域中的变量。例如，下面的 \texttt{fibonacci} 函数就用 \texttt{move} 闭包来捕获一个变量并将其用作自己的运行状态：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{fibonacci}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{state}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{std}\PYG{p}{::}\PYG{n}{iter}\PYG{p}{::}\PYG{n}{from\PYGZus{}fn}\PYG{p}{(}\PYG{k}{move}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{state}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{state}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{state}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{state}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{state}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{fibonacci}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{l+m+mi}{8}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{13}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{21}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+需要注意的是，\texttt{from\_fn} 方法和 \texttt{successors} 方法非常灵活，你几乎可以将任何对迭代器的使用改写成对其中之一的调用，通过传递复杂的闭包来得到你想要的行为。但这样做浪费了迭代器提供的机会，即使用常见模式的标准名称来更清晰地表达计算中的数据流。在使用这两个方法之前，请确保你已经熟悉本章中的其他迭代器方法，通常其他迭代器是更好的选择。\footnote{简而言之，这两个方法应该作为我们最后的选项，而不是一上来就使用。——译者注}
+
+\subsection{\texttt{drain} 方法}
+
+有许多集合类型提供了 \texttt{drain}（抽取）方法。\texttt{drain} 会接受一个对集合的可变引用，并返回一个迭代器，该迭代器会将每个元素的所有权传给消费者。然而，与按值获取并消耗掉集合的 \texttt{into\_iter()} 方法不同，\texttt{drain} 只会借入对集合的可变引用，当迭代器被丢弃时，它会从集合中移除所有剩余元素以清空集合。
+
+对于可以按范围索引的类型（如 \texttt{String}、向量和 \texttt{VecDeque}），\texttt{drain} 方法可指定要移除的元素范围，而不是“抽干”整个序列：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{outer}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Earth}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{inner}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{from\PYGZus{}iter}\PYG{p}{(}\PYG{n}{outer}\PYG{p}{.}\PYG{n}{drain}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{outer}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Eh}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{inner}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{art}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如果确实需要“抽干”整个序列，使用整个范围（\texttt{..}）作为参数即可。
+
+\subsection{其他迭代器源}
+
+前面的内容主要关注集合类型（如向量和 \texttt{HashMap}），但标准库中还有许多其他类型也支持迭代。表 15-1 总结了一些比较有趣的迭代器，限于篇幅，还有更多没有列出来。我们在专门讲解特定类型的章（第 16 章、第 17 章和第 18 章）中会更详细地介绍其中的一些方法。
+
+\myCaption{表 15-1：标准库中的其他迭代器}
+
+\myTableBegin
+\begin{xltabular}{\textwidth}{@{}>{\hsize=0.829\hsize\raggedright\arraybackslash}X>{\hsize=1.086\hsize\raggedright\arraybackslash}X>{\hsize=1.086\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{类型或特型} & \textcolor{white}{表达式} & \textcolor{white}{注意事项} \\
+\endfirsthead
+\rowcolor{tabhead}\textcolor{white}{类型或特型} & \textcolor{white}{表达式} & \textcolor{white}{注意事项} \\
+\endhead
+\texttt{std::ops::Range} & \texttt{1..10}\newline{}\texttt{(1..10).step\_by(2)} & 两个端点必须是可迭代的整数类型。范围包括起始值，不包括结束值\newline{}生成 1、3、5、7、9 \\
+\texttt{std::ops::RangeFrom} & \texttt{1..} & 无界迭代。起点必须是一个整数。如果值达到了该类型的上限，可能会发生 panic 或溢出 \\
+\texttt{std::ops::RangeInclusive} & \texttt{1..=10} & 和 \texttt{Range} 类似，但包含结束值 \\
+\texttt{Option<T>} & \texttt{Some(10).iter()} & 表现得像一个长度为 0（\texttt{None}）或 1（\texttt{Some(v)}）的向量 \\
+\texttt{Result<T, E>} & \texttt{Ok("blah").iter()} & 类似于 \texttt{Option}，但生成 \texttt{Ok} 值 \\
+\texttt{Vec<T>,\&[T]} & \texttt{v.windows(16)}\newline{}\texttt{v.chunks(16)}\newline{}\texttt{v.chunks\_mut(1024)}\newline{}\texttt{v.split(|byte|byte \& 1 != 0)}\newline{}\texttt{v.split\_mut(...)}\newline{}\texttt{v.rsplit(...)}\newline{}\texttt{v.splitn(n, ...)} & 从左到右生成给定长度的所有连续切片。窗口之间会有重叠\newline{}从左到右生成给定长度的不重叠的连续切片\newline{}和 \texttt{chunks} 类似，但生成的切片是可变的\newline{}生成由匹配给定谓词的元素分隔的切片\newline{}同上，但生成可变切片\newline{}与 \texttt{split} 类似，但从右到左生成切片\newline{}与 \texttt{split} 类似，但最多生成 \emph{n} 个切片 \\
+\texttt{String,\&str} & \texttt{s.bytes()}\newline{}\texttt{s.chars()}\newline{}\texttt{s.split\_whitespace()}\newline{}\texttt{s.lines()}\newline{}\texttt{s.split('/')}\newline{}\texttt{s.matches(char::is\_numeric)} & 生成一些 UTF-8 格式的字节\newline{}生成一些 UTF-8 表示的字符\newline{}按空白字符拆分字符串，并生成非空白字符的切片\newline{}生成字符串各行的切片\newline{}用给定模式拆分字符串，用匹配项之间的部分生成切片。模式可以有很多种：字符、\texttt{String} 和闭包\newline{}生成与给定模式匹配的切片 \\
+\texttt{std::collections::HashMap, std::collections::BTreeMap} & \texttt{map.keys(), map.values()}\newline{}\texttt{map.values\_mut()} & 生成对该 \texttt{map} 的键或值的共享引用\newline{}生成对条目值的可变引用 \\
+\texttt{std::collections::HashSet, std::collections::BTreeSet} & \texttt{set1.union(set2)}\newline{}\texttt{set1.intersection(set2)} & 生成对 \texttt{set1} 和 \texttt{set2} 并集元素的共享引用\newline{}生成对 \texttt{set1} 和 \texttt{set2} 交集元素的共享引用 \\
+\texttt{std::sync::mpsc::Receiver} & \texttt{recv.iter()} & 生成从位于另一个线程的对端发送者发来的值 \\
+\texttt{std::io::Read} & \texttt{stream.bytes()}\newline{}\texttt{stream.chars()} & 从 I/O 流中生成一些字节\newline{}将流解析为 UTF-8，并生成一些字符 \\
+\texttt{std::io::BufRead} & \texttt{bufstream.lines()}\newline{}\texttt{bufstream.split(0)} & 将流解析为 UTF-8，并按行生成一些 \texttt{String}\newline{}使用给定的字节拆分流，生成该字节间的 \texttt{Vec<u8>} 缓冲区 \\
+\texttt{std::fs::ReadDir} & \texttt{std::fs::read\_dir(path)} & 生成目录条目 \\
+\texttt{std::net::TcpListener} & \texttt{listener.incoming()} & 生成传入的网络连接 \\
+自由函数 & \texttt{std::iter::empty()}\newline{}\texttt{std::iter::once(5)}\newline{}\texttt{std::iter::repeat("\#9")} & 立即返回 \texttt{None}\newline{}生成给定的值然后结束\newline{}总是生成给定的值 \\
+\end{xltabular}
+\myTableEnd
+
+\section{迭代器适配器}
+
+一旦你手头有了迭代器，迭代器的 \texttt{Iterator} 特型就会提供大量\textbf{适配器方法}（也可以简称为\textbf{适配器}）。适配器会消耗某个迭代器并构建一个实现了特定行为的新迭代器。为了阐明适配器的工作原理，我们将从两个最流行的适配器 \texttt{map} 和 \texttt{filter} 开始，然后介绍其他适配器，涵盖了你能想到的从其他序列生成值序列的几乎所有方式：截断、跳过、组合、反转、连接、重复等。
+
+\subsection{\texttt{map} 与 \texttt{filter}}
+
+\texttt{Iterator} 特型的 \texttt{map}（映射）适配器能针对迭代器的各个条目调用闭包来帮你转换迭代器。\texttt{filter} 适配器能使用闭包来帮你从迭代器中过滤某些条目，由闭包决定保留和丢弃哪些条目。
+
+假设你正在逐行遍历文本并希望去掉每一行的前导空格和尾随空格。标准库的 \texttt{str::trim} 方法能从单个 \texttt{\&str} 中丢弃前导空格和尾随空格，返回一个新的、修剪过的 \texttt{\&str} 借用。你可以通过 \texttt{map} 适配器将 \texttt{str::trim} 应用于迭代器中的每一行：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{text}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{  ponies  }\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{   giraffes}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{iguanas  }\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{squid}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{text}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{trim}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ponies}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{giraffes}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{iguanas}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{squid}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{text.lines()} 调用会返回一个生成字符串中各行的迭代器。在该迭代器上调用 \texttt{map} 会返回第二个迭代器，第二个迭代器会对每一行调用 \texttt{str::trim} 并将生成的结果作为自己的条目。最后，\texttt{collect} 会将这些条目收集到一个向量中。
+
+\texttt{map} 返回的迭代器本身当然也可以进一步适配。如果你想将结果中的 \texttt{iguanas} 排除，可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{text}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{  ponies  }\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{   giraffes}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{iguanas  }\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{squid}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{text}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{trim}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{filter}\PYG{p}{(}\PYG{o}{|}\PYG{n}{s}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{s}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{iguanas}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ponies}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{giraffes}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{squid}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+在这里，\texttt{filter} 会返回第三个迭代器，它只会从 \texttt{map} 迭代器的结果中生成闭包 \texttt{|s| *s != "iguanas"} 返回 \texttt{true} 的那些条目。迭代器的适配器链条就像 Unix shell 中的管道：每个适配器都有单一用途，并且很清楚此序列是如何在从左到右读取时进行转换的。
+
+\texttt{map} 和 \texttt{filter} 的适配器的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{map}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n}{B}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{B}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{filter}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{predicate}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+\end{Verbatim}
+
+在标准库中，\texttt{map} 和 \texttt{filter} 实际上返回的是名为 \texttt{std::iter::Map} 和 \texttt{std::iter::Filter} 的专用不透明（隐藏了实现细节的）\texttt{struct} 类型。然而，仅仅看到这些名字并不能告诉我们更多信息，所以在本书中，我们会写成 \texttt{-> impl Iterator<Item=...>}，因为这揭示了我们真正关心的事情：此方法返回了能生成给定类型条目的 \texttt{Iterator}。
+
+大多数适配器会按值接受 \texttt{self}，这就要求 \texttt{Self} 必须是固定大小的（\texttt{Sized}）（所有常见的迭代器都是这样的）。
+
+\texttt{map} 迭代器会按值将每个条目传给闭包，然后将闭包结果的所有权转移给自己的消费者。\texttt{filter} 迭代器会通过共享引用将每个条目传给闭包，并保留所有权以便再把选定的条目传给自己的消费者。这就是为什么该示例必须解引用 \texttt{s} 以便将其与 \texttt{"iguanas"} 进行比较：\texttt{filter} 迭代器的条目类型是 \texttt{\&str}，因此闭包参数 \texttt{s} 的类型是 \texttt{\&\&str}。
+
+关于迭代器适配器，有两点需要特别注意。
+
+第一个要点是，单纯在迭代器上调用适配器并不会消耗任何条目，只会返回一个新的迭代器，新迭代器会根据需要从第一个迭代器中提取条目，以生成自己的条目。在适配器的适配链中，实际完成任何工作（同时消耗条目）的唯一方法是在最终的迭代器上调用 \texttt{next}。
+
+因此，在我们之前的示例中，方法调用 \texttt{text.lines()} 本身实际上并不会解析字符串中的任何一行，它只是返回了一个迭代器，当需要时\textbf{才会}解析这些行。同样，\texttt{map} 和 \texttt{filter} 也只会返回新的迭代器，当需要时，它们\textbf{才会}映射或过滤。在由 \texttt{collect} 调用 \texttt{filter} 迭代器上的 \texttt{next} 之前，不会进行任何实际的工作。
+
+如果你在使用有副作用的适配器，这一点尤为重要。例如，以下代码根本不会输出任何内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{earth}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{water}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{air}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fire}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{elt}\PYG{o}{|}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{elt}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{iter} 调用会返回数组元素的迭代器，\texttt{map} 调用会返回第二个迭代器，第二个迭代器会对第一个迭代器生成的每个值调用闭包。但是这里没有任何代码会实际用到整个链条的值，所以 \texttt{next} 方法永远不会执行。事实上，Rust 会就此发出警告：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+warning: unused `std::iter::Map` that must be used
+  |
+7 | /     [\PYGZdq{}earth\PYGZdq{}, \PYGZdq{}water\PYGZdq{}, \PYGZdq{}air\PYGZdq{}, \PYGZdq{}fire\PYGZdq{}]
+8 | |         .iter().map(|elt| println!(\PYGZdq{}\PYGZob{}\PYGZcb{}\PYGZdq{}, elt));
+  | |\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZca{}
+  |
+  = note: iterators are lazy and do nothing unless consumed
+\end{Verbatim}
+
+错误消息中的术语 lazy（惰性）不是贬义词，只是用来表示“推迟计算，直到需要该值”这种机制的行话。Rust 的惯例是迭代器应该做尽可能少的必要工作来满足每次对 \texttt{next} 的调用，在这个例子中，根本没有这样的调用，所以什么也没做。
+
+第二个要点是，迭代器的适配器是一种零成本抽象。由于 \texttt{map}、\texttt{filter} 和其他类似的适配器都是泛型的，因此将它们应用于迭代器就会专门针对所涉及的特定迭代器类型生成特化代码。这意味着 Rust 会有足够的信息将每个迭代器的 \texttt{next} 方法内联到它的消费者中，然后将这一组功能作为一个单元翻译成机器代码。因此，我们之前展示的迭代器的 \texttt{lines}/ \texttt{map}/ \texttt{filter} 链条会和手写代码一样高效：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{text}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{.}\PYG{n}{trim}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{iguanas}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{v}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+下面我们接着介绍可用于 \texttt{Iterator} 特型上的各种适配器。
+
+\subsection{\texttt{filter\_map} 与 \texttt{flat\_map}}
+
+在每个传入条目都会生成一个传出条目的情况下，\texttt{map} 适配器很实用。但是，如果想从迭代中删除而不是处理某些条目，或想用零个或多个条目替换单个条目时该怎么办？\texttt{filter\_map}（过滤映射）适配器和 \texttt{flat\_map}（展平映射）适配器为你提供了这种灵活性。
+
+\texttt{filter\_map} 适配器与 \texttt{map} 类似，不同之处在于前者允许其闭包将条目转换为新条目（就像 \texttt{map} 那样）或从迭代中丢弃该条目。因此，它有点儿像 \texttt{filter} 和 \texttt{map} 的组合。它的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{filter\PYGZus{}map}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n}{B}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+它和 \texttt{map} 的签名基本相同，不同之处在于这里的闭包会返回 \texttt{Option<B>}，而不只是 \texttt{B}。当闭包返回 \texttt{None} 时，该条目就会从本迭代中丢弃；当返回 \texttt{Some(b)} 时，\texttt{b} 就是 \texttt{filter\_map} 迭代器生成的下一个条目。
+
+假设你要扫描字符串，以查找可解析为数值且以空格分隔的单词，然后处理该数值，忽略其他单词。可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{FromStr}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{text}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{frond .25  289}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{3.1415 estuary}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{number}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{text}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{filter\PYGZus{}map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{w}\PYG{o}{|}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{n}{w}\PYG{p}{)}\PYG{p}{.}\PYG{n}{ok}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:4.2\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{number}\PYG{p}{.}\PYG{n}{sqrt}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+上面的代码会输出以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+m+mf}{1.00}
+\PYG{l+m+mf}{0.50}
+\PYG{l+m+mf}{17.00}
+\PYG{l+m+mf}{1.77}
+\end{Verbatim}
+
+传给 \texttt{filter\_map} 的闭包会尝试使用 \texttt{f64::from\_str} 来解析每个以空格分隔的切片。结果是一个 \texttt{Result<f64, ParseFloatError>}，再调用 \texttt{.ok()} 就会把它变成 \texttt{Option<f64>}：如果解析错误就会变成 \texttt{None}；如果成功就会变成 \texttt{Some(v)}。\texttt{filter\_map} 迭代器会丢弃所有 \texttt{None} 值并为每个 \texttt{Some(v)} 生成值 \texttt{v}。
+
+但是像这样把 \texttt{map} 和 \texttt{filter} 融合成一个操作，而非直接使用两种适配器，意义何在？实际上，刚才的例子已经展示了 \texttt{filter\_map} 适配器的价值。如果只有先试着实际处理一下条目才能决定是否应该在迭代中包含它，该适配器就会派上用场。只用 \texttt{filter} 和 \texttt{map} 也可以做同样的事，但略显烦琐：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{text}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{w}\PYG{o}{|}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{n}{w}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{filter}\PYG{p}{(}\PYG{o}{|}\PYG{n}{r}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{r}\PYG{p}{.}\PYG{n}{is\PYGZus{}ok}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{r}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{r}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\end{Verbatim}
+
+我们可以将 \texttt{flat\_map} 视为与 \texttt{filter\_map} 功能类似的适配器，即对 \texttt{map} 的功能延伸，只是现在这个闭包不仅可以像 \texttt{map} 那样返回一个条目，或像 \texttt{filter\_map} 那样返回零个或一个条目，还可以返回任意数量的条目序列。也就是说，\texttt{flat\_map} 迭代器会生成此闭包返回的序列串联后的结果。
+
+\texttt{flat\_map} 的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{flat\PYGZus{}map}\PYG{o}{\PYGZlt{}}\PYG{n}{U}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n}{U}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{U}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{U}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{p}{;}
+\end{Verbatim}
+
+传给 \texttt{flat\_map} 的闭包必须返回一个可迭代者，但可以返回任意种类的可迭代者。\footnote{事实上，由于 \texttt{Option} 也是一个可迭代者，其行为类似于有零个或一个条目的序列，因此 \texttt{iterator.filter\_map(closure)} 等效于 \texttt{iterator.flat\_map(closure)}，这里假设 \texttt{closure} 会返回一个 \texttt{Option<T>}。}
+
+假设有一个将国家映射成其主要城市的表。给定一个国家列表，如何遍历这些国家的主要城市呢？
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashMap}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{major\PYGZus{}cities}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{major\PYGZus{}cities}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Japan}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Tokyo}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Kyoto}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{major\PYGZus{}cities}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The United States}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Nashville}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{major\PYGZus{}cities}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Brazil}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{São Paulo}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Brasília}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{major\PYGZus{}cities}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Kenya}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Nairobi}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Mombasa}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{major\PYGZus{}cities}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The Netherlands}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Amsterdam}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Utrecht}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{countries}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Japan}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Brazil}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Kenya}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{k}{for}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{city}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{countries}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{flat\PYGZus{}map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{country}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{major\PYGZus{}cities}\PYG{p}{[}\PYG{n}{country}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{city}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+上面的代码会输出以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{Tokyo}
+\PYG{n}{Kyoto}
+\PYG{n}{São}\PYG{+w}{ }\PYG{n}{Paulo}
+\PYG{n}{Brasília}
+\PYG{n}{Nairobi}
+\PYG{n}{Mombasa}
+\end{Verbatim}
+
+可以这样理解，对于每个国家，我们都会检索其城市的向量，将所有向量串联成一个序列，然后打印出来。
+
+但请记住，迭代器是惰性的：只有当 \texttt{for} 循环调用了 \texttt{flat\_map} 迭代器的 \texttt{next} 方法时才会实际工作。完整的串联序列从未在内存中构建过。不过，这里有一个小小的状态机，它会从城市迭代器中逐个提取，直到用完，然后才为下一个国家/ 地区生成一个新的城市迭代器。其效果实际上和嵌套循环一样，但封装成了迭代器以便使用。\footnote{这就是迭代器提供的抽象能力和价值。——译者注}
+
+\subsection{\texttt{flatten}}
+
+\texttt{flatten}（展平）适配器会串联起迭代器的各个条目，这里假设每个条目本身都是可迭代者：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{BTreeMap}\PYG{p}{;}
+
+\PYG{c+c1}{// 一个把城市映射为城市中停车场的表格：每个值都是一个向量}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{parks}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BTreeMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{parks}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{  }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Mt. Tabor Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Forest Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{parks}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Kyoto}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{     }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Tadasu\PYGZhy{}no\PYGZhy{}Mori Forest}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Maruyama Koen}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{parks}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Nashville}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Percy Warner Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Dragon Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 构建一个表示全部停车场的向量。`values`给出了一个能生成}
+\PYG{c+c1}{// 向量的迭代器，然后`flatten`会依次生成每个向量的元素}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{all\PYGZus{}parks}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parks}\PYG{p}{.}\PYG{n}{values}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{flatten}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cloned}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{all\PYGZus{}parks}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Tadasu\PYGZhy{}no\PYGZhy{}Mori Forest}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Maruyama Koen}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Percy Warner Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Dragon Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Mt. Tabor Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Forest Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+名称 \texttt{"flatten"} 来自将二级结构展平为一级结构的直观图景：\texttt{BTreeMap} 及其表示停车场名称的 \texttt{Vec} 会被展平为一个能生成所有名称的迭代器。
+
+\texttt{flatten} 的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{flatten}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{p}{;}
+\end{Verbatim}
+
+这意味着，底层迭代器的条目必须自行实现 \texttt{IntoIterator} 才能真正形成一个由序列组成的序列。然后，\texttt{flatten} 方法会返回一个迭代器，该迭代器会生成这些序列的串联。当然，这都是惰性执行的，只有当我们迭代完上一个序列才会从 \texttt{self} 中提取一个新序列。
+
+\texttt{flatten} 方法还有一些看似不寻常的用法。如果你只想从一个 \texttt{Vec<Option<...>>} 中迭代出 \texttt{Some} 的值，那么 \texttt{flatten} 可以漂亮地完成此任务：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{n+nb}{None}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{day}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{one}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{]}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{flatten}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{day}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{one}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这是因为 \texttt{Option} 本身也实现了 \texttt{IntoIterator}，表示由 0 个或 1 个元素组成的序列。\texttt{None} 元素对迭代没有任何贡献，而每个 \texttt{Some} 元素都会贡献一个值。同样，也可以用 \texttt{flatten} 来迭代 \texttt{Option<Vec<...>>} 值：其中 \texttt{None} 的行为等同于空向量。
+
+\texttt{Result} 也实现了 \texttt{IntoIterator}，其中 \texttt{Err} 表示一个空序列，因此将 \texttt{flatten} 应用于 \texttt{Result} 值的迭代器有效地排除了所有 \texttt{Err} 并将它们丢弃，进而产生了一个解包装过的由成功值组成的流。通常不应该忽略代码中的错误，但如果你很清楚自己在做什么，那么这可能是个有用的小技巧。
+
+如果你发现自己随手用了 \texttt{flatten}，这个时候你真正需要的可能是 \texttt{flat\_map}。例如，标准库的 \texttt{str::to\_uppercase} 方法可以将字符串转换为大写，其工作方式如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{to\PYGZus{}uppercase}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{to\PYGZus{}uppercase}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{flatten}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{c+c1}{// 使用flat\PYGZus{}map更好}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+用 \texttt{flatten} 的原因是 \texttt{ch.to\_uppercase()} 返回的不是单个字符，而是会生成一个或多个字符的迭代器。将每个字符都映射成其对应的大写字母会生成由字符迭代器组成的迭代器，而 \texttt{flatten} 负责将它们拼接在一起，形成我们最终可以收集（\texttt{collect}）到 \texttt{String} 中的内容。
+
+不过 \texttt{map} 和 \texttt{flatten} 的组合非常常见，因此 \texttt{Iterator} 为这种情况提供了 \texttt{flat\_map} 适配器。（事实上，\texttt{flat\_map} 比 \texttt{flatten} 先纳入标准库。）因此，可以把前面的代码改写成如下形式。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{to\PYGZus{}uppercase}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{flat\PYGZus{}map}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{to\PYGZus{}uppercase}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{\texttt{take} 与 \texttt{take\_while}}
+
+\texttt{Iterator} 特型的 \texttt{take}（取出）适配器和 \texttt{take\_while}（当……时取出）适配器的作用是当条目达到一定数量或闭包决定中止时结束迭代。它们的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{take}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{take\PYGZus{}while}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{predicate}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+\end{Verbatim}
+
+两者都会接手某个迭代器的所有权并返回一个新的迭代器，新的迭代器会从第一个迭代器中传递条目，并可能提早终止序列。\texttt{take} 迭代器会在最多生成 \texttt{n} 个条目后返回 \texttt{None}。\texttt{take\_while} 迭代器会针对每个条目调用 \texttt{predicate}，并对 \texttt{predicate} 返回了 \texttt{false} 的首个条目以及其后的每个条目都返回 \texttt{None}。
+
+例如，给定一封电子邮件，其中有一个空行将标题与邮件正文分隔开，如果只想遍历标题就可以使用 \texttt{take\_while}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{message}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{To: jimb}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{               From: superego \PYGZlt{}editor@oreilly.com\PYGZgt{}}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{               }\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{               Did you get any writing done today?}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{               When will you stop wasting time plotting fractals?}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{header}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{message}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{take\PYGZus{}while}\PYG{p}{(}\PYG{o}{|}\PYG{n}{l}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{l}\PYG{p}{.}\PYG{n}{is\PYGZus{}empty}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{,}\PYG{+w}{ }\PYG{n}{header}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+回想一下 3.7.1 节，当字符串中的一行以反斜杠结尾时，Rust 中不会包含字符串中下一行的缩进，因此字符串中的任何一行都没有前导空格。这意味着 \texttt{message} 的第 3 行是空白的。\texttt{take\_while} 适配器一看到空行就会中止此迭代，所以此代码只会打印两行。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{To}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{jimb}
+\PYG{n+nb}{From}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{superego}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{n}{editor}\PYG{o}{@}\PYG{n}{oreilly}\PYG{p}{.}\PYG{n}{com}\PYG{o}{\PYGZgt{}}
+\end{Verbatim}
+
+\subsection{\texttt{skip} 与 \texttt{skip\_while}}
+
+\texttt{Iterator} 特型的 \texttt{skip}（跳过）和 \texttt{skip\_while}（当……时跳过）是与 \texttt{take} 和 \texttt{take\_while} 互补的方法：\texttt{skip} 从迭代开始时就丢弃一定数量的条目，\texttt{skip\_while} 则一直丢弃条目直到闭包终于找到一个可接受的条目为止，然后将剩下的条目按照原样传递出来。它们的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{skip}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{skip\PYGZus{}while}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{predicate}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{skip} 适配器的常见用途之一是在迭代程序的命令行参数时跳过命令本身的名称。在第 2 章中，我们的最大公约数计算器曾用如下代码循环其命令行参数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{arg}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{skip}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{std::env::args} 函数会返回一个迭代器，该迭代器会将程序的各个参数生成为一些 \texttt{String} 型条目，首个条目是程序本身的名称，但这并不是我们要在循环中处理的字符串。对该迭代器调用 \texttt{skip(1)} 会返回一个新的迭代器，新迭代器会在首次调用时丢弃程序名称，然后生成所有后续参数。
+
+\texttt{skip\_while} 适配器会使用闭包决定从序列的开头丢弃多少个条目。你还可以像下面这样遍历 15.3.4 节中消息正文的各行：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{body}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{message}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{skip\PYGZus{}while}\PYG{p}{(}\PYG{o}{|}\PYG{n}{l}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{l}\PYG{p}{.}\PYG{n}{is\PYGZus{}empty}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{skip}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{,}\PYG{+w}{ }\PYG{n}{body}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这会使用 \texttt{skip\_while} 来跳过非空行，但迭代器本身还是会生成一个空行——毕竟，闭包对该空行返回了 \texttt{false}。所以我们还要使用 \texttt{skip} 方法来丢弃它，并返回一个迭代器，其第一个条目是消息正文的第 1 行。与 15.3.4 节中的 \texttt{message} 声明合用，此代码会输出如下内容。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{Did}\PYG{+w}{ }\PYG{n}{you}\PYG{+w}{ }\PYG{n}{get}\PYG{+w}{ }\PYG{n}{any}\PYG{+w}{ }\PYG{n}{writing}\PYG{+w}{ }\PYG{n}{done}\PYG{+w}{ }\PYG{n}{today}\PYG{o}{?}
+\PYG{n}{When}\PYG{+w}{ }\PYG{n}{will}\PYG{+w}{ }\PYG{n}{you}\PYG{+w}{ }\PYG{n}{stop}\PYG{+w}{ }\PYG{n}{wasting}\PYG{+w}{ }\PYG{n}{time}\PYG{+w}{ }\PYG{n}{plotting}\PYG{+w}{ }\PYG{n}{fractals}\PYG{o}{?}
+\end{Verbatim}
+
+\subsection{\texttt{peekable}}
+
+\texttt{peekable}（可窥视）迭代器的功能是允许我们窥视即将生成的下一个条目，而无须实际消耗它。调用 \texttt{Iterator} 特型的 \texttt{peekable} 方法可以将任何迭代器变成 \texttt{peekable} 迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{peekable}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{iter}\PYG{p}{::}\PYG{n}{Peekable}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{;}
+\end{Verbatim}
+
+在这里，\texttt{Peekable<Self>} 是一个实现了 \texttt{Iterator<Item=Self::Item>} 的结构体，而 \texttt{Self} 是底层迭代器的类型。
+
+\texttt{peekable} 迭代器有一个额外的方法 \texttt{peek}，该方法会返回一个 \texttt{Option<\&Item>}：如果底层迭代器已耗尽，那么返回值就为 \texttt{None}；否则为 \texttt{Some(r)}，其中 \texttt{r} 是对下一个条目的共享引用。（注意，如果迭代器的条目类型已经是对某个值的引用了，则最终产出就会是对引用的引用。）
+
+调用 \texttt{peek} 会尝试从底层迭代器中提取下一个条目，如果条目存在，就将其缓存，直到下一次调用 \texttt{next} 时给出。\texttt{Peekable} 上的所有其他 \texttt{Iterator} 方法都知道这个缓存，比如，\texttt{peekable} 迭代器 \texttt{iter} 上的 \texttt{iter.last()} 就知道要在耗尽底层迭代器后检查此缓存。
+
+有时候，只有超前一点儿才能决定应该从迭代器中消耗多少个条目，在这种情况下，\texttt{peekable} 迭代器就变得至关重要。如果要从字符流中解析数值，那么在看到数值后面的第一个非数值字符之前是无法确定该数值的结束位置的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{iter}\PYG{p}{::}\PYG{n}{Peekable}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{parse\PYGZus{}number}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{tokens}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Peekable}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{u32}
+\PYG{+w}{    }\PYG{n+nc}{where}\PYG{+w}{ }\PYG{n}{I}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{k+kt}{char}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{tokens}\PYG{p}{.}\PYG{n}{peek}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{r}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{r}\PYG{p}{.}\PYG{n}{is\PYGZus{}digit}\PYG{p}{(}\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{r}\PYG{p}{.}\PYG{n}{to\PYGZus{}digit}\PYG{p}{(}\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{            }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{n}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{n}{tokens}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{chars}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{226153980,1766319049}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{peekable}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}number}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{chars}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{226153980}\PYG{p}{)}\PYG{p}{;}
+\PYG{c+c1}{// 注意，`parse\PYGZus{}number`并没有消耗这个逗号，所以我们能看到它}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{chars}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}number}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{chars}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1766319049}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{chars}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{parse\_number} 函数会使用 \texttt{peek} 来检查下一个字符，只有当它是数字时才消耗它。如果它不是数字或迭代器已消耗完（也就是说，\texttt{peek} 返回了 \texttt{None}），我们将返回已解析的数值并将下一个字符留在迭代器中，以供使用。
+
+\subsection{\texttt{fuse}}
+
+\texttt{Iterator} 特型并没有规定一旦 \texttt{next} 返回 \texttt{None} 之后，再次调用 \texttt{next} 方法时应该如何行动。大多数迭代器只是再次返回 \texttt{None}，但也有例外。如果你的代码依赖于“再次返回 \texttt{None}”这种行为，那么遇到例外可能会让你大吃一惊。
+
+\texttt{fuse}（保险丝）适配器能接受任何迭代器并生成一个确保在第一次返回 \texttt{None} 后继续返回 \texttt{None} 的迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Flaky}\PYG{p}{(}\PYG{k+kt}{bool}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Flaky}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{next}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{totally the last item}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 糟糕！}
+\PYG{+w}{            }\PYG{n+nb}{None}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{flaky}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Flaky}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{flaky}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{totally the last item}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{flaky}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{flaky}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{totally the last item}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{not\PYGZus{}flaky}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Flaky}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{.}\PYG{n}{fuse}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{not\PYGZus{}flaky}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{totally the last item}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{not\PYGZus{}flaky}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{not\PYGZus{}flaky}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{fuse} 适配器在需要使用不明来源迭代器的泛型代码中非常有用。与其奢望要处理的每个迭代器都表现良好，还不如使用 \texttt{fuse} 加上保险。
+
+\subsection{可逆迭代器与 \texttt{rev}}
+
+有的迭代器能够从序列的两端抽取条目，使用 \texttt{rev}（逆转）适配器可以反转此类迭代器。例如，向量上的迭代器就可以像从头开始一样轻松地从向量的末尾抽取条目。这样的迭代器可以实现 \texttt{std::iter::DoubleEndedIterator} 特型，它扩展了 \texttt{Iterator}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{DoubleEndedIterator}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{next\PYGZus{}back}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+你可以将双端迭代器想象成用两根手指分别标记序列的当前首端和尾端。从任何一端提取条目都会让该手指向另一端前进，当两者相遇时，迭代就完成了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{bee\PYGZus{}parts}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{head}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{thorax}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{abdomen}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{iter}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{bee\PYGZus{}parts}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{      }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{head}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next\PYGZus{}back}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{abdomen}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{      }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{thorax}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next\PYGZus{}back}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{      }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+基于切片迭代器的结构，这种行为实现起来非常简单：切片迭代器实际上是一对指向我们尚未生成的元素范围的起始指针和结束指针，\texttt{next} 和 \texttt{next\_back} 所做的只是从起始指针或结束指针中提取一个条目而已。\texttt{BTreeSet} 和 \texttt{BTreeMap} 等有序集合的迭代器也是双端的：它们的 \texttt{next\_back} 方法会首先提取最大的元素或条目。总体而言，只要有可能，标准库就会提供双端迭代能力。
+
+但并非所有迭代器都能如此轻松地实现，比如，从通道的 \texttt{Receiver} 中生成来自其他线程的值的迭代器显然无法预测最后接收的值可能是什么。一般来说，你需要查看标准库的文档以了解哪些迭代器实现了 \texttt{DoubleEndedIterator}，哪些没有实现。
+
+如果迭代器是双端的，就可以用 \texttt{rev} 适配器将其逆转：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{rev}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{DoubleEndedIterator}\PYG{p}{;}
+\end{Verbatim}
+
+返回的迭代器也是双端的，只是互换了 \texttt{next} 方法和 \texttt{next\_back} 方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{meals}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{breakfast}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{lunch}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{dinner}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{iter}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{meals}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{rev}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{dinner}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{lunch}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{breakfast}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+大多数适配器，如果应用到某个可逆迭代器上，就会返回另一个可逆迭代器，比如，\texttt{map} 和 \texttt{filter} 都会保留可逆性。
+
+\subsection{\texttt{inspect}}
+
+\texttt{inspect}（探查）适配器为调试迭代器适配器的流水线提供了便利，但在生产代码中用得不多。\texttt{inspect} 只是对每个条目的共享引用调用闭包，然后传递该条目。闭包不会影响条目，但可以做一些事情，比如打印它们或对它们进行断言。
+
+本示例演示了将字符串转换为大写会更改其长度的情况：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{upper\PYGZus{}case}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{große}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{inspect}\PYG{p}{(}\PYG{o}{|}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{before: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{flat\PYGZus{}map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{.}\PYG{n}{to\PYGZus{}uppercase}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{inspect}\PYG{p}{(}\PYG{o}{|}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ after:     \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{upper\PYGZus{}case}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{GROSSE}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+小写德语字母 \texttt{ß} 的大写形式是 \texttt{SS}，这就是 \texttt{char::to\_uppercase} 会返回一个字符迭代器而不是单个字符的原因。前面的代码使用了 \texttt{flat\_map} 将 \texttt{to\_uppercase} 返回的所有序列连接成一个 \texttt{String}，同时输出以下内容。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{before}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{g}\PYG{o}{\PYGZsq{}}
+\PYG{+w}{ }\PYG{n+nc}{after}\PYG{p}{:}\PYG{+w}{    }\PYG{o}{\PYGZsq{}}\PYG{n+na}{G}\PYG{o}{\PYGZsq{}}
+\PYG{n+nc}{before}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{r}\PYG{o}{\PYGZsq{}}
+\PYG{+w}{ }\PYG{n+nc}{after}\PYG{p}{:}\PYG{+w}{    }\PYG{o}{\PYGZsq{}}\PYG{n+na}{R}\PYG{o}{\PYGZsq{}}
+\PYG{n+nc}{before}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{o}\PYG{o}{\PYGZsq{}}
+\PYG{+w}{ }\PYG{n+nc}{after}\PYG{p}{:}\PYG{+w}{    }\PYG{o}{\PYGZsq{}}\PYG{n+na}{O}\PYG{o}{\PYGZsq{}}
+\PYG{n+nc}{before}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{err}{ß}\PYG{o}{\PYGZsq{}}
+\PYG{+w}{ }\PYG{n}{after}\PYG{p}{:}\PYG{+w}{    }\PYG{o}{\PYGZsq{}}\PYG{n+na}{S}\PYG{o}{\PYGZsq{}}
+\PYG{+w}{ }\PYG{n+nc}{after}\PYG{p}{:}\PYG{+w}{    }\PYG{o}{\PYGZsq{}}\PYG{n+na}{S}\PYG{o}{\PYGZsq{}}
+\PYG{n+nc}{before}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{e}\PYG{o}{\PYGZsq{}}
+\PYG{+w}{ }\PYG{n+nc}{after}\PYG{p}{:}\PYG{+w}{    }\PYG{o}{\PYGZsq{}}\PYG{n+na}{E}\PYG{o}{\PYGZsq{}}
+\end{Verbatim}
+
+\subsection{\texttt{chain}}
+
+\texttt{chain}（链接）适配器会将一个迭代器追加到另一个迭代器之后。更准确地说，\texttt{i1.chain(i2)} 会返回一个迭代器，该迭代器从 \texttt{i1} 中提取条目，直到用尽，然后从 \texttt{i2} 中提取条目。
+
+\texttt{chain} 适配器的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{chain}\PYG{o}{\PYGZlt{}}\PYG{n}{U}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{U}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{U}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+换句话说，你可以将迭代器与任何会生成相同条目类型的可迭代者链接在一起。
+
+例如：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{.}\PYG{n}{chain}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mi}{20}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{30}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{40}\PYG{p}{]}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{30}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{40}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如果 \texttt{chain} 的两个底层迭代器都是可逆的，则其结果迭代器也是可逆的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{.}\PYG{n}{chain}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mi}{20}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{30}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{40}\PYG{p}{]}\PYG{p}{)}\PYG{p}{.}\PYG{n}{rev}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{40}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{30}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{chain} 迭代器会跟踪这两个底层迭代器是否返回了 \texttt{None} 并按需把其中一个迭代器的 \texttt{next} 和 \texttt{next\_back} 重定向到另一个迭代器的 \texttt{next} 和 \texttt{next\_back}。
+
+\subsection{\texttt{enumerate}}
+
+\texttt{Iterator} 特型的 \texttt{enumerate}（枚举）适配器会将运行索引附加到序列中，它接受某个迭代器生成的条目 \texttt{A, B, C, ...} 并返回生成的值对 \texttt{(0, A), (1, B), (2, C), ...}。乍看起来，这微不足道，但其使用频率相当惊人。
+
+消费者可以使用上述索引将一个条目与另一个条目区分开来，并建立处理每个条目时的上下文。例如，第 2 章中的曼德博集绘图器会将图像分成 8 个水平条带，并将每个条带分配给不同的线程。该代码就使用了 \texttt{enumerate} 来告诉每个线程其条带对应于图像的哪个部分。
+
+从一个矩形像素缓冲区开始：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{pixels}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{columns}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{rows}\PYG{p}{]}\PYG{p}{;}
+\end{Verbatim}
+
+接下来使用 \texttt{chunks\_mut} 将图像拆分为一些水平条带，每个线程负责一个：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{threads}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{band\PYGZus{}rows}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{rows}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{n}{threads}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{bands}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{pixels}\PYG{p}{.}\PYG{n}{chunks\PYGZus{}mut}\PYG{p}{(}\PYG{n}{band\PYGZus{}rows}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{columns}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+然后遍历条带，为每个条带启动一个线程：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{i}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{bands}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{enumerate}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{top}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{band\PYGZus{}rows}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{;}
+\PYG{+w}{    }\PYG{c+c1}{// 启动一个线程来渲染`top..top + band\PYGZus{}rows`范围内的行}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+每次迭代都会得到一个 \texttt{(i, band)} 值对，其中 \texttt{band} 是 \texttt{\&mut [u8]} 类型的像素缓冲区切片，表示线程应该绘制的区域，而 \texttt{i} 是该条带在整个图像中的索引，由 \texttt{enumerate} 适配器提供。绘图的边界和条带的大小足以让线程确定分配给它的是图像中的哪个部分，从而确定要在 \texttt{band} 中绘制什么。
+
+可以将 \texttt{enumerate} 生成的 \texttt{(index, item)} 值对视为在迭代 \texttt{HashMap} 或其他关联集合时获得的 \texttt{(key, value)} 值对。如果在切片或向量上进行迭代，则 \texttt{index} 就是 \texttt{item} 对应的 \texttt{key}。
+
+\subsection{\texttt{zip}}
+
+\texttt{zip}（拉合）适配器会将两个迭代器组合成一个迭代器，新的迭代器会生成值对，每个底层迭代器各提供一个值，就像把拉链的两侧拉合起来一样。当两个底层迭代器中的任何一个已结束时，拉合后的迭代器就结束了。
+
+例如，可以通过将无尽范围 \texttt{0..} 与一个迭代器拉合起来获得与 \texttt{enumerate} 适配器相同的效果：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{p}{)}\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ABCD}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}A\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}B\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}C\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}D\PYGZsq{}}\PYG{p}{)}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+从这个意义上说，你可以将 \texttt{zip} 视为 \texttt{enumerate} 的泛化版本：\texttt{enumerate} 会将索引附加到序列，而 \texttt{zip} 能附加来自任意迭代器的条目。之前我们建议用 \texttt{enumerate} 在处理条目时协助提供上下文，而 \texttt{zip} 提供了一种更灵活的方式来实现同样的效果。
+
+\texttt{zip} 的参数本身不一定是迭代器，可以是任意可迭代者。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{iter}\PYG{p}{::}\PYG{n}{repeat}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{endings}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{once}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{twice}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{chicken soup with rice}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{rhyme}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{repeat}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{going}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{n}{endings}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{rhyme}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{going}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{once}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                       }\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{going}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{twice}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                       }\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{going}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{chicken soup with rice}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{\texttt{by\_ref}}
+
+前面我们一直在将适配器附加到迭代器上。一旦开始这样做，还能再取下适配器吗？一般来说是不能，因为适配器会接手底层迭代器的所有权，并且没有提供归还所有权的方法。
+
+迭代器的 \texttt{by\_ref}（按引用）方法会借入迭代器的可变引用，便于将各种适配器应用于该引用。一旦消耗完适配器中的条目，就会丢弃这些适配器，借用也就结束了，然后你就能重新获得对原始迭代器的访问权。
+
+例如，在本章前面我们展示过如何使用 \texttt{take\_while} 和 \texttt{skip\_while} 来处理邮件消息的标题行和正文。但是，如果想让两者使用同一个底层迭代器来处理邮件消息，该怎么办呢？借助 \texttt{by\_ref}，我们就可以使用 \texttt{take\_while} 来处理邮件头，完成这些之后，取回底层迭代器，此时 \texttt{take\_while} 恰好位于处理消息正文的适当位置：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{message}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{To: jimb}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{               From: id}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{               }\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{               Oooooh, donuts!!}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{lines}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{message}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Headers:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{header}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{lines}\PYG{p}{.}\PYG{n}{by\PYGZus{}ref}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{take\PYGZus{}while}\PYG{p}{(}\PYG{o}{|}\PYG{n}{l}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{l}\PYG{p}{.}\PYG{n}{is\PYGZus{}empty}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{,}\PYG{+w}{ }\PYG{n}{header}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{Body:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{body}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{lines}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{,}\PYG{+w}{ }\PYG{n}{body}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+调用 \texttt{lines.by\_ref()} 会借出一个对迭代器的可变引用，\texttt{take\_while} 迭代器会取得这个引用的所有权。该迭代器在第一个 \texttt{for} 循环结束时超出了作用域，表示本次借用已结束，这样你就能在第二个 \texttt{for} 循环中再次使用 \texttt{lines} 了。上述代码将输出以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{Headers}\PYG{p}{:}
+\PYG{n+nc}{To}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{jimb}
+\PYG{n+nb}{From}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{id}
+
+\PYG{n}{Body}\PYG{p}{:}
+\PYG{n+nc}{Oooooh}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{donuts}\PYG{o}{!}\PYG{o}{!}
+\end{Verbatim}
+
+\texttt{by\_ref} 适配器的定义很简单：它会返回对迭代器的可变引用。然后，标准库中还包含了这个神奇的小实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{I}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{I}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{I}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{next}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{p}{(}\PYG{o}{*}\PYG{o}{*}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{size\PYGZus{}hint}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{p}{(}\PYG{o}{*}\PYG{o}{*}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{p}{.}\PYG{n}{size\PYGZus{}hint}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+换句话说，如果 \texttt{I} 是某种迭代器类型，那么 \texttt{\&mut I} 就同样是一个迭代器，其 \texttt{next} 方法和 \texttt{size\_hint} 方法会转发给其引用目标。当你在此迭代器的可变引用上调用某个适配器时，适配器会取得\textbf{引用}（而不是迭代器本身）的所有权。当适配器超出作用域时，本次借用就会结束。
+
+\subsection{\texttt{cloned} 与 \texttt{copied}}
+
+\texttt{cloned}（克隆后）适配器会接受一个生成引用的迭代器，并返回一个会生成从这些引用克隆而来的值的迭代器，就像 \texttt{iter.map(|item| item.clone())}。当然，引用目标的类型也必须实现了 \texttt{Clone}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s+sc}{\PYGZsq{}1\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}2\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}3\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}∞\PYGZsq{}}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{a}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{          }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s+sc}{\PYGZsq{}1\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{a}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cloned}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}1\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{copied}（复制后）适配器的设计思想同样如此，但限制更严格，它要求引用目标的类型必须实现了 \texttt{Copy}。像 \texttt{iter.copied()} 这样的调用与 \texttt{iter.map(|r| *r)} 大致相同。由于每个实现了 \texttt{Copy} 的类型也必定实现了 \texttt{Clone}，因此 \texttt{cloned} 更通用。但根据条目类型的不同，\texttt{clone} 调用可能会进行任意次数的分配和复制。如果你认为由于条目类型很简单，因而永远不会发生内存分配，那么最好使用 \texttt{copied} 来让类型检查器帮你验证这种假设。
+
+\subsection{\texttt{cycle}}
+
+\texttt{cycle}（循环）适配器会返回一个迭代器，它会无限重复底层迭代器生成的序列。底层迭代器必须实现 \texttt{std::clone::Clone}，以便 \texttt{cycle} 保存其初始状态并且在每次循环重新开始时复用它。下面是一个例子：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{dirs}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{North}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{East}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{South}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{West}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{spin}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{dirs}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cycle}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{spin}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{North}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{spin}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{East}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{spin}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{South}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{spin}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{West}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{spin}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{North}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{spin}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{East}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+或者，下面是纯粹为了演示迭代器的用法而编写的代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{iter}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{once}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{repeat}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{fizzes}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{repeat}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{p}{)}\PYG{p}{.}\PYG{n}{chain}\PYG{p}{(}\PYG{n}{once}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fizz}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cycle}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{buzzes}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{repeat}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{.}\PYG{n}{chain}\PYG{p}{(}\PYG{n}{once}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{buzz}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cycle}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{fizzes\PYGZus{}buzzes}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{fizzes}\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{n}{buzzes}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{fizz\PYGZus{}buzz}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{l+m+mi}{100}\PYG{p}{)}\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{n}{fizzes\PYGZus{}buzzes}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{tuple}\PYG{o}{|}
+\PYG{+w}{        }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{tuple}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{p}{(}\PYG{n}{i}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{            }\PYG{p}{(}\PYG{n}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{fizz}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buzz}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{fizz}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buzz}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{fizz\PYGZus{}buzz}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这是一个儿童文字游戏，现在有时会用作程序员的求职面试问题：玩家轮流数数，将任何可被 3 整除的数值替换为单词 \texttt{fizz}；将任何可被 5 整除的数值替换为单词 \texttt{buzz}；能被两者整除的数值则替换为单词 \texttt{fizzbuzz}。
+
+\section{消耗迭代器}
+
+迄今为止，我们已经介绍了创建迭代器并将它们适配成新迭代器的方法，在这里，我们会通过展示如何消耗它们来完成整个处理过程。
+
+当然，你可以使用带有 \texttt{for} 循环的迭代器，也可以显式调用 \texttt{next}，但有许多常见任务不必一遍又一遍地写出来。\texttt{Iterator} 特型提供了一大组可选方法来涵盖其中的许多任务。
+
+\subsection{简单累加：\texttt{count}、\texttt{sum} 和 \texttt{product}}
+
+\texttt{count}（计数）方法会从迭代器中提取条目，直到迭代器返回 \texttt{None}，并报告提取的条目数。下面是一个计算标准输入行数的小程序：\footnote{要结束输入，请用 Ctrl-Z（Windows）或 Ctrl-D（Linux/\allowbreak{}Mac）组合键。——译者注}
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{stdin}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{stdin}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{count}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{sum}（求和）方法和 \texttt{product}（乘积）方法会分别计算迭代器条目之和与乘积，结果必须是整数或浮点数。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{triangle}\PYG{p}{(}\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{o}{..=}\PYG{n}{n}\PYG{p}{)}\PYG{p}{.}\PYG{n}{sum}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{triangle}\PYG{p}{(}\PYG{l+m+mi}{20}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{210}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{factorial}\PYG{p}{(}\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{o}{..=}\PYG{n}{n}\PYG{p}{)}\PYG{p}{.}\PYG{n}{product}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{factorial}\PYG{p}{(}\PYG{l+m+mi}{20}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2432902008176640000}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+（为方便与其他类型一起工作，可以通过实现 \texttt{std::iter::Sum} 特型和 \texttt{std::iter::Product} 特型来扩展 \texttt{sum} 和 \texttt{product}，这里我们就不展开讲解这些特型了。）
+
+\subsection{\texttt{min} 与 \texttt{max}}
+
+\texttt{Iterator} 上的 \texttt{min}（最小）方法和 \texttt{max}（最大）方法会分别返回迭代器生成的最小条目与最大条目。迭代器的条目类型必须实现 \texttt{std::cmp::Ord}，这样条目之间才能相互比较：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{p}{[}\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{5}\PYG{p}{]}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{max}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{p}{[}\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{5}\PYG{p}{]}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{min}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{5}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这些方法会返回一个 \texttt{Option<Self::Item>} 以便当迭代器不再生成任何条目时能返回 \texttt{None}。
+
+就像 12.2 节中所讲的，Rust 的浮点类型 \texttt{f32} 和 \texttt{f64} 仅实现了 \texttt{std::cmp::PartialOrd} 而没有实现 \texttt{std::cmp::Ord}，因此不能使用 \texttt{min} 方法和 \texttt{max} 方法来计算浮点数序列中的最小值和最大值。这在 Rust 设计中并不讨喜，却是经过深思熟虑的——因为不清楚这些函数该如何处理 IEEE 的 \texttt{NaN} 值，如果只是简单地忽略则可能会掩盖代码中更严重的问题。
+
+如果知道如何处理 \texttt{NaN} 值，则可以改用 \texttt{max\_by} 和 \texttt{min\_by} 迭代器方法，这样你就可以提供自己的比较函数了。
+
+\subsection{\texttt{max\_by} 与 \texttt{min\_by}}
+
+\texttt{max\_by}（据……最大）方法和 \texttt{min\_by}（据……最小）方法会分别返回迭代器生成的最大条目与最小条目，由你提供的比较函数确定规则：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{cmp}\PYG{p}{::}\PYG{n}{Ordering}\PYG{p}{;}
+
+\PYG{c+c1}{// 比较两个f64值，如果其一是NaN，则引发panic}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cmp}\PYG{p}{(}\PYG{n}{lhs}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{f64}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rhs}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{f64}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Ordering}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{lhs}\PYG{p}{.}\PYG{n}{partial\PYGZus{}cmp}\PYG{p}{(}\PYG{n}{rhs}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{numbers}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mf}{1.0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{4.0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{2.0}\PYG{p}{]}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{numbers}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{copied}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{max\PYGZus{}by}\PYG{p}{(}\PYG{n}{cmp}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mf}{4.0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{numbers}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{copied}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{min\PYGZus{}by}\PYG{p}{(}\PYG{n}{cmp}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mf}{1.0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{numbers}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mf}{1.0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{4.0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{NAN}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{2.0}\PYG{p}{]}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{numbers}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{copied}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{max\PYGZus{}by}\PYG{p}{(}\PYG{n}{cmp}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mf}{4.0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 引发panic}
+\end{Verbatim}
+
+\texttt{max\_by} 方法和 \texttt{min\_by} 方法会通过引用将条目传给比较函数，这样一来，这两个方法就可以与任意种类的迭代器一起高效配合使用。在上面的代码中，虽然我们已经用 \texttt{copied} 获取了会生成 \texttt{f64} 条目的迭代器，但 \texttt{cmp} 函数还是期望通过引用获取其参数。
+
+\subsection{\texttt{max\_by\_key} 与 \texttt{min\_by\_key}}
+
+使用 \texttt{Iterator} 上的 \texttt{max\_by\_key}（据键最大）方法和 \texttt{min\_by\_key}（据键最小）方法可以选择最大条目或最小条目，由针对每个条目调用的闭包确定。闭包可以选择条目的某些字段或对此条目执行某些计算。由于你通常只对与某些最小值或最大值相关的数据感兴趣，而不仅仅是极值本身，因此这两个函数通常比 \texttt{max} 和 \texttt{min} 更有用。它们的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{min\PYGZus{}by\PYGZus{}key}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Ord}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{B}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{max\PYGZus{}by\PYGZus{}key}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Ord}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{B}\PYG{p}{;}
+\end{Verbatim}
+
+也就是说，给定一个接受某条目并返回任意有序类型 \texttt{B} 的闭包，则返回那个调用闭包时所返回的 \texttt{B} 为最大或最小的条目；如果没有生成任何条目，则返回 \texttt{None}。
+
+例如，要扫描城市的哈希表，分别查找人口最多和最少的城市，可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashMap}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{populations}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{populations}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{  }\PYG{l+m+mi}{583\PYGZus{}776}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{populations}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Fossil}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{        }\PYG{l+m+mi}{449}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{populations}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Greenhorn}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{       }\PYG{l+m+mi}{2}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{populations}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Boring}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{      }\PYG{l+m+mi}{7\PYGZus{}762}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{populations}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The Dalles}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{15\PYGZus{}340}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{populations}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{max\PYGZus{}by\PYGZus{}key}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{p}{(}\PYG{n}{\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{pop}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{pop}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{583\PYGZus{}776}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{populations}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{min\PYGZus{}by\PYGZus{}key}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{p}{(}\PYG{n}{\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{pop}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{pop}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Greenhorn}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{2}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+闭包 \texttt{|\&(\_name, pop)| pop} 会针对迭代器生成的每个条目进行调用并返回要用于比较的值——在本例中为城市人口。这两个方法返回的值是整个条目，而不仅仅是闭包返回的值。（当然，如果要频繁进行这样的条目查询，最好用一种比在表中进行线性查找更高效的方式。）
+
+\subsection{对条目序列进行比较}
+
+如果字符串、向量和切片的各个元素是可比较的，我们就可以使用 \texttt{<} 运算符和 \texttt{==} 运算符来对它们进行比较。但是，比较运算符不能用来比较迭代器，这项工作是由像 \texttt{eq} 和 \texttt{lt} 这样的方法来完成的。相关方法从迭代器中成对取出条目并比较，直到得出结果：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{packed}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Helen of Troy}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{spaced}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Helen   of    Troy}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{obscure}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Helen of Sandusky}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 好人，只是不出名}
+
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{packed}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{spaced}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{packed}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{eq}\PYG{p}{(}\PYG{n}{spaced}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 此断言为真，因为\PYGZsq{} \PYGZsq{} \PYGZlt{} \PYGZsq{}o\PYGZsq{}}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{spaced}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{obscure}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 此断言为真，因为\PYGZsq{}Troy\PYGZsq{} \PYGZgt{} \PYGZsq{}Sandusky\PYGZsq{}}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{spaced}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{gt}\PYG{p}{(}\PYG{n}{obscure}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+调用 \texttt{split\_whitespace} 会返回字符串中以空白字符分隔的单词的迭代器。在这些迭代器上使用 \texttt{eq} 方法和 \texttt{gt} 方法会进行逐词比较（而不是逐字符比较），因为 \texttt{\&str} 实现了 \texttt{PartialOrd} 和 \texttt{PartialEq}。
+
+迭代器提供的比较方法既包括用于相等比较的 \texttt{eq} 方法和 \texttt{ne} 方法，也包括用于有序比较的 \texttt{lt} 方法、\texttt{le} 方法、\texttt{gt} 方法和 \texttt{ge} 方法。而 \texttt{cmp} 方法和 \texttt{partial\_cmp} 方法的行为类似于 \texttt{Ord} 特型和 \texttt{PartialOrd} 特型的相应方法。
+
+\subsection{\texttt{any} 与 \texttt{all}}
+
+\texttt{any}（任意）方法和 \texttt{all}（所有）方法会将闭包应用于迭代器生成的每个条目。如果闭包对任意条目返回了 \texttt{true} 或对所有条目都返回了 \texttt{true}，则相应的方法返回 \texttt{true}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{id}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Iterator}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{+w}{ }\PYG{n}{id}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{any}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{is\PYGZus{}uppercase}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{o}{!}\PYG{n}{id}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{all}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{is\PYGZus{}uppercase}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这两个方法只会消耗确定答案所需的尽可能少的条目。如果闭包已经为给定条目返回了 \texttt{true}，则 \texttt{any} 会立即返回 \texttt{true}，不会再从迭代器中提取更多条目。
+
+\subsection{\texttt{position}、\texttt{rposition} 和 \texttt{ExactSizeIterator}}
+
+\texttt{position}（位置）方法会针对迭代器中的每个条目调用闭包，并返回调用结果为 \texttt{true} 的第一个条目的索引。确切而言，它会返回关于此索引的 \texttt{Option}：如果闭包没有为任何条目返回 \texttt{true}，则 \texttt{position} 返回 \texttt{None}。一旦闭包返回 \texttt{true}，\texttt{position} 就会停止提取条目：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{text}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Xerxes}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{text}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{position}\PYG{p}{(}\PYG{o}{|}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{c}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}e\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{text}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{position}\PYG{p}{(}\PYG{o}{|}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{c}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}z\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{rposition}（右起位置）方法也是一样的，只是从右侧开始搜索：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{bytes}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{b\PYGZdq{}}\PYG{l+s}{Xerxes}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{bytes}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{rposition}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{c}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{b\PYGZsq{}e\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{bytes}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{rposition}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{c}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{b\PYGZsq{}X\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{rposition} 方法要求使用可逆迭代器，以便它能从此序列的右端提取条目。另外，它也要求这是确切大小迭代器，以便能像 \texttt{position} 一样对索引进行赋值，最左边的索引值为 \texttt{0}。所谓确切大小迭代器就是实现了 \texttt{std::iter::ExactSizeIterator} 特型的迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{ExactSizeIterator}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{len}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{is\PYGZus{}empty}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{len} 方法会返回剩余的条目数，而 \texttt{is\_empty} 方法会在迭代完成时返回 \texttt{true}。
+
+自然，也不是每个迭代器都能预知要生成的条目数，比如，之前使用的 \texttt{str::chars} 迭代器就不能（UTF-8 是可变宽度编码），因此不能在字符串上使用 \texttt{rposition}。但是字节数组上的迭代器必定知道数组的长度，因此它可以实现 \texttt{ExactSizeIterator}。
+
+\subsection{\texttt{fold} 与 \texttt{rfold}}
+
+\texttt{fold}（折叠）方法是一种非常通用的工具，用于在迭代器生成的整个条目序列上累积某种结果。给定一个初始值（我们称之为\textbf{累加器}）和一个闭包，\texttt{fold} 会以当前累加器和迭代器中的下一个条目为参数反复调用这个闭包。闭包返回的值被视为新的累加器，并将其与下一个条目一起传给闭包。最终，累加器的值就是 \texttt{fold} 本身返回的值。如果序列为空，则 \texttt{fold} 只返回初始累加器。
+
+使用迭代器值的许多其他方法可以改写成对 \texttt{fold} 的使用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{a}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{fold}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{n}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{n}\PYG{o}{+}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{        }\PYG{c+c1}{// 计数}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{a}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{fold}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{n}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{i}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{n}\PYG{o}{+}\PYG{n}{i}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{45}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{       }\PYG{c+c1}{// 求和}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{a}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{fold}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{n}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{i}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{n}\PYG{o}{*}\PYG{n}{i}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{151200}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{   }\PYG{c+c1}{// 乘积}
+
+\PYG{c+c1}{// 最大值}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{a}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{cloned}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{fold}\PYG{p}{(}\PYG{k+kt}{i32}\PYG{p}{::}\PYG{n}{min\PYGZus{}value}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{cmp}\PYG{p}{::}\PYG{n}{max}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{fold} 方法的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{fold}\PYG{o}{\PYGZlt{}}\PYG{n}{A}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{init}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{A}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{A}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{n}{A}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{A}\PYG{p}{;}
+\end{Verbatim}
+
+这里，\texttt{A} 是累加器的类型。闭包的第一个参数 \texttt{init} 及其返回值都是类型 \texttt{A}，\texttt{fold} 自身的返回值也是类型 \texttt{A}。
+
+请注意，累加器的值会移动进闭包或者从闭包中移动出来，因此你可以将 \texttt{fold} 与各种非 \texttt{Copy} 的累加器类型一起使用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Pack}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{my}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{box}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{with}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{         }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{five}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{dozen}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{liquor}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{jugs}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{c+c1}{// 另见切片的`join`方法，它不会像这里一样帮你在末尾添加额外的空格}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{pangram}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{a}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{fold}\PYG{p}{(}\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{s}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{w}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{w}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{pangram}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Pack my box with five dozen liquor jugs }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{rfold}（右起折叠）方法与 \texttt{fold} 方法基本相同，但需要一个双端迭代器，并从后往前处理各个条目。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{weird\PYGZus{}pangram}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{a}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{rfold}\PYG{p}{(}\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{s}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{w}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{w}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{weird\PYGZus{}pangram}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{jugs liquor dozen five with box my Pack }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{\texttt{try\_fold} 与 \texttt{try\_rfold}}
+
+\texttt{try\_fold}（尝试折叠）方法与 \texttt{fold} 方法基本相同，不过迭代可以提前退出，无须消耗迭代器中的所有值。传给 \texttt{try\_fold} 的闭包返回的值会指出它是应该立即返回，还是继续折叠迭代器的条目。
+
+闭包可以返回多种类型的值，根据类型值，\texttt{try\_fold} 方法可判断继续折叠的方式。
+
+\begin{itemize}
+\item 如果闭包返回 \texttt{Result<T, E>}，可能是因为它执行了 I/O 或其他一些容易出错的操作，那就返回 \texttt{Ok(v)} 令 \texttt{try\_fold} 继续折叠，同时将 \texttt{v} 作为新的累加器值。如果返回 \texttt{Err(e)}，则 \texttt{try\_fold} 立即停止折叠。折叠后的最终值是一个带有最终累加器值的 \texttt{Result}，或者由闭包返回的错误值。
+\item 如果闭包返回 \texttt{Option<T>}，则 \texttt{Some(v)} 表示折叠应该以 \texttt{v} 作为新的累加器值继续前进，而 \texttt{None} 表示迭代应该立即停止。折叠后的最终值也是 \texttt{Option} 类型的。
+\item 最后，闭包还可以返回一个 \texttt{std::ops::ControlFlow} 值。这种类型是一个具有两个变体的枚举，即 \texttt{Continue(c)} 和 \texttt{Break(b)}，分别表示使用新的累加器值 \texttt{c} 继续或提前中止迭代。折叠的最终结果是一个 \texttt{ControlFlow} 值：如果折叠消耗了整个迭代器，并生成了最终的累加器值 \texttt{v}，则为 \texttt{Continue(v)}；如果闭包中途返回了值 \texttt{b}，则为 \texttt{Break(b)}。
+\end{itemize}
+
+\texttt{Continue(c)} 和 \texttt{Break(b)} 的行为与 \texttt{Ok(c)} 和 \texttt{Err(b)} 完全一样。使用 \texttt{ControlFlow} 而不用 \texttt{Result} 的优点在于，有时候提前退出并不表示出错了，而只是表明提前得出了答案，这种情况下它会让代码可读性更好。我们接下来会展示一个例子。
+
+下面是一段对从标准输入读取的数值进行求和的程序：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{error}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{FromStr}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{stdin}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{sum}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{stdin}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{try\PYGZus{}fold}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{sum}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{line}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u64}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{sum}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{line}\PYG{o}{?}\PYG{p}{.}\PYG{n}{trim}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{sum}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+缓冲输入流上的 \texttt{lines} 迭代器会生成 \texttt{Result<String, std::io::Error>} 类型的条目，并且将 \texttt{String} 解析为整数时也可能会出错。在这里使用 \texttt{try\_fold} 会让闭包返回 \texttt{Result<u64, ...>}，所以我们可以使用 \texttt{?} 运算符将本次失败从闭包传播到 \texttt{main} 函数。
+
+\texttt{try\_fold} 非常灵活，被用来实现 \texttt{Iterator} 的许多其他消费者方法，比如，以下是 \texttt{all} 的一种实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{all}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{predicate}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}
+\PYG{+w}{    }\PYG{n+nc}{where}\PYG{+w}{ }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{ControlFlow}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{try\PYGZus{}fold}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{item}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{predicate}\PYG{p}{(}\PYG{n}{item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{Continue}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{Break}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Continue}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+请注意，这里无法用普通的 \texttt{fold} 来写，\texttt{all} 的语义承诺了一旦 \texttt{predicate} 返回 \texttt{false} 就停止从底层迭代器中消耗条目，但 \texttt{fold} 总是会消耗掉整个迭代器。
+
+如果你正在实现自己的迭代器类型，就值得研究一下你的迭代器能否比 \texttt{Iterator} 特型的默认定义更高效地实现 \texttt{try\_fold}。如果可以为 \texttt{try\_fold} 提速，那么基于它构建的所有其他方法都会受益。
+
+顾名思义，\texttt{try\_rfold}（尝试右起折叠）方法与 \texttt{try\_fold} 方法相同，只是从后面而不是前面开始提取值，并且要求传入一个双端迭代器。
+
+\subsection{\texttt{nth} 与 \texttt{nth\_back}}
+
+\texttt{nth}（第 \emph{n} 个）方法会接受索引参数 \texttt{n}，从迭代器中跳过 \texttt{n} 个条目，并返回下一个条目，如果序列提前结束了，则返回 \texttt{None}。调用 \texttt{.nth(0)} 等效于 \texttt{.next()}。
+
+\texttt{nth} 不会像适配器那样接手迭代器的所有权，因此可以多次调用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{squares}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{i}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{i}\PYG{o}{*}\PYG{n}{i}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{squares}\PYG{p}{.}\PYG{n}{nth}\PYG{p}{(}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{16}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{squares}\PYG{p}{.}\PYG{n}{nth}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{25}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{squares}\PYG{p}{.}\PYG{n}{nth}\PYG{p}{(}\PYG{l+m+mi}{6}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+它的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{nth}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{nth\_back}（倒数第 \emph{n} 个）方法与 \texttt{nth} 方法很像，只是从双端迭代器的后面往前提取。调用 \texttt{.nth\_back(0)} 等效于 \texttt{.next\_back()}：返回最后一个条目；如果迭代器为空则返回 \texttt{None}。
+
+\subsection{\texttt{last}}
+
+\texttt{last}（最后一个）方法会返回迭代器生成的最后一个条目，如果为空则返回 \texttt{None}。它的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{last}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+例如：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{squares}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{i}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{i}\PYG{o}{*}\PYG{n}{i}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{squares}\PYG{p}{.}\PYG{n}{last}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{81}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+会从前面开始消耗所有迭代器的条目，即便此迭代器是可逆的也会如此。如果你有一个可逆迭代器并且不想消耗它的所有条目，应该只写 \texttt{iter.next\_back()}。
+
+\subsection{\texttt{find}、\texttt{rfind} 和 \texttt{find\_map}}
+
+\texttt{find}（查找）方法会从迭代器中提取条目，返回第一个由给定闭包回复 \texttt{true} 的条目，如果序列在找到合适的条目之前就结束了则返回 \texttt{None}。它的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{find}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{predicate}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{rfind}（右起查找）方法与此类似，但要求迭代器为双端迭代器并从后往前搜索值，返回\textbf{最后}一个给定闭包回复为 \texttt{true} 的条目。
+
+例如，使用 15.4.4 节的城市和人口表，你可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{populations}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{p}{(}\PYG{n}{\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{pop}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{pop}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{1\PYGZus{}000\PYGZus{}000}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{populations}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{o}{|}\PYG{o}{\PYGZam{}}\PYG{p}{(}\PYG{n}{\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{pop}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{pop}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{500\PYGZus{}000}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{583\PYGZus{}776}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这个表中没有任何城市的人口超过一百万，但有一个城市有五十万人口。
+
+有时候，闭包不仅仅是一个简单的谓词——对每个条目进行逻辑判断并继续向前，它还可能是更复杂的东西，比如生成一个有意义的值。在这种情况下就需要使用 \texttt{find\_map}（查找并映射），它的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{find\PYGZus{}map}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{find\_map} 和 \texttt{find} 很像，但其闭包不会返回 \texttt{bool}，而是返回某个值的 \texttt{Option}。\texttt{find\_map} 会返回第一个类型为 \texttt{Some} 的 \texttt{Option}。
+
+假设有个城市内部公园的数据库，而我们要查看其中的公园是否有火山，有的话就给出公园的名称。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{big\PYGZus{}city\PYGZus{}with\PYGZus{}volcano\PYGZus{}park}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{populations}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{find\PYGZus{}map}\PYG{p}{(}\PYG{o}{|}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{city}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{park}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{find\PYGZus{}volcano\PYGZus{}park}\PYG{p}{(}\PYG{n}{city}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{parks}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{c+c1}{// find\PYGZus{}map会返回下面的值，以便让调用者知道我们找到了哪个公园}
+\PYG{+w}{            }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{n}{city}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{park}\PYG{p}{.}\PYG{n}{name}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{        }\PYG{c+c1}{// 拒绝此条目，并继续搜索}
+\PYG{+w}{        }\PYG{n+nb}{None}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{big\PYGZus{}city\PYGZus{}with\PYGZus{}volcano\PYGZus{}park}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Mt. Tabor Park}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{构建集合：\texttt{collect} 与 \texttt{FromIterator}}
+
+本书一直在用 \texttt{collect}（收集）方法构建包含迭代器条目的向量，比如，在第 2 章中，我们曾调用 \texttt{std::env::args()} 获取程序命令行参数的迭代器，然后调用该迭代器的 \texttt{collect} 方法把它们收集到一个向量中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+但 \texttt{collect} 并不是向量专用的，事实上，它可以构建出 Rust 标准库中任意类型的集合，只要迭代器能生成合适的条目类型即可：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{HashSet}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{BTreeSet}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{LinkedList}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{BTreeMap}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{HashSet}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BTreeSet}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{LinkedList}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 只有键–值对才能收集到Map中，因此对于这个例子，}
+\PYG{c+c1}{// 要把字符串序列和整数序列拉合在一起}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BTreeMap}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 其他代码略}
+\end{Verbatim}
+
+当然，\texttt{collect} 本身并不知道如何构造出所有这些类型。相反，如果某些集合类型（如 \texttt{Vec} 或 \texttt{HashMap}）知道如何从迭代器构造自身，就会自行实现 \texttt{std::iter::FromIterator}（来自迭代器）特型，而 \texttt{collect} 只是一个便捷的浅层包装而已：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{FromIterator}\PYG{o}{\PYGZlt{}}\PYG{n}{A}\PYG{o}{\PYGZgt{}}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{from\PYGZus{}iter}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n}{A}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果一个集合类型实现了 \texttt{FromIterator<A>}，那么它的类型关联函数 \texttt{from\_iter} 就能从一个可迭代者生成的 \texttt{A} 类型条目中构建出一个该类型的值。
+
+在最简单的情况下，实现代码可以构造出一个空集合，然后将迭代器中的条目一个个添加进去。例如，\texttt{std::collections::LinkedList} 的 \texttt{FromIterator} 就是这样实现的。
+
+不过，也有一些类型可以用更好的方式实现，比如，要从某个迭代器 \texttt{iter} 构造出一个向量可以非常简单。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{vec}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{item}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{iter}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{vec}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{item}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\PYG{n}{vec}
+\end{Verbatim}
+
+但这样做的效果并不理想：随着向量的增长，它可能要扩展其缓冲区，进而需要调用堆分配器并复制现有元素。向量固然进行了算法优化来保持这种开销尽可能低，但是如果有某种方法可以直接分配一个正确大小的缓冲区作为起点，那就根本没必要调整大小了。
+
+这是 \texttt{Iterator} 特型的 \texttt{size\_hint} 方法的用武之地：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{size\PYGZus{}hint}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{size\_hint} 方法会返回迭代器要生成的条目数的下限与可选上限，默认返回 0 作为下限而没有指定上限，这实际上就是在说“我也不知道上限”。许多迭代器可以做得更好，比如，\texttt{Range} 上的迭代器肯定知道它将生成多少个条目，\texttt{Vec} 或 \texttt{HashMap} 上的迭代器也知道。这类迭代器为 \texttt{size\_hint} 提供了自己的专有定义。
+
+\texttt{Vec} 的 \texttt{FromIterator} 实现如果想在一开始就正确设置新向量的缓冲区大小，那么这些上下限信息正是它所需要的。但在插入条目时仍然会检查缓冲区是否足够大，因此即使这种提示不正确，也只会影响性能，而不会影响安全。其他类型也可以采取类似的步骤，比如，\texttt{HashSet} 和 \texttt{HashMap} 就会使用 \texttt{Iterator::size\_hint} 来为其哈希表选择合适的初始大小。
+
+关于类型推断的一点说明：在本节的一开始，你曾看到同样是调用 \texttt{std::env::args(). collect()}，却根据上下文生成了 4 种类型的集合，这可能有点儿奇怪。\texttt{collect} 的返回类型就是它的类型参数，所以前两个调用等价于以下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{HashSet}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+但如果只有一种类型可以作为 \texttt{collect} 的参数，Rust 的类型推断就会为你提供这种类型。当你明确写出 \texttt{args} 的类型时，也足以说明只有一种类型了。
+
+\subsection{\texttt{Extend} 特型}
+
+如果一个类型实现了 \texttt{std::iter::Extend}（扩展）特型，那么它的 \texttt{extend} 方法就能将一些可迭代的条目添加到集合中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{l+m+mi}{5}\PYG{p}{)}\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{i}\PYG{o}{|}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{v}\PYG{p}{.}\PYG{n}{extend}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mi}{31}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{57}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{99}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{163}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{16}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{31}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{57}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{99}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{163}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+所有的标准集合都实现了 \texttt{Extend}，因此它们都有 \texttt{extend} 方法，\texttt{String} 也实现了，但具有固定长度的数组和切片则未实现。
+
+\texttt{Extend} 特型的定义如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Extend}\PYG{o}{\PYGZlt{}}\PYG{n}{A}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{extend}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{iter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}
+\PYG{+w}{        }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{o}{=}\PYG{n}{A}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+显然，这与 \texttt{std::iter::FromIterator} 非常相似：后者会创建新集合，而 \texttt{Extend} 会扩展现有集合。事实上，标准库中 \texttt{FromIterator} 的好几个实现都只是简单地创建一个新的空集合，然后调用 \texttt{extend} 填充它，比如 \texttt{std::collections::LinkedList} 的 \texttt{FromIterator} 就是这样实现的。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{FromIterator}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{LinkedList}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{from\PYGZus{}iter}\PYG{o}{\PYGZlt{}}\PYG{n}{I}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{I}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{list}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{list}\PYG{p}{.}\PYG{n}{extend}\PYG{p}{(}\PYG{n}{iter}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{list}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{\texttt{partition}}
+
+\texttt{partition}（分区）方法会将迭代器的条目划分到两个集合中，并使用闭包来决定每个条目归属的位置：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{things}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{doorknob}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mushroom}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{noodle}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{giraffe}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{grapefruit}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{c+c1}{// 惊人的事实：在这个列表里生物的名字都是以奇数序的字母开头的}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{living}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{nonliving}\PYG{p}{)}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{things}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{partition}\PYG{p}{(}\PYG{o}{|}\PYG{n}{name}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{.}\PYG{n}{as\PYGZus{}bytes}\PYG{p}{(}\PYG{p}{)}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{living}\PYG{p}{,}\PYG{+w}{    }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mushroom}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{giraffe}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{grapefruit}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{nonliving}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{doorknob}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{noodle}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+与 \texttt{collect} 一样，\texttt{partition} 也可以创建你喜欢的任意种类的集合，但这些集合必须属于同一个类型。和 \texttt{collect} 一样，你需要指定返回类型：前面的示例明确写出了 \texttt{living} 和 \texttt{nonliving} 的类型，并让类型推断为调用 \texttt{partition} 选择正确的类型参数。
+
+\texttt{partition} 的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{partition}\PYG{o}{\PYGZlt{}}\PYG{n}{B}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{B}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{B}\PYG{p}{)}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{B}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Default}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Extend}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnMut}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{collect} 要求其结果类型实现了 \texttt{FromIterator}，而 \texttt{partition} 则要求其结果类型实现了 \texttt{std::default::Default}，因为所有 Rust 集合都实现了 \texttt{std::default::Default}，而 \texttt{std::default::Extend} 则用于将元素添加到集合中。
+
+其他语言提供的 \texttt{partition} 操作往往只是将迭代器拆分为两个迭代器，而不会构建两个集合——这种处理方法之所以在 Rust 中并非好的选择，是因为那些已从底层迭代器中提取但尚未从已分区迭代器中提取的条目需要在某处进行缓冲，毕竟如果无论如何都要在内部构建某种集合，那还不如直接返回这些集合本身。
+
+\subsection{\texttt{for\_each} 与 \texttt{try\_for\_each}}
+
+\texttt{for\_each}（对每一个）方法会简单地对每个条目调用某个闭包：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{doves}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hens}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{birds}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{turtle}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{french}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{calling}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{o}{..}\PYG{l+m+mi}{5}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{rev}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{p}{(}\PYG{p}{(}\PYG{n}{item}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{kind}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{quantity}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{quantity}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{kind}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{item}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{for\PYGZus{}each}\PYG{p}{(}\PYG{o}{|}\PYG{n}{gift}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You have received: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{gift}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+输出如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{You}\PYG{+w}{ }\PYG{n}{have}\PYG{+w}{ }\PYG{n}{received}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{+w}{ }\PYG{n}{calling}\PYG{+w}{ }\PYG{n}{birds}
+\PYG{n}{You}\PYG{+w}{ }\PYG{n}{have}\PYG{+w}{ }\PYG{n}{received}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{+w}{ }\PYG{n}{french}\PYG{+w}{ }\PYG{n}{hens}
+\PYG{n}{You}\PYG{+w}{ }\PYG{n}{have}\PYG{+w}{ }\PYG{n}{received}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{n}{turtle}\PYG{+w}{ }\PYG{n}{doves}
+\end{Verbatim}
+
+这与简单的 \texttt{for} 循环非常相似，你同样可以在其中使用像 \texttt{break} 和 \texttt{continue} 这样的控制结构，但下面这样的适配器长链条调用在 \texttt{for} 循环中会显得有点儿笨拙：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{gift}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{doves}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hens}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{birds}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{turtle}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{french}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{calling}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{zip}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{o}{..}\PYG{l+m+mi}{5}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{rev}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{p}{(}\PYG{p}{(}\PYG{n}{item}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{kind}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{quantity}\PYG{p}{)}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{quantity}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{kind}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{item}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You have received: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{gift}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+要绑定的模式 \texttt{gift} 最终可能离使用它的循环体很远。
+
+如果你的闭包需要容错或提前退出，可以使用 \texttt{try\_for\_each}（尝试对每一个）。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{try\PYGZus{}for\PYGZus{}each}\PYG{p}{(}\PYG{o}{|}\PYG{n}{gift}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{writeln!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{output\PYGZus{}file}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You have received: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{gift}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+\section{实现自己的迭代器}
+
+你可以为自己的类型实现 \texttt{IntoIterator} 特型和 \texttt{Iterator} 特型，令本章中展示的所有适配器和消费者都可以使用它，甚至包括许多针对标准迭代器接口编写的库和 crate 代码。在本节中，我们将展示两个迭代器：一个简单的迭代器，可以遍历范围类型；一个相对复杂些的迭代器，可以遍历二叉树类型。
+
+假设我们有以下范围类型（从标准库的 \texttt{std::ops::Range<T>} 类型简化而来）。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{I32Range}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{start}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{end}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+要想迭代 \texttt{I32Range} 就需要两个状态：当前值和迭代应该结束的界限。这恰好非常适合 \texttt{I32Range} 类型本身，使用 \texttt{start} 作为下一个值，并使用 \texttt{end} 作为界限。因此，你可以像这样实现 \texttt{Iterator}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{I32Range}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{next}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{start}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{end}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{start}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{start}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{result}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此迭代器会生成 \texttt{i32} 型条目，也就是其 \texttt{Item} 类型。如果迭代已完成，则 \texttt{next} 会返回 \texttt{None}，否则，它会生成下一个值并更新其状态以便为下一次调用做准备。
+
+当然，\texttt{for} 循环会使用 \texttt{IntoIterator::into\_iter} 将其操作数转换为迭代器。但是标准库为每个实现了 \texttt{Iterator} 的类型都提供了 \texttt{IntoIterator} 的通用实现，所以 \texttt{I32Range} 可以直接使用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{pi}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{numerator}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{p}{;}
+
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{k}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{I32Range}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{start}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{end}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{14}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{pi}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{numerator}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{o}{*}\PYG{n}{k}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{numerator}\PYG{+w}{ }\PYG{o}{/}\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{3.0}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\PYG{n}{pi}\PYG{+w}{ }\PYG{o}{*}\PYG{o}{=}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{sqrt}\PYG{p}{(}\PYG{l+m+mf}{12.0}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// IEEE 754精确定义了此结果}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{pi}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{f32}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{f32}\PYG{p}{::}\PYG{n}{consts}\PYG{p}{::}\PYG{n}{PI}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+但 \texttt{I32Range} 是一个特例，因为其迭代目标和迭代器的类型是一样的。但还有许多情况没这么简单，比如，下面是第 10 章中的二叉树类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Empty}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{n}{TreeNode}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{TreeNode}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{element}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+遍历二叉树的经典方式是递归，使用函数调用栈来跟踪你当前在树中的位置以及尚未访问的节点。但是当为 \texttt{BinaryTree<T>} 实现 \texttt{Iterator} 时，对 \texttt{next} 的每次调用都必须生成一个值并返回。为了跟踪尚未生成的树节点，迭代器必须维护自己的栈。下面是 \texttt{BinaryTree} 的一种可能的迭代器类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{::}\PYG{n}{BinaryTree}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+
+\PYG{c+c1}{// `BinaryTree`的有序遍历状态}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{TreeIter}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// 跟踪树节点引用的栈。由于我们使用了`Vec`的`push`方法}
+\PYG{+w}{    }\PYG{c+c1}{// 和`pop`方法，因此栈顶就是向量的末尾}
+\PYG{+w}{    }\PYG{c+c1}{//}
+\PYG{+w}{    }\PYG{c+c1}{// 迭代器接下来要访问的节点位于栈顶，栈顶之下的那些祖先}
+\PYG{+w}{    }\PYG{c+c1}{// 仍未访问。如果栈已空，则本迭代结束}
+\PYG{+w}{    }\PYG{n}{unvisited}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n}{TreeNode}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+创建了一个新的 \texttt{TreeIter} 时，它的初始状态应该是即将生成的树中最左侧的叶节点。根据 \texttt{unvisited} 栈的规则，它应该让那个叶节点位于栈顶，然后是栈顶节点未访问的祖先：位于树的左边缘的节点。我们可以通过从根到叶遍历树的左边缘并推入我们遇到的每个节点来初始化 \texttt{unvisited}（未访问的栈），因此我们将在 \texttt{TreeIter} 上定义一个方法来执行此操作：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{TreeIter}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{push\PYGZus{}left\PYGZus{}edge}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{tree}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{k}{ref}\PYG{+w}{ }\PYG{n}{node}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{tree}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{unvisited}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{node}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{tree}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{node}\PYG{p}{.}\PYG{n}{left}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+写成 \texttt{mut tree} 能让代码中的循环在沿着左边缘向下移动时更改 \texttt{tree} 指向的节点，但是由于 \texttt{tree} 是共享引用，它不能改变节点本身。
+
+有了这个辅助方法，就可以给 \texttt{BinaryTree} 提供一个 \texttt{iter} 方法，让它返回遍历树的迭代器了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{iter}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{TreeIter}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{iter}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{TreeIter}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{unvisited}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{iter}\PYG{p}{.}\PYG{n}{push\PYGZus{}left\PYGZus{}edge}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{iter}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{iter} 方法会构造一个带有空 \texttt{unvisited} 栈的 \texttt{TreeIter}，然后调用 \texttt{push\_left\_edge} 进行初始化。根据 \texttt{unvisited} 栈规则的要求，最左边的节点位于栈顶。
+
+遵循标准库的做法，也可以通过调用 \texttt{BinaryTree::iter} 在对树的共享引用上实现 \texttt{IntoIterator}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{IntoIterator}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{IntoIter}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{TreeIter}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{into\PYGZus{}iter}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Self}\PYG{p}{::}\PYG{n}{IntoIter}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个 \texttt{IntoIter} 定义将 \texttt{TreeIter} 定义为针对 \texttt{\&BinaryTree} 的迭代器类型。
+
+最后，在 \texttt{Iterator} 实现中，我们开始实际遍历树。与 \texttt{BinaryTree} 的 \texttt{iter} 方法一样，迭代器的 \texttt{next} 方法也遵循栈规则：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Iterator}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{TreeIter}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{next}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{c+c1}{// 找到此迭代必须生成的节点，或完成迭代（如果为`None`，}
+\PYG{+w}{        }\PYG{c+c1}{// 请使用`?`运算符立即返回）}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{node}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{unvisited}\PYG{p}{.}\PYG{n}{pop}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{c+c1}{// 在`node`之后，我们接下来生成的条目必须是`node`右子树中最左边}
+\PYG{+w}{        }\PYG{c+c1}{// 的子节点，所以要从这里向下推进。这个辅助方法恰好是我们想要的}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{push\PYGZus{}left\PYGZus{}edge}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{node}\PYG{p}{.}\PYG{n}{right}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{c+c1}{// 生成一个对本节点值的引用}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{node}\PYG{p}{.}\PYG{n}{element}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果栈为空，则迭代完成。否则，\texttt{node} 就是对当前要访问的节点的引用，此调用将返回一个指向其 \texttt{element} 字段的引用。但首先，我们必须将迭代器的状态推进到下一个节点。如果这个节点具有右子树，则下一个要访问的节点是该子树最左侧的节点，我们可以使用 \texttt{push\_left\_edge} 将它及其未访问的祖先压入栈。但是如果这个节点没有右子树，则 \texttt{push\_left\_edge} 没有任何效果，这正是我们想要的：我们希望新的栈顶是 \texttt{node} 的第一个未访问的祖先（如果有的话）。
+
+有了 \texttt{IntoIterator} 和 \texttt{Iterator} 这两个实现，我们终于可以使用 \texttt{for} 循环来通过引用迭代 \texttt{BinaryTree} 了。使用 10.2.9 节中 \texttt{BinaryTree} 的 \texttt{add} 方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 构建一棵小树}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{tree}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BinaryTree}\PYG{p}{::}\PYG{n}{Empty}\PYG{p}{;}
+\PYG{n}{tree}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{jaeger}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{tree}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{robot}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{tree}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{droid}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{tree}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mecha}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 对它进行遍历}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{v}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{kind}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{tree}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{v}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{o}{*}\PYG{n}{kind}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{v}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{droid}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{jaeger}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mecha}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{robot}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+图 15-1 展示了当我们遍历示例树时 \texttt{unvisited} 栈的行为方式。对于每一步，下一个要访问的节点都会位于栈顶，所有未访问的祖先则位于其下方。
+
+\myFigure{images/ch15/fig-15-1.jpeg}{图 15-1：迭代遍历二叉树}
+
+所有常用的迭代器适配器和消费者都能用在我们这棵树上：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{tree}\PYG{p}{.}\PYG{n}{iter}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{name}\PYG{o}{|}\PYG{+w}{ }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mega\PYGZhy{}\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mega\PYGZhy{}droid}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mega\PYGZhy{}jaeger}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mega\PYGZhy{}mecha}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mega\PYGZhy{}robot}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+各种迭代器正是 Rust 哲学的体现，即提供强大的、零成本的抽象，提升代码的表现力和可读性。迭代器并没有完全取代循环，但确实提供了一个功能强大的基础构件，天然支持惰性求值特性且具有出色的性能。
+

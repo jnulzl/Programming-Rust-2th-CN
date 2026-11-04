@@ -1,0 +1,933 @@
+% chapter10 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_095.html, part0000_split_096.html, part0000_split_097.html, part0000_split_098.html
+
+\begin{myEpigraph}{——Graydon Hoare}
+在计算机领域，总和类型（sum type）长期悲剧性缺位，很多事情却依然行得通，这简直不可思议（参见 Lambda 的缺位）。\footnote{意思是 Lambda 在主流编程领域的长期缺位造就了大量“烂”代码，总和类型的缺位同样如此。——译者注}
+\end{myEpigraph}
+
+本章的第一个主题强劲有力且非常“古老”，它能帮助你在短期内完成很多事（但要付出一定代价），并且许多文化中有关于它的传说。我要说的不是“恶魔”，而是一种用户定义数据类型，长期以来被 ML 社区和 Haskell 社区的黑客们称为总和类型、可区分的联合体（union）或代数数据类型。在 Rust 中，它们被称为\textbf{枚举}。与“恶魔”不同，它们相当安全，而且也不用付出多少代价。
+
+C++ 和 C\# 都有枚举，你可以使用它们来定义自己的类型，其值是一组命名常量。例如，你可以定义一个名为 \texttt{Color} 的类型，其值为 \texttt{Red}、\texttt{Orange}、\texttt{Yellow} 等。这种枚举也适用于 Rust，但是 Rust 的枚举远不止于此。Rust 枚举还可以包含数据，甚至是不同类型的数据。例如，Rust 的 \texttt{Result<String, io::Error>} 类型就是一个枚举，这样的值要么是包含 \texttt{String} 型的 \texttt{Ok} 值，要么是包含 \texttt{io::Error} 的 \texttt{Err} 值。C++ 枚举和 C\# 枚举则不具备这样的能力。Rust 枚举更像是 C 的联合体，但不同之处在于它是类型安全的。
+
+只要值可能代表多种事物，枚举就很有用。使用枚举的“代价”是你必须通过模式匹配安全地访问数据，这是本章后半部分的主题。
+
+如果你用过 Python 中的解包或 JavaScript 中的解构，那么应该很熟悉“模式”这个词，但 Rust 的模式不止于此。Rust 模式有点儿像针对所有数据的正则表达式。它们用于测试一个值是否具有特定的目标形态，可以一次从结构体或元组中把多个字段提取到局部变量中。
+
+和正则表达式一样，模式很简洁，通常能在一行代码中完成全部工作。
+
+本章从枚举的基础知识讲起，首先展示数据如何关联到枚举的各个变体，以及枚举如何存储在内存中；然后展示 Rust 的模式和 \texttt{match}（匹配）语句如何基于枚举、结构体、数组和切片简洁地表达逻辑。模式中还可以包含引用、移动和 \texttt{if} 条件，来让自己更加强大。
+
+\section{枚举}
+
+Rust 中简单的 C 风格枚举很直观：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Ordering}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Less}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Equal}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Greater}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这声明了一个具有 3 个可能值的 \texttt{Ordering} 类型，称为\textbf{变体}或\textbf{构造器}：\texttt{Ordering::Less}、\texttt{Ordering::Equal} 和 \texttt{Ordering::Greater}。这个特殊的枚举是标准库的一部分，因此 Rust 代码能够直接导入它：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{cmp}\PYG{p}{::}\PYG{n}{Ordering}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{compare}\PYG{p}{(}\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{m}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Ordering}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Ordering}\PYG{p}{::}\PYG{n}{Less}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Ordering}\PYG{p}{::}\PYG{n}{Greater}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Ordering}\PYG{p}{::}\PYG{n}{Equal}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+或连同其所有构造器一同导入：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{cmp}\PYG{p}{::}\PYG{n}{Ordering}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{*}\PYG{p}{\PYGZcb{}}\PYG{p}{;}\PYG{+w}{    }\PYG{c+c1}{// `*`导入所有子项}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{compare}\PYG{p}{(}\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{m}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Ordering}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Less}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Greater}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Equal}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+导入构造器后，我们就可以写成 \texttt{Less} 而非 \texttt{Ordering::Less}，等等，但是因为这样写意思不太明确，所以通常认为\textbf{不导入}构造器的那种风格更好，除非导入它们能让你的代码更具可读性。
+
+要导入当前模块中声明的枚举的构造器，请使用 \texttt{self}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Pet}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Orca}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Giraffe}\PYG{p}{,}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{::}\PYG{n}{Pet}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\end{Verbatim}
+
+在内存中，C 风格枚举的各个值会存储为整数。有时告诉 Rust 要使用哪几个整数是很有用的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{HttpStatus}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{200}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{NotModified}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{304}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{NotFound}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{404}\PYG{p}{,}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+否则 Rust 会从 0 开始帮你分配数值。
+
+默认情况下，Rust 会使用可以容纳它们的最小内置整数类型来存储 C 风格枚举。最适合的是单字节：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{mem}\PYG{p}{::}\PYG{n}{size\PYGZus{}of}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{size\PYGZus{}of}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{Ordering}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{size\PYGZus{}of}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{HttpStatus}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 404不适合存入u8}
+\end{Verbatim}
+
+你可以通过向枚举添加 \texttt{\#[repr]} 属性来覆盖 Rust 对内存中表示法的默认选择。有关详细信息，请参阅 23.1 节。
+
+可以将 C 风格枚举转换为整数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{HttpStatus}\PYG{p}{::}\PYG{n+nb}{Ok}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{200}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+从整数到枚举的反向转换则行不通。与 C 和 C++ 不同，Rust 会保证枚举值必然是 \texttt{enum} 声明中阐明的值之一。从整数类型到枚举类型的非检查转换可能会破坏此保证，因此不允许这样做。你可以编写自己的“检查完再转换”逻辑：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{http\PYGZus{}status\PYGZus{}from\PYGZus{}u32}\PYG{p}{(}\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{HttpStatus}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{l+m+mi}{200}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{HttpStatus}\PYG{p}{::}\PYG{n+nb}{Ok}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{l+m+mi}{304}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{HttpStatus}\PYG{p}{::}\PYG{n}{NotModified}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{l+m+mi}{404}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{HttpStatus}\PYG{p}{::}\PYG{n}{NotFound}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{        }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+或者借助 \texttt{enum\_primitive} crate。它包含一个宏，可以帮你自动生成这类转换代码。
+
+与结构体一样，编译器能为你实现 \texttt{==} 运算符等特性，但你必须明确提出要求：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Copy, Clone, Debug, PartialEq, Eq)}\PYG{c+cp}{]}
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{TimeUnit}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Seconds}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Minutes}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Hours}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Days}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Months}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Years}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+枚举可以有方法，就像结构体一样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{TimeUnit}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 返回此时间单位的复数名词}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{plural}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{match}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{TimeUnit}\PYG{p}{::}\PYG{n}{Seconds}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{seconds}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{TimeUnit}\PYG{p}{::}\PYG{n}{Minutes}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{minutes}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{TimeUnit}\PYG{p}{::}\PYG{n}{Hours}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hours}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{TimeUnit}\PYG{p}{::}\PYG{n}{Days}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{days}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{TimeUnit}\PYG{p}{::}\PYG{n}{Months}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{months}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{TimeUnit}\PYG{p}{::}\PYG{n}{Years}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{years}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 返回此时间单位的单数名词}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{singular}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{plural}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{trim\PYGZus{}end\PYGZus{}matches}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}s\PYGZsq{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+至此，C 风格枚举就介绍完了。更有趣的 Rust 枚举类型是其变体中能持有数据的类型。我们将展示如何将它们存储在内存中、如何通过添加类型参数来泛化它们，以及如何运用枚举构建复杂的数据结构。
+
+\subsection{带数据的枚举}
+
+有些程序总是要显示精确到毫秒的完整日期和时间，但对大多数应用程序来说，使用粗略的近似值（比如“两个月前”）对用户更友好。我们可以使用之前定义的枚举来编写一个新的 \texttt{enum}，以帮忙解决此问题：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 刻意四舍五入后的时间戳，所以程序会显示“6个月前”}
+\PYG{l+s+sd}{/// 而非“2016年2月9日上午9点49分”}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Copy, Clone, Debug, PartialEq)}\PYG{c+cp}{]}
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{RoughTime}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{InThePast}\PYG{p}{(}\PYG{n}{TimeUnit}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{JustNow}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{InTheFuture}\PYG{p}{(}\PYG{n}{TimeUnit}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此枚举中的两个变体 \texttt{InThePast} 和 \texttt{InTheFuture} 能接受参数。这种变体叫作\textbf{元组型变体}。与元组型结构体一样，这些构造器也是可创建新 \texttt{RoughTime} 值的函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{four\PYGZus{}score\PYGZus{}and\PYGZus{}seven\PYGZus{}years\PYGZus{}ago}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{RoughTime}\PYG{p}{::}\PYG{n}{InThePast}\PYG{p}{(}\PYG{n}{TimeUnit}\PYG{p}{::}\PYG{n}{Years}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{three\PYGZus{}hours\PYGZus{}from\PYGZus{}now}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{RoughTime}\PYG{p}{::}\PYG{n}{InTheFuture}\PYG{p}{(}\PYG{n}{TimeUnit}\PYG{p}{::}\PYG{n}{Hours}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+枚举还可以有\textbf{结构体型变体}，就像普通结构体一样包含一些具名字段：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Shape}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Sphere}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{center}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Point3d}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{radius}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f32}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Cuboid}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{corner1}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Point3d}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{corner2}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Point3d}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{unit\PYGZus{}sphere}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Shape}\PYG{p}{::}\PYG{n}{Sphere}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{center}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{ORIGIN}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{radius}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+总而言之，Rust 有 3 种枚举变体，这与我们在第 9 章中展示的 3 种结构体相呼应。没有数据的变体对应于单元型结构体。元组型变体的外观和功能很像元组型结构体。结构体型变体具有花括号和具名字段。单个枚举中可以同时有 3 种类型的变体：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{RelationshipStatus}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Single}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{InARelationship}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{ItsComplicated}\PYG{p}{(}\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{ItsExtremelyComplicated}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{car}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{DifferentialEquation}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{cdr}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{EarlyModernistPoem}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+枚举的所有构造器和字段都与枚举本身具有相同的可见性。
+
+\subsection{内存中的枚举}
+
+在内存中，带有数据的枚举会以一个小型整数\textbf{标签}加上足以容纳最大变体中所有字段的内存块的格式进行存储。标签字段供 Rust 内部使用。它会区分由哪个构造器创建了值，进而决定这个值应该有哪些字段。
+
+从 Rust 1.50 开始，\texttt{RoughTime} 会占用 8 字节，如图 10-1 所示。
+
+\myFigure{images/ch10/fig-10-1.jpeg}{图 10-1：内存中的 \texttt{RoughTime} 值}
+
+不过，为了给将来的优化留下余地，Rust 并没有对枚举的内存布局做出任何承诺。在某些情况下，Rust 可以比图 10-1 中展示的布局更有效地打包枚举。例如，有些泛型结构体可以在不需要标签的情况下存储，稍后我们会介绍。
+
+\subsection{用枚举表示富数据结构}
+
+枚举对于快速实现树形数据结构也很有用。假设一个 Rust 程序需要处理任意 JSON 数据。在内存中，任何 JSON 文档都可以表示为这种 Rust 类型的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashMap}\PYG{p}{;}
+
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Json}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Null}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Boolean}\PYG{p}{(}\PYG{k+kt}{bool}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Number}\PYG{p}{(}\PYG{k+kt}{f64}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{String}\PYG{p}{(}\PYG{n+nb}{String}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Array}\PYG{p}{(}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{Json}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Object}\PYG{p}{(}\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{n}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Json}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+用自然语言解释这种数据结构还不如直接看 Rust 代码。JSON 标准指定了可以出现在 JSON 文档中的不同数据类型：\texttt{null}、布尔值、数值、字符串、各种 JSON 值的数组以及具有字符串键名和 JSON 值的对象。这里的 \texttt{Json} 枚举只是简单地列出了这些类型而已。
+
+这不是一个假想的例子。可以在 \texttt{serde\_json} 中找到一个非常相似的枚举，\texttt{serde\_json} 是 Rust 的结构体序列化库，是 crates.io 上最常下载的 crate 之一。
+
+这里在表示 \texttt{Object} 的 \texttt{HashMap} 周围加 \texttt{Box} 只是为了让所有 \texttt{Json} 值更紧凑。在内存中，\texttt{Json} 类型的值占用 4 个机器字。而 \texttt{String} 值和 \texttt{Vec} 值占用 3 个机器字，Rust 又添加了一个标签字节。\texttt{Null} 值和 \texttt{Boolean} 值中没有足够的数据来用完所有空间，但所有 \texttt{Json} 值的大小必须相同。因此，额外的空间就用不上了。图 10-2 展示了 \texttt{Json} 值在内存中的实际布局的一些示例。
+
+\myFigure{images/ch10/fig-10-2.jpeg}{图 10-2：内存中的 \texttt{Json} 值}
+
+\texttt{HashMap} 则更大。如果必须在每个 \texttt{Json} 值中为它留出空间，那么将会非常大，在 8 个机器字左右。但是 \texttt{Box<HashMap>} 是 1 个机器字：它只是指向堆中分配的数据的指针。我们甚至可以通过装箱更多字段来让 \texttt{Json} 更加紧凑。
+
+这里值得注意的是用 Rust 建立这个结构有多么容易。在 C++ 中，可能要为此编写一个类：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{class}\PYG{+w}{ }\PYG{n}{JSON}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{n}{private}\PYG{p}{:}
+\PYG{+w}{    }\PYG{n+nc}{enum}\PYG{+w}{ }\PYG{n}{Tag}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Null}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Boolean}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Number}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Array}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Object}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{union}\PYG{+w}{ }\PYG{n+nc}{Data}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{n}{boolean}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{double}\PYG{+w}{ }\PYG{n}{number}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{shared\PYGZus{}ptr}\PYG{o}{\PYGZlt{}}\PYG{n}{string}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{shared\PYGZus{}ptr}\PYG{o}{\PYGZlt{}}\PYG{n}{vector}\PYG{o}{\PYGZlt{}}\PYG{n}{JSON}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{array}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{shared\PYGZus{}ptr}\PYG{o}{\PYGZlt{}}\PYG{n}{unordered\PYGZus{}map}\PYG{o}{\PYGZlt{}}\PYG{n}{string}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{JSON}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{object}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{n}{Data}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{o}{\PYGZti{}}\PYG{n}{Data}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{Tag}\PYG{+w}{ }\PYG{n}{tag}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{Data}\PYG{+w}{ }\PYG{n}{data}\PYG{p}{;}
+
+\PYG{n}{public}\PYG{p}{:}
+\PYG{+w}{    }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{n+nc}{is\PYGZus{}null}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{const}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{tag}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Null}\PYG{p}{;}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{n}{is\PYGZus{}boolean}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{const}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{tag}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Boolean}\PYG{p}{;}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{n}{get\PYGZus{}boolean}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{const}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{assert}\PYG{p}{(}\PYG{n}{is\PYGZus{}boolean}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{data}\PYG{p}{.}\PYG{n}{boolean}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{void}\PYG{+w}{ }\PYG{n}{set\PYGZus{}boolean}\PYG{p}{(}\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{this}\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{o}{\PYGZti{}}\PYG{n}{JSON}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 清理string/array/object值}
+\PYG{+w}{        }\PYG{n}{tag}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Boolean}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{data}\PYG{p}{.}\PYG{n}{boolean}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+写了 30 行代码，我们才刚开了个头。这个类将需要构造函数、析构函数和赋值运算符。还有一种方法是创建一个具有基类 \texttt{JSON} 和子类 \texttt{JSONBoolean}、\texttt{JSONString} 等的类层次结构。无论采用哪种方法，操作完成时，我们的 C++ 版 JSON 库都将有十几个方法。其他程序员需要阅读一定的内容才能掌握并使用它。而整个 Rust 枚举才 8 行代码。
+
+\subsection{泛型枚举}
+
+枚举可以是泛型的。Rust 标准库中的两个例子是该语言中最常用的数据类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{T}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{E}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{T}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{E}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+现在你已经很熟悉这些类型了，泛型枚举的语法与泛型结构体是一样的。
+
+一个不太明显的细节是，当类型 \texttt{T} 是引用、\texttt{Box} 或其他智能指针类型时，Rust 可以省掉 \texttt{Option<T>} 的标签字段。由于这些指针类型都不允许为 0，因此 Rust 可以将 \texttt{Option<Box<i32>>} 表示为单个机器字：0 表示 \texttt{None}，非零表示 \texttt{Some} 指针。这能让 \texttt{Option} 类型的值尽量接近于可能为空的 C 或 C++ 指针。不同之处在于 Rust 的类型系统要求你在使用其内容之前检查 \texttt{Option} 是否为 \texttt{Some}。这有效地避免了对空指针解引用。
+
+只需几行代码就可以构建出泛型数据结构：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// `T`组成的有序集合}
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Empty}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{n}{TreeNode}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// BinaryTree的部件}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{TreeNode}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{element}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这几行代码定义了一个 \texttt{BinaryTree} 类型，它可以存储任意数量的 \texttt{T} 类型的值。
+
+这两个定义中包含了大量信息，因此我们需要花点儿时间逐字解释这些代码。每个 \texttt{BinaryTree} 值要么是 \texttt{Empty}，要么是 \texttt{NonEmpty}。如果是 \texttt{Empty}，那它根本不含任何数据。如果是 \texttt{NonEmpty}，那它就会有一个 \texttt{Box}，即一个指向堆上分配的 \texttt{TreeNode} 的指针。
+
+每个 \texttt{TreeNode} 值包含一个实际元素以及另外两个 \texttt{BinaryTree} 值。这意味着树可以包含子树，因此 \texttt{NonEmpty} 树可以有任意数量的后代。
+
+\texttt{BinaryTree<\&str>} 类型值的示意图如图 10-3 所示。与 \texttt{Option<Box<T>>} 一样，Rust 在这里也省略了标签字段，因此 \texttt{BinaryTree} 值占用一个机器字。
+
+\myFigure{images/ch10/fig-10-3.jpeg}{图 10-3：包含 6 个字符串的 \texttt{BinaryTree}}
+
+在此树中构建任何特定节点都很简明直观：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{::}\PYG{n}{BinaryTree}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{jupiter\PYGZus{}tree}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{n+nb}{Box}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{TreeNode}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{element}\PYG{p}{:}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Jupiter}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Empty}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Empty}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+较大的树可以基于较小的树来构建：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{mars\PYGZus{}tree}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{n+nb}{Box}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{TreeNode}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{element}\PYG{p}{:}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Mars}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{jupiter\PYGZus{}tree}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{mercury\PYGZus{}tree}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+自然，此赋值会将 \texttt{jupiter\_node} 和 \texttt{mercury\_node} 的所有权转移给它们的新父节点。
+
+树的其余部分都遵循同样的模式。根节点与其他节点没有什么区别：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{tree}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{n+nb}{Box}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{TreeNode}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{element}\PYG{p}{:}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Saturn}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{mars\PYGZus{}tree}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{uranus\PYGZus{}tree}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+稍后本章将展示如何在 \texttt{BinaryTree} 类型上实现一个 \texttt{add} 方法，以便像下面这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{tree}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BinaryTree}\PYG{p}{::}\PYG{n}{Empty}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{planet}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{planets}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{tree}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{n}{planet}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+无论你的语言背景如何，在 Rust 中创建像 \texttt{BinaryTree} 这样的数据结构都可能需要做一些练习。起初并不容易看出应该把这些 \texttt{Box} 放在哪里。找到可行设计方案的方法之一是画出图 10-3 那样的图，展示你希望这些数据在内存中如何布局。然后从图片倒推出代码。每组方块都表示一个结构体或元组，每个箭头都是一个 \texttt{Box} 或其他智能指针。弄清楚每个字段的类型虽然有点儿难，但仍然是可以解决的。解决此难题的回报是对程序内存进行了更好的控制。
+
+现在再来说一下本章开头提过的“代价”。枚举的标签字段会占用一点儿内存，最坏情况下可达 8 字节，但这通常可以忽略不计。枚举的真正缺点（如果一定要算的话）是，虽然这些字段真的存在于值中，但 Rust 代码不允许你直接访问它们：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{r}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{shape}\PYG{p}{.}\PYG{n}{radius}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：在`Shape`类型上没有`radius`字段}
+\end{Verbatim}
+
+只能用一种安全的方式来访问枚举中的数据，即使用模式。
+
+\section{模式}
+
+回忆一下本章前面定义过的 \texttt{RoughTime} 类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{RoughTime}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{InThePast}\PYG{p}{(}\PYG{n}{TimeUnit}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{JustNow}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{InTheFuture}\PYG{p}{(}\PYG{n}{TimeUnit}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+假设你有一个 \texttt{RoughTime} 值并希望把它显示在网页上。你需要访问值内的 \texttt{TimeUnit} 字段和 \texttt{u32} 字段。Rust 不允许你通过编写 \texttt{rough\_time.0} 和 \texttt{rough\_time.1} 来直接访问它们，因为毕竟 \texttt{rough\_time} 也可能是没有字段的，比如 \texttt{RoughTime::JustNow}。那么，怎样才能获得数据呢？
+
+你需要一个 \texttt{match} 表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{  }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{rough\PYGZus{}time\PYGZus{}to\PYGZus{}english}\PYG{p}{(}\PYG{n}{rt}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{RoughTime}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{      }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{rt}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{+w}{          }\PYG{n}{RoughTime}\PYG{p}{::}\PYG{n}{InThePast}\PYG{p}{(}\PYG{n}{units}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{count}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{+w}{              }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{} ago}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{count}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{units}\PYG{p}{.}\PYG{n}{plural}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{+w}{          }\PYG{n}{RoughTime}\PYG{p}{::}\PYG{n}{JustNow}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{+w}{              }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{just now}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{+w}{          }\PYG{n}{RoughTime}\PYG{p}{::}\PYG{n}{InTheFuture}\PYG{p}{(}\PYG{n}{units}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{count}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{+w}{              }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{} from now}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{count}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{units}\PYG{p}{.}\PYG{n}{plural}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{+w}{      }\PYG{p}{\PYGZcb{}}
+\PYG{l+m+mi}{10}\PYG{+w}{  }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{match} 会执行模式匹配，在此示例中，\textbf{模式}就是第 3 行、第 5 行和第 7 行中出现在 \texttt{=>} 符号前面的部分。匹配 \texttt{RoughTime} 值的模式很像用于创建 \texttt{RoughTime} 值的表达式。这是刻意的设计。表达式会\textbf{生成}值，模式会\textbf{消耗}值。两者刻意使用了很多相同的语法。
+
+我们分步了解一下此 \texttt{match} 表达式在运行期会发生什么。假设 \texttt{rt} 是 \texttt{RoughTime::InTheFuture(TimeUnit::Months, 1)} 的值。Rust 会首先尝试将这个值与第 3 行的模式相匹配。如图 10-4 所示，二者不匹配。
+
+\myFigure{images/ch10/fig-10-4.jpeg}{图 10-4：不匹配的 \texttt{RoughTime} 值和模式}
+
+对于枚举、结构体或元组类型的匹配，Rust 的工作方式就像简单地从左到右进行扫描一样，会检查模式的每个组件以查看该值是否与之匹配。如果不匹配，Rust 就会接着尝试下一个模式。
+
+第 3 行和第 5 行的模式都不匹配，但是第 7 行的模式匹配成功了，如图 10-5 所示。
+
+\myFigure{images/ch10/fig-10-5.jpeg}{图 10-5：一次成功的匹配}
+
+模式中包含的简单标识符（如 \texttt{units} 和 \texttt{count}）会成为模式后面代码中的局部变量。值中存在的任何内容都会复制或移动到新变量中。Rust 会在 \texttt{units} 中存储 \texttt{TimeUnit::Months}，在 \texttt{count} 中存储 \texttt{1}，然后运行第 \texttt{8} 行代码，并返回字符串 \texttt{"1 months from now"}。
+
+该输出有一个小小的英语语法问题（未处理复数），可以通过在 \texttt{match} 中添加另一个分支来解决：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{RoughTime}\PYG{p}{::}\PYG{n}{InTheFuture}\PYG{p}{(}\PYG{n}{unit}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{a \PYGZob{}\PYGZcb{} from now}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{unit}\PYG{p}{.}\PYG{n}{singular}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\end{Verbatim}
+
+仅当 \texttt{count} 字段恰好为 \texttt{1} 时，才会匹配此分支。请注意，这行新代码必须添加到第 7 行之前。如果将其添加到末尾，那么 Rust 将永远无法访问它，因为第 7 行的模式会匹配所有 \texttt{InTheFuture} 值。如果你犯了这种错误，那么 Rust 编译器将警告发现了 \texttt{"unreachable pattern"}（无法抵达的模式）。
+
+即使用了新代码，\texttt{RoughTime::InTheFuture(TimeUnit::Hours, 1)} 仍然存在问题：\texttt{"a hour from now"} 这个结果不太正确。唉，这就是英语啊。这也可以通过在 \texttt{match} 中添加另一个分支来解决。
+
+如本示例所示，模式匹配可以和枚举协同工作，甚至可以测试它们包含的数据，这让 \texttt{match} 成了 C 的 \texttt{switch} 语句的强大而灵活的替代品。迄今为止，我们只看到了匹配枚举值的模式。但模式的类型不止于此，Rust 模式还有它们自己的小型语言，如表 10-1 所示。我们将用本章剩余的大部分内容来介绍此表中展示的特性。
+
+\myCaption{表 10-1：模式}
+
+\myTableBegin
+\begin{xltabular}{\textwidth}{@{}>{\hsize=0.406\hsize\raggedright\arraybackslash}X>{\hsize=1.594\hsize\raggedright\arraybackslash}X>{\hsize=1.000\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{模式类型} & \textcolor{white}{例子} & \textcolor{white}{注意事项} \\
+\endfirsthead
+\rowcolor{tabhead}\textcolor{white}{模式类型} & \textcolor{white}{例子} & \textcolor{white}{注意事项} \\
+\endhead
+字面量 & \texttt{100}\newline{}\texttt{"name"} & 匹配一个确切的值；也允许匹配常量名称 \\
+范围 & \texttt{0 ..= 100}\newline{}\texttt{'a' ..= 'k'}\newline{}\texttt{256..} & 匹配范围内的任何值，包括可能给定的结束值 \\
+通配符 & \texttt{\_} & 匹配任何值并忽略它 \\
+变量 & \texttt{name}\newline{}\texttt{mut count} & 类似于 \texttt{\_}，但会把值移动或复制到新的局部变量中 \\
+引用变量 & \texttt{ref field}\newline{}\texttt{ref mut field} & 借用对匹配值的引用，而不是移动或复制它 \\
+与子模式绑定 & \texttt{val @ 0 ..= 99}\newline{}\texttt{ref circle @ Shape::Circle \{ .. \}} & 使用 \texttt{@} 左边的变量名，匹配其右边的模式 \\
+枚举型模式 & \texttt{Some(value)}\newline{}\texttt{None}\newline{}\texttt{Pet::Orca} &  \\
+元组型模式 & \texttt{(key, value)}\newline{}\texttt{(r, g, b)} &  \\
+数组型模式 & \texttt{[a, b, c, d, e, f, g]}\newline{}\texttt{[heading, carom, correction]} &  \\
+切片型模式 & \texttt{[first, second]}\newline{}\texttt{[first, \_, third]}\newline{}\texttt{[first, .., nth]}\newline{}\texttt{[ ]} &  \\
+结构体型模式 & \texttt{Color(r, g, b)}\newline{}\texttt{Point \{ x, y \}}\newline{}\texttt{Card \{ suit: Clubs, rank: n \}}\newline{}\texttt{Account \{ id, name, .. \}} &  \\
+引用 & \texttt{\&value}\newline{}\texttt{\&(k, v)} & 仅匹配引用值 \\
+或多个模式 & \texttt{'a' | 'A'}\newline{}\texttt{Some("left" | "right")} &  \\
+守卫表达式 & \texttt{x if x * x <= r2} & 只用在 \texttt{match} 表达式中（不能用在 \texttt{let} 语句等处） \\
+\end{xltabular}
+\myTableEnd
+
+\subsection{模式中的字面量、变量和通配符}
+
+迄今为止，我们已经展示了如何借助 \texttt{match} 表达式来使用枚举。\texttt{match} 也可用来匹配其他类型。当你需要类似 C 语言的 \texttt{switch} 语句的内容时，可以使用针对整数值的 \texttt{match}。像 \texttt{0} 和 \texttt{1} 这样的整型字面量都可以作为模式使用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{meadow}\PYG{p}{.}\PYG{n}{count\PYGZus{}rabbits}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{p}{\PYGZcb{}}\PYG{+w}{  }\PYG{c+c1}{// 无话可说}
+\PYG{+w}{    }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{A rabbit is nosing around in the clover.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{There are \PYGZob{}\PYGZcb{} rabbits hopping about in the meadow}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果草地上没有兔子，就匹配模式 \texttt{0}；如果只有一只兔子，就匹配模式 \texttt{1}；如果有两只或更多的兔子，就匹配第三个模式，即模式 \texttt{n}。模式 \texttt{n} 只是一个变量名，它可以匹配任何值，匹配的值会移动或复制到一个新的局部变量中。所以在这种情况下，\texttt{meadow.count\_rabbits()} 的值会存储在一个新的局部变量 \texttt{n} 中，然后打印出来。
+
+其他字面量也可以用作模式，包括布尔值、字符，甚至字符串：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{calendar}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{settings}\PYG{p}{.}\PYG{n}{get\PYGZus{}string}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{calendar}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{gregorian}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Calendar}\PYG{p}{::}\PYG{n}{Gregorian}\PYG{p}{,}
+\PYG{+w}{    }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{chinese}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Calendar}\PYG{p}{::}\PYG{n}{Chinese}\PYG{p}{,}
+\PYG{+w}{    }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ethiopian}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Calendar}\PYG{p}{::}\PYG{n}{Ethiopian}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{other}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}error}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{calendar}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{other}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+在这个例子中，\texttt{other} 就像上个例子中的 \texttt{n} 一样充当了包罗万象的模式。这些模式与 \texttt{switch} 语句中的 \texttt{default} 分支起着相同的作用，用于匹配与任何其他模式都无法匹配的值。
+
+如果你需要一个包罗万象的模式，但又不关心匹配到的值，那么可以用单个下划线 \texttt{\_} 作为模式，这就是\textbf{通配符模式}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{caption}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{photo}\PYG{p}{.}\PYG{n}{tagged\PYGZus{}pet}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Pet}\PYG{p}{::}\PYG{n}{Tyrannosaur}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{RRRAAAAAHHHHHH}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Pet}\PYG{p}{::}\PYG{n}{Samoyed}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{*dog thoughts*}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{I\PYGZsq{}m cute, love me}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{c+c1}{// 一般性捕获，对任意Pet都生效}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+这里的通配符模式能匹配任意值，但不会将其存储到任何地方。由于 Rust 要求每个 \texttt{match} 表达式都必须处理所有可能的值，因此最后往往需要一个通配符模式。即使你非常确定其他情况不会发生，也必须至少添加一个后备分支，也许是 panic 的分支。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 有很多种形状（Shape），但我们只支持“选中”一些文本框}
+\PYG{c+c1}{// 或者矩形区域中的所有内容。不能选择椭圆或梯形}
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{document}\PYG{p}{.}\PYG{n}{selection}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Shape}\PYG{p}{::}\PYG{n}{TextSpan}\PYG{p}{(}\PYG{n}{start}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{end}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{paint\PYGZus{}text\PYGZus{}selection}\PYG{p}{(}\PYG{n}{start}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{end}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Shape}\PYG{p}{::}\PYG{n}{Rectangle}\PYG{p}{(}\PYG{n}{rect}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{paint\PYGZus{}rect\PYGZus{}selection}\PYG{p}{(}\PYG{n}{rect}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{panic!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{unexpected selection type}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{元组型模式与结构体型模式}
+
+元组型模式匹配元组。每当你想要在单次 \texttt{match} 中获取多条数据时，元组型模式都非常有用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{describe\PYGZus{}point}\PYG{p}{(}\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{cmp}\PYG{p}{::}\PYG{n}{Ordering}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{x}\PYG{p}{.}\PYG{n}{cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{.}\PYG{n}{cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{p}{(}\PYG{n}{Equal}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Equal}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{at the origin}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{(}\PYG{n}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Equal}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{on the x axis}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{(}\PYG{n}{Equal}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{on the y axis}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{(}\PYG{n}{Greater}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Greater}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{in the first quadrant}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{(}\PYG{n}{Less}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Greater}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{in the second quadrant}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{somewhere else}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+结构体型模式使用花括号，就像结构体表达式一样。结构体型模式包含每个字段的子模式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{balloon}\PYG{p}{.}\PYG{n}{location}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Point}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{height}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{straight up \PYGZob{}\PYGZcb{} meters}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{height}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Point}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{x}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{y}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{at (\PYGZob{}\PYGZcb{}m, \PYGZob{}\PYGZcb{}m)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在此示例中，如果匹配了第一个分支，则 \texttt{balloon.location.y} 会存储在新的局部变量 \texttt{height} 中。
+
+假设 \texttt{balloon.location} 的值是 \texttt{Point \{ x: 30, y: 40 \}}。像往常一样，Rust 会依次检查每个模式的每个组件，如图 10-6 所示。
+
+\myFigure{images/ch10/fig-10-6.jpeg}{图 10-6：与结构体的模式匹配}
+
+这会匹配第二个分支，所以输出是 \texttt{at (30m, 40m)}。
+
+像 \texttt{Point \{ x: x, y: y \}} 这样的模式在匹配结构体时很常见，而冗余的名称会造成视觉上的混乱，所以 Rust 对此有一个简写形式：\texttt{Point \{x, y\}}。二者的含义是一样的。\texttt{Point \{x, y\}} 仍会将某个点的 \texttt{x} 字段和 \texttt{y} 字段分别存储在新的本地变量 \texttt{x} 和 \texttt{y} 中。
+
+即使用了简写形式，当我们只关心几个字段时，匹配大型结构体仍然很麻烦：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{get\PYGZus{}account}\PYG{p}{(}\PYG{n}{id}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Account}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{language}\PYG{p}{,}\PYG{+w}{  }\PYG{c+c1}{// \PYGZlt{}\PYGZhy{}\PYGZhy{}\PYGZhy{}这两个变量才是我们关心的}
+\PYG{+w}{            }\PYG{n}{id}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{status}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{address}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{birthday}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{eye\PYGZus{}color}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{pet}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{security\PYGZus{}question}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{hashed\PYGZus{}innermost\PYGZus{}secret}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{is\PYGZus{}adamantium\PYGZus{}preferred\PYGZus{}customer}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{        }\PYG{n}{language}\PYG{p}{.}\PYG{n}{show\PYGZus{}custom\PYGZus{}greeting}\PYG{p}{(}\PYG{n}{name}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+为避免这种情况，可以使用 \texttt{..} 告诉 Rust 你不关心任何其他字段。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Account}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{language}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{n}{language}\PYG{p}{.}\PYG{n}{show\PYGZus{}custom\PYGZus{}greeting}\PYG{p}{(}\PYG{n}{name}\PYG{p}{)}\PYG{p}{,}
+\end{Verbatim}
+
+\subsection{数组型模式与切片型模式}
+
+数组型模式匹配数组。数组型模式通常用于过滤一些特殊情况的值，并且在处理那些不同位置的值具有不同含义的数组时也非常有用。
+
+例如，在将 HSL（色相、饱和度和亮度）颜色值转换为 RGB（红色、绿色和蓝色）颜色值时，具有零亮度或全亮度的颜色只会是黑色或白色。可以使用 \texttt{match} 表达式来简单地处理这些情况。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{hsl\PYGZus{}to\PYGZus{}rgb}\PYG{p}{(}\PYG{n}{hsl}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{;}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{;}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{hsl}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{p}{[}\PYG{n}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{[}\PYG{n}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{255}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{p}{]}\PYG{p}{,}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+切片型模式也与此相似，但与数组不同，切片具有可变长度，因此切片型模式不仅匹配值，还匹配长度。\texttt{..} 在切片型模式中能匹配任意数量的元素。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{greet\PYGZus{}people}\PYG{p}{(}\PYG{n}{names}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{names}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{p}{[}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hello, nobody.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{[}\PYG{n}{a}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hello, \PYGZob{}\PYGZcb{}.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{a}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{[}\PYG{n}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hello, \PYGZob{}\PYGZcb{} and \PYGZob{}\PYGZcb{}.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{[}\PYG{n}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hello, everyone from \PYGZob{}\PYGZcb{} to \PYGZob{}\PYGZcb{}.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{引用型模式}
+
+Rust 模式提供了两种特性来支持引用。\texttt{ref} 模式会借用已匹配值的一部分。\texttt{\&} 模式会匹配引用。我们会先介绍 \texttt{ref} 模式。
+
+匹配不可复制的值会移动该值。继续以 \texttt{account} 为例，以下代码是无效的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{account}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Account}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{language}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{ui}\PYG{p}{.}\PYG{n}{greet}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{name}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{language}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{ui}\PYG{p}{.}\PYG{n}{show\PYGZus{}settings}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{account}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：借用已移动的值`account`}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在这里，字段 \texttt{account.name} 和 \texttt{account.language} 会移动到局部变量 \texttt{name} 和 \texttt{language} 中。\texttt{account} 的其余部分均已丢弃。这就是为什么我们之后不能再借用它的引用。
+
+如果 \texttt{name} 和 \texttt{language} 都是可复制的值，则 Rust 会复制字段而非移动它们，这时上述代码就是有效的。但假设这些是 \texttt{String} 类型，那我们可以做些什么呢？
+
+我们需要一种\textbf{借用}而非移动匹配值的模式。\texttt{ref} 关键字就是这样做的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{account}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Account}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{k}{ref}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{,}\PYG{+w}{ }\PYG{k}{ref}\PYG{+w}{ }\PYG{n}{language}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{ui}\PYG{p}{.}\PYG{n}{greet}\PYG{p}{(}\PYG{n}{name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{language}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{ui}\PYG{p}{.}\PYG{n}{show\PYGZus{}settings}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{account}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+现在局部变量 \texttt{name} 和 \texttt{language} 是对 \texttt{account} 中相应字段的引用。由于 \texttt{account} 只是被借入而没有被消耗，因此继续调用它的方法是没问题的。
+
+还可以使用 \texttt{ref mut} 来借入可变引用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{k}{ref}\PYG{+w}{ }\PYG{n}{err}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{log\PYGZus{}error}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{  }\PYG{c+c1}{// `err`是\PYGZam{}Error类型的（共享引用）}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{k}{ref}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{            }\PYG{c+c1}{// `line`是\PYGZam{}mut String类型的（可变引用）}
+\PYG{+w}{        }\PYG{n}{trim\PYGZus{}comments}\PYG{p}{(}\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{         }\PYG{c+c1}{// 就地修改此字符串}
+\PYG{+w}{        }\PYG{n}{handle}\PYG{p}{(}\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+模式 \texttt{Ok(ref mut line)} 能匹配任何成功的结果，并借入其成功值的可变引用。
+
+与 \texttt{ref} 模式相对\footnote{“相对”是指 \texttt{ref} 从值取引用，\texttt{\&} 从引用取值。——译者注}的引用型模式是 \texttt{\&} 模式。以 \texttt{\&} 开头的模式会匹配引用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{sphere}\PYG{p}{.}\PYG{n}{center}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{\PYGZam{}}\PYG{n}{Point3d}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在此示例中，假设 \texttt{sphere.center()} 会返回对 \texttt{sphere} 中的私有字段的引用，这是 Rust 中的常见模式。返回的值是 \texttt{Point3d} 的地址。如果中心位于原点，则 \texttt{sphere.center()} 会返回 \texttt{\&Point3d \{ x: 0.0, y: 0.0, z: 0.0 \}}。
+
+模式匹配过程如图 10-7 所示。
+
+\myFigure{images/ch10/fig-10-7.jpeg}{图 10-7：与引用的模式匹配}
+
+这有点儿棘手，因为 Rust 在这里会追踪一个指针，我们通常会将追踪指针的操作与 \texttt{*} 运算符而不是 \texttt{\&} 运算符联系起来。但要记住，模式和表达式是恰恰相反的。表达式 \texttt{(x, y)} 会把两个值放入一个新的元组中，而模式 \texttt{(x, y)} 则会匹配一个元组并分解成两个值。\texttt{\&} 的逻辑也是如此。在表达式中，\texttt{\&} 会创建一个引用。在模式中，\texttt{\&} 则会匹配一个引用。
+
+匹配引用时会遵循我们所期望的一切规则。生命周期规则仍然有效。你不能通过共享引用获得可变访问权限，而且不能将值从引用中移动出去，即使对可变引用也是如此。当我们匹配 \texttt{\&Point3d \{ x, y, z \}} 时，变量 \texttt{x}、\texttt{y} 和 \texttt{z} 会接受坐标的副本，而原始 \texttt{Point3d} 的值保持不变。这种写法之所以有效，是因为这些字段都是可复制的。如果试图在具有不可复制字段的结构体上这么做，就会出错：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{friend}\PYG{p}{.}\PYG{n}{borrow\PYGZus{}car}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{Car}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{engine}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{  }\PYG{c+c1}{// 错误：不能把借用的值移动出去}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+从借来的汽车上搜刮零件可不是君子所为，Rust 同样不会容忍这么做。你可以使用 \texttt{ref} 模式来借用对部件的引用，但并不拥有它：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{Car}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{k}{ref}\PYG{+w}{ }\PYG{n}{engine}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{  }\PYG{c+c1}{// 正确，engine是一个引用}
+\end{Verbatim}
+
+再来看一个 \texttt{\&} 模式的例子。假设我们有一个遍历字符串中各字符的迭代器 \texttt{chars}，并且它有一个返回 \texttt{Option<\&char>}（如果有，则是对下一个字符的引用）的方法 \texttt{chars.peek()}。（\texttt{Peekable} 迭代器实际上会返回 \texttt{Option<\&ItemType>}，我们在第 15 章中会看到。）
+
+程序可以使用 \texttt{\&} 模式来获取它所指向的字符。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{chars}\PYG{p}{.}\PYG{n}{peek}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{c}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{coming up: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{end of chars}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{匹配守卫}
+
+有时，匹配分支会有一些额外的条件，必须满足这些条件才能视为匹配成功。假设我们正在实现一款棋类游戏，它的棋盘是由六边形组成的，而玩家刚刚通过点击移动了一枚棋子。为了确认点击是有效的，我们可能会做如下尝试：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{check\PYGZus{}move}\PYG{p}{(}\PYG{n}{current\PYGZus{}hex}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Hex}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{click}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Point}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{game}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{Hex}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{point\PYGZus{}to\PYGZus{}hex}\PYG{p}{(}\PYG{n}{click}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{            }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{That\PYGZsq{}s not a game space.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{current\PYGZus{}hex}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{  }\PYG{c+c1}{// 如果用户单击current\PYGZus{}hex，就会尝试匹配}
+\PYG{+w}{                              }\PYG{c+c1}{//（其实它不起作用：请参见下面的解释）}
+\PYG{+w}{            }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You are already there! You must click somewhere else.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{other\PYGZus{}hex}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{            }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{other\PYGZus{}hex}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这失败了，因为模式中的标识符引入了\textbf{新变量}。这里的模式 \texttt{Some(current\_hex)} 创建了一个新的局部变量 \texttt{current\_hex}，它遮蔽了同名参数 \texttt{current\_hex}。Rust 发出了几个关于此代码的警告——特别是，\texttt{match} 的最后一个分支是不可达的。解决此问题的一种简单方式是在匹配分支中使用 \texttt{if} 表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{point\PYGZus{}to\PYGZus{}hex}\PYG{p}{(}\PYG{n}{click}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{That\PYGZsq{}s not a game space.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{hex}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{hex}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{current\PYGZus{}hex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You are already there! You must click somewhere else}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{hex}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+但 Rust 还提供了\textbf{匹配守卫}，额外的条件必须为真时才能应用此匹配分支，在模式及其分支的 \texttt{=>} 标记之间写上 \texttt{if CONDITION}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{point\PYGZus{}to\PYGZus{}hex}\PYG{p}{(}\PYG{n}{click}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{That\PYGZsq{}s not a game space.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{hex}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{hex}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{current\PYGZus{}hex}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You are already there! You must click somewhere else}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{hex}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{hex}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果模式匹配成功，但此条件为假，就会继续尝试匹配下一个分支。
+
+\subsection{匹配多种可能性}
+
+对于形如 \texttt{\emph{pat1} | \emph{pat2}} 的模式，如果能匹配其中的任何一个子模式，则认为匹配成功：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{at\PYGZus{}end}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{chars}\PYG{p}{.}\PYG{n}{peek}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}r\PYGZsq{}}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}n\PYGZsq{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+在表达式中，\texttt{|} 是按位或运算符，但在这里，它更像正则表达式中的 \texttt{|} 符号。如果 \texttt{chars. peek()} 为 \texttt{None}，或者是某个持有回车符、换行符的 \texttt{Some}，则把 \texttt{at\_end} 设置为 \texttt{true}。
+
+使用 \texttt{..=} 匹配整个范围的值。范围型模式包括开始值和结束值，因此 \texttt{'0' ..= '9'} 会匹配所有 ASCII 数字：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{next\PYGZus{}char}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sc}{\PYGZsq{}0\PYGZsq{}}\PYG{o}{..=}\PYG{l+s+sc}{\PYGZsq{}9\PYGZsq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{read\PYGZus{}number}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{l+s+sc}{\PYGZsq{}a\PYGZsq{}}\PYG{o}{..=}\PYG{l+s+sc}{\PYGZsq{}z\PYGZsq{}}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}A\PYGZsq{}}\PYG{o}{..=}\PYG{l+s+sc}{\PYGZsq{}Z\PYGZsq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{read\PYGZus{}word}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{l+s+sc}{\PYGZsq{} \PYGZsq{}}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}t\PYGZsq{}}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}n\PYGZsq{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{skip\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{handle\PYGZus{}punctuation}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+Rust 中还允许使用像 \texttt{x..} 这样的范围型模式，该模式会匹配从 \texttt{x} 到其类型最大值的任何值。但是，目前模式中还不允许使用其他的开区间范围（如 \texttt{0..100} 或 \texttt{..100}）以及无限范围（如 \texttt{..}）。
+
+\subsection{使用@模式绑定}
+
+最后，\texttt{\emph{x} @ \emph{pattern}} 会与给定的 \emph{\texttt{pattern}} 精确匹配，但成功时，它不会为匹配到的值的各个部分创建变量，而是会创建单个变量 \emph{\texttt{x}} 并将整个值移动或复制到其中。假设你有如下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{get\PYGZus{}selection}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Shape}\PYG{p}{::}\PYG{n}{Rect}\PYG{p}{(}\PYG{n}{top\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{bottom\PYGZus{}right}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{optimized\PYGZus{}paint}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{Shape}\PYG{p}{::}\PYG{n}{Rect}\PYG{p}{(}\PYG{n}{top\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{bottom\PYGZus{}right}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{other\PYGZus{}shape}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{paint\PYGZus{}outline}\PYG{p}{(}\PYG{n}{other\PYGZus{}shape}\PYG{p}{.}\PYG{n}{get\PYGZus{}outline}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+请注意，第一个分支解包出一个 \texttt{Shape::Rect} 值，却只是为了在下一行重建一个相同的 \texttt{Shape::Rect} 值。像这种代码可以用 \texttt{@} 模式重写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{+w}{    }\PYG{n}{rect}\PYG{+w}{ }\PYG{o}{@}\PYG{+w}{ }\PYG{n}{Shape}\PYG{p}{::}\PYG{n}{Rect}\PYG{p}{(}\PYG{o}{..}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{optimized\PYGZus{}paint}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{rect}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{@} 模式对于各种范围模式也很有用。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{chars}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{digit}\PYG{+w}{ }\PYG{o}{@}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}0\PYGZsq{}}\PYG{o}{..=}\PYG{l+s+sc}{\PYGZsq{}9\PYGZsq{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{read\PYGZus{}number}\PYG{p}{(}\PYG{n}{digit}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{chars}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\end{Verbatim}
+
+\subsection{模式能用在哪里}
+
+尽管模式在 \texttt{match} 表达式中作用最为突出，但它们也可以出现在其他一些地方，通常用于代替标识符。但无论出现在哪里，其含义都是一样的：Rust 不是要将值存储到单个变量中，而是使用模式匹配来拆分值。
+
+这意味着模式可用于：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 把结构体解包成3个局部变量……}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{Track}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{album}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{track\PYGZus{}number}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{title}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{song}\PYG{p}{;}
+
+\PYG{c+c1}{// ……解包某个作为函数参数传入的元组}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{distance\PYGZus{}to}\PYG{p}{(}\PYG{p}{(}\PYG{n}{x}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{y}\PYG{p}{)}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{f64}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// ……迭代某个HashMap上的键和值}
+\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{id}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{document}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{cache\PYGZus{}map}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Document \PYGZsh{}\PYGZob{}\PYGZcb{}: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{id}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{document}\PYG{p}{.}\PYG{n}{title}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// ……自动对闭包参数解引用（当其他代码给你传入引用，}
+\PYG{c+c1}{// 而你更想要一个副本时会很有用）}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{sum}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{numbers}\PYG{p}{.}\PYG{n}{fold}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{a}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{num}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{num}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+上述示例中的每一个都节省了两三行样板代码。同样的概念也存在于其他一些语言中：JavaScript 中叫作\textbf{解构}，而 Python 中叫作\textbf{解包}。
+
+请注意，上述 4 个示例中都使用了确保匹配的模式。模式 \texttt{Point3d \{ x, y, z \}} 会匹配 \texttt{Point3d} 结构体类型的每个可能值，\texttt{(x, y)} 会匹配任何一个 \texttt{(f64, f64)} 值对，等等。这种始终都可以匹配的模式在 Rust 中是很特殊的，它们叫作\textbf{不可反驳模式}，是唯一能同时用于此处展示的 4 个位置（\texttt{let} 之后、函数参数中、\texttt{for} 之后，以及闭包参数中）的模式。
+
+\textbf{可反驳模式}是一种可能不会匹配的模式，比如 \texttt{Ok(x)} 不会匹配错误结果，而 \texttt{'0' ..= '9'} 不会匹配字符 \texttt{'Q'}。可反驳模式可以用在 \texttt{match} 的分支中，因为 \texttt{match} 就是为此而设计的：如果一个模式无法匹配，那么很清楚接下来会发生什么。在 Rust 程序中，前面的 4 个示例确实是模式可以派上用场的地方，但在这些地方语言不允许匹配失败。
+
+\texttt{if let} 表达式和 \texttt{while let} 表达式中也允许使用可反驳模式，这些模式可用于：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// ……处理只有一个枚举值的特例}
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{RoughTime}\PYG{p}{::}\PYG{n}{InTheFuture}\PYG{p}{(}\PYG{n}{\PYGZus{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{user}\PYG{p}{.}\PYG{n}{date\PYGZus{}of\PYGZus{}birth}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{user}\PYG{p}{.}\PYG{n}{set\PYGZus{}time\PYGZus{}traveler}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// ……只有当查表成功时才运行某些代码}
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{document}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{cache\PYGZus{}map}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{id}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{send\PYGZus{}cached\PYGZus{}response}\PYG{p}{(}\PYG{n}{document}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// ……重复尝试某些事，直到成功}
+\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{present\PYGZus{}cheesy\PYGZus{}anti\PYGZus{}robot\PYGZus{}task}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{log\PYGZus{}robot\PYGZus{}attempt}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{c+c1}{// 让用户再试一次（此用户仍然可能是人类）}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// ……在某个迭代器上手动循环}
+\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{\PYGZus{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{lines}\PYG{p}{.}\PYG{n}{peek}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{read\PYGZus{}paragraph}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{lines}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+有关这些表达式的详细信息，请参阅 6.5.1 节和 6.5.2 节。
+
+\subsection{填充二叉树}
+
+早些时候我们曾承诺要展示如何实现方法 \texttt{BinaryTree::add()}，它能将一个节点添加到如下的 \texttt{BinaryTree} 类型中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// `T`的有序集合}
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Empty}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{n}{TreeNode}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// BinaryTree的部件}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{TreeNode}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{element}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+你现在对模式的了解已经足以写出此方法了。对二叉搜索树的解释超出了本书的范畴，如果你已经很熟悉这个主题，可以自己看看它在 Rust 中的表现。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{  }\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Ord}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{BinaryTree}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{      }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{add}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{+w}{          }\PYG{k}{match}\PYG{+w}{ }\PYG{o}{*}\PYG{n+nb+bp}{self}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{+w}{              }\PYG{n}{BinaryTree}\PYG{p}{::}\PYG{n}{Empty}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{+w}{                  }\PYG{o}{*}\PYG{n+nb+bp}{self}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BinaryTree}\PYG{p}{::}\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{n+nb}{Box}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{TreeNode}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{ }\PYG{l+m+mi}{6}\PYG{+w}{                      }\PYG{n}{element}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{value}\PYG{p}{,}
+\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{+w}{                      }\PYG{n}{left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{p}{::}\PYG{n}{Empty}\PYG{p}{,}
+\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{+w}{                      }\PYG{n}{right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{BinaryTree}\PYG{p}{::}\PYG{n}{Empty}\PYG{p}{,}
+\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{+w}{                  }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{)}
+\PYG{l+m+mi}{10}\PYG{+w}{              }\PYG{p}{\PYGZcb{}}
+\PYG{l+m+mi}{11}\PYG{+w}{              }\PYG{n}{BinaryTree}\PYG{p}{::}\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{k}{ref}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{node}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{l+m+mi}{12}\PYG{+w}{                  }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{value}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{node}\PYG{p}{.}\PYG{n}{element}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{l+m+mi}{13}\PYG{+w}{                      }\PYG{n}{node}\PYG{p}{.}\PYG{n}{left}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{p}{;}
+\PYG{l+m+mi}{14}\PYG{+w}{                  }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{l+m+mi}{15}\PYG{+w}{                      }\PYG{n}{node}\PYG{p}{.}\PYG{n}{right}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{p}{;}
+\PYG{l+m+mi}{16}\PYG{+w}{                  }\PYG{p}{\PYGZcb{}}
+\PYG{l+m+mi}{17}\PYG{+w}{              }\PYG{p}{\PYGZcb{}}
+\PYG{l+m+mi}{18}\PYG{+w}{          }\PYG{p}{\PYGZcb{}}
+\PYG{l+m+mi}{19}\PYG{+w}{      }\PYG{p}{\PYGZcb{}}
+\PYG{l+m+mi}{20}\PYG{+w}{  }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+第 1 行告诉 Rust 我们正在为有序类型的 \texttt{BinaryTree} 定义一个方法。这与我们在泛型结构体上定义方法的语法是完全相同的，详见 9.5 节。
+
+如果现有的树 \texttt{*self} 是空的，那就很简单了。运行第 5\textasciitilde{}9 行代码，将 \texttt{Empty} 树更改为 \texttt{NonEmpty} 树即可。此处对 \texttt{Box::new()} 的调用在堆中分配了一个新的 \texttt{TreeNode}。当完成时，树就会包含一个元素。它的左右子树都是 \texttt{Empty}。
+
+如果 \texttt{*self} 不为空，那么我们就会匹配第 11 行代码的模式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{BinaryTree}\PYG{p}{::}\PYG{n}{NonEmpty}\PYG{p}{(}\PYG{k}{ref}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{node}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\end{Verbatim}
+
+该模式借用了对 \texttt{Box<TreeNode<T>>} 的可变引用，因此我们可以访问和修改该树节点中的数据。该引用名为 \texttt{node}，位于第 12\textasciitilde{}16 行代码的作用域内。由于此节点中已经有了一个元素，因此代码必须递归调用 \texttt{.add()} 以将此新元素添加到左子树或右子树中。
+
+新方法可以像下面这样使用。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{tree}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BinaryTree}\PYG{p}{::}\PYG{n}{Empty}\PYG{p}{;}
+\PYG{n}{tree}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Mercury}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{tree}\PYG{p}{.}\PYG{n}{add}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Venus}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+\section{大局观}
+
+Rust 的枚举对系统编程来说可能是新的，但它并不是新思想。它一直顶着各种听起来就很学术的名字（比如\textbf{代数数据类型}）在传播，已经在函数式编程语言中存在四十多年了。目前还不清楚为什么在 C 系列的传承中很少有其他语言支持这种枚举。或许只是因为对编程语言的设计者来说，要将变体、引用、可变性和内存安全这 4 项内容结合使用极具挑战性。函数式编程语言抵触可变性。与之相反，C 的联合体具有变体、指针和可变性——但非常不安全，即使在 C 中，它们也只会在迫不得已时使用。Rust 的借用检查器简直就是魔法，它不必做丝毫妥协就能将上述 4 项内容结合起来。
+
+编程就是数据处理。一个小巧、快速、优雅的程序与一个庞大、缓慢、杂乱无章、充斥着各种补丁和虚拟方法调用的程序之间的区别在于，数据是否被转换成了正确的形态。
+
+这就是枚举所针对的“问题空间”。它们是将数据表达为正确形态的设计工具。对于值可能是 A、可能是 B，也可能两者都不是的情况，枚举在每个维度上都比类层次结构表现得要好：更快、更安全、代码更少且更容易文档化。
+
+这里的限制因素是灵活性。枚举的最终用户无法通过扩展枚举来添加新变体，只能通过更改枚举声明来添加。当这种情况发生时，现有代码就会被破坏。我们必须重新审视任何单独匹配枚举的每个变体的 \texttt{match} 表达式，因为它需要一个新的分支来处理这个新变体。在某些情况下，为了简单性而牺牲灵活性是很明智的。毕竟，JSON 的语法结构已经定型，不需要灵活性了。在另外一些情况下，当枚举发生变化时，重新审视枚举的所有使用场合正是我们应该做的。例如，当在编译器中使用 \texttt{enum} 来表示编程语言的各种运算符时，添加新运算符\textbf{本来就应该}涉及处理运算符的所有代码。
+
+但有时确实需要更大的灵活性。针对这些情况，Rust 设计了一些特型，这就是第 11 章的主题。
+

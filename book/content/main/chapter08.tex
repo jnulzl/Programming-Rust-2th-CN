@@ -1,0 +1,1398 @@
+% chapter08 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_072.html, part0000_split_073.html, part0000_split_074.html, part0000_split_075.html, part0000_split_076.html, part0000_split_077.html, part0000_split_078.html, part0000_split_079.html, part0000_split_080.html, part0000_split_081.html, part0000_split_082.html
+
+\begin{myEpigraph}{——Robert O'Callahan，“Random Thoughts on Rust: crates.io and IDEs”}
+这是 Rust 主题下的小小理念之一：系统程序员也能享受美好。
+\end{myEpigraph}
+
+假设你正在编写一个程序，用来模拟蕨类植物从单个细胞开始的生长过程。你的程序，也像蕨类植物一样，一开始会非常简单，所有的代码也许都在一个文件中——这只是想法的萌芽。随着成长，它将开始分化出内部结构，不同的部分会有不同的用途。然后它将分化成多个文件，可能遍布在各个目录中。随着时间的推移，它可能会成为整个软件生态系统的重要组成部分。对于任何超出几个数据结构或几百行代码的程序，进行适当的组织都是很有必要的。
+
+本章介绍了 Rust 的一些特性（crate 与模块），这些特性有助于你的程序保持井井有条。我们还将涵盖其他与 Rust crate 的结构和分发有关的主题，包括如何记录与测试 Rust 代码、如何消除不必要的编译器警告、如何使用 Cargo 管理项目依赖项和版本控制、如何在 Rust 的公共 crate 存储库 crates.io 上发布开源库、Rust 如何通过语言版本进行演进等。本章将使用蕨类模拟器作为运行示例。
+
+\section{crate}
+
+Rust 程序由 crate（板条箱）组成。每个 crate 都是既完整又内聚的单元，包括单个库或可执行程序的所有源代码，以及任何相关的测试、示例、工具、配置和其他杂项。对于蕨类植物模拟器，我们可以使用第三方库完成 3D 图形、生物信息学、并行计算等工作。这些库以 crate 的形式分发，如图 8-1 所示。
+
+\myFigure{images/ch08/fig-8-1.jpeg}{图 8-1：一个 crate 及其依赖}
+
+弄清楚 crate 是什么以及它们如何协同工作的最简单途径是，使用带有 \texttt{--verbose} 标志的 \texttt{cargo build} 来构建具有某些依赖项的现有项目。我们以 2.6.6 节的“并发曼德博程序”为例来执行此操作。结果如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{cd}\PYG{+w}{ }mandelbrot
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }clean\PYG{+w}{    }\PYG{c+c1}{\PYGZsh{} 删除之前编译的代码}
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }build\PYG{+w}{ }\PYGZhy{}\PYGZhy{}verbose
+\PYG{+w}{    }Updating\PYG{+w}{ }registry\PYG{+w}{ }\PYG{l+s+sb}{`}https://github.com/rust\PYGZhy{}lang/crates.io\PYGZhy{}index\PYG{l+s+sb}{`}
+\PYG{+w}{ }Downloading\PYG{+w}{ }autocfg\PYG{+w}{ }v1.0.0
+\PYG{+w}{ }Downloading\PYG{+w}{ }semver\PYGZhy{}parser\PYG{+w}{ }v0.7.0
+\PYG{+w}{ }Downloading\PYG{+w}{ }gif\PYG{+w}{ }v0.9.0
+\PYG{+w}{ }Downloading\PYG{+w}{ }png\PYG{+w}{ }v0.7.0
+
+...\PYG{+w}{ }\PYG{o}{(}downloading\PYG{+w}{ }and\PYG{+w}{ }compiling\PYG{+w}{ }many\PYG{+w}{ }more\PYG{+w}{ }crates\PYG{o}{)}
+
+Compiling\PYG{+w}{ }jpeg\PYGZhy{}decoder\PYG{+w}{ }v0.1.18
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}rustc
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}name\PYG{+w}{ }jpeg\PYGZus{}decoder
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}type\PYG{+w}{ }lib
+\PYG{+w}{        }...
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}extern\PYG{+w}{ }\PYG{n+nv}{byteorder}\PYG{o}{=}.../libbyteorder\PYGZhy{}29efdd0b59c6f920.rmeta
+\PYG{+w}{        }...
+\PYG{+w}{   }Compiling\PYG{+w}{ }image\PYG{+w}{ }v0.13.0
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}rustc
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}name\PYG{+w}{ }image
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}type\PYG{+w}{ }lib
+\PYG{+w}{        }...
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}extern\PYG{+w}{ }\PYG{n+nv}{byteorder}\PYG{o}{=}.../libbyteorder\PYGZhy{}29efdd0b59c6f920.rmeta
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}extern\PYG{+w}{ }\PYG{n+nv}{gif}\PYG{o}{=}.../libgif\PYGZhy{}a7006d35f1b58927.rmeta
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}extern\PYG{+w}{ }\PYG{n+nv}{jpeg\PYGZus{}decoder}\PYG{o}{=}.../libjpeg\PYGZus{}decoder\PYGZhy{}5c10558d0d57d300.rmeta
+\PYG{+w}{   }Compiling\PYG{+w}{ }mandelbrot\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/tmp/rustbook\PYGZhy{}test\PYGZhy{}files/mandelbrot\PYG{o}{)}
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}rustc
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}edition\PYG{o}{=}\PYG{l+m}{2021}
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}name\PYG{+w}{ }mandelbrot
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}type\PYG{+w}{ }bin
+\PYG{+w}{        }...
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}extern\PYG{+w}{ }\PYG{n+nv}{crossbeam}\PYG{o}{=}.../libcrossbeam\PYGZhy{}f87b4b3d3284acc2.rlib
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}extern\PYG{+w}{ }\PYG{n+nv}{image}\PYG{o}{=}.../libimage\PYGZhy{}b5737c12bd641c43.rlib
+\PYG{+w}{        }\PYGZhy{}\PYGZhy{}extern\PYG{+w}{ }\PYG{n+nv}{num}\PYG{o}{=}.../libnum\PYGZhy{}1974e9a1dc582ba7.rlib\PYG{+w}{ }\PYGZhy{}C\PYG{+w}{ }link\PYGZhy{}arg\PYG{o}{=}\PYGZhy{}fuse\PYGZhy{}ld\PYG{o}{=}lld\PYG{l+s+sb}{`}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{16}.94s
+\PYGZdl{}
+\end{Verbatim}
+
+这里重新格式化了 \texttt{rustc} 命令行以提高可读性，我们删除了很多与本次讨论无关的编译器选项，然后将它们替换成了省略号（\texttt{...}）。
+
+你可能还记得，当“并发曼德博程序”的例子完成时，曼德博程序的 main.rs 包含几个来自其他 crate 的语法项的 \texttt{use} 声明：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{num}\PYG{p}{::}\PYG{n}{Complex}\PYG{p}{;}
+\PYG{c+c1}{// ...}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{image}\PYG{p}{::}\PYG{n}{ColorType}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{image}\PYG{p}{::}\PYG{n}{png}\PYG{p}{::}\PYG{n}{PNGEncoder}\PYG{p}{;}
+\end{Verbatim}
+
+并且 Cargo.toml 文件中指定了我们想要的每个 crate 的版本：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{[}\PYG{k}{dependencies}\PYG{k}{]}
+\PYG{n}{num}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.4}\PYG{l+s+s2}{\PYGZdq{}}
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.13}\PYG{l+s+s2}{\PYGZdq{}}
+\PYG{n}{crossbeam}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.8}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+单词 dependencies 在这里是指这个项目使用的其他 crate，也就是我们所依赖的代码。我们在 crates.io（Rust 社区的开源 crate 站点）上找到了这些 crate。例如，通过访问 crates.io 我们搜索并找到了 \texttt{image} 库。crates.io 上的每个 crate 页面都显示了其 README.md 文件及文档和源代码的链接，以及像 \texttt{image = "0.13"} 这样的可以复制并添加到 Cargo.toml 中的配置行。这里展示的版本号只是我们编写本程序时这 3 个包的最新版本。
+
+Cargo 清单讲述了如何使用这些信息。运行 \texttt{cargo build} 时，Cargo 首先会从 crates.io 下载这些 crate 的指定版本的源代码。然后，它会读取这些 crate 的 Cargo.toml 文件、下载\textbf{它们}的依赖项，并递归地进行。例如，\texttt{0.13.0} 版的 \texttt{image} crate 的源代码包含一个 Cargo.toml 文件，其中列出了如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{[}\PYG{k}{dependencies}\PYG{k}{]}
+\PYG{n}{byteorder}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1.0.0}\PYG{l+s+s2}{\PYGZdq{}}
+\PYG{n}{num\PYGZhy{}iter}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.1.32}\PYG{l+s+s2}{\PYGZdq{}}
+\PYG{n}{num\PYGZhy{}rational}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.1.32}\PYG{l+s+s2}{\PYGZdq{}}
+\PYG{n}{num\PYGZhy{}traits}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.1.32}\PYG{l+s+s2}{\PYGZdq{}}
+\PYG{n}{enum\PYGZus{}primitive}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.1.0}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+看到这个文件，Cargo 就知道在它使用 \texttt{image} 之前，必须先获取这些 crate。稍后你将看到如何要求 Cargo 从 Git 存储库或本地文件系统而非 crates.io 获取源代码。
+
+由于 \texttt{mandelbrot} 通过使用 \texttt{image} crate 间接依赖于这些 crate，因此我们称它们为 \texttt{mandelbrot} 的\textbf{传递}依赖。所有这些依赖关系的集合，会告诉 Cargo 关于要构建什么 crate 以及应该按什么顺序构建的全部知识，这叫作该 crate 的\textbf{依赖图}。Cargo 对依赖图和传递依赖的自动处理可以显著节省程序员的时间和精力。
+
+一旦有了源代码，Cargo 就会编译所有的 crate。它会为项目依赖图中的每个 crate 都运行一次 \texttt{rustc}（Rust 编译器）。编译库时，Cargo 会使用 \texttt{--crate-type lib} 选项。这会告诉 \texttt{rustc} 不要寻找 \texttt{main()} 函数，而是生成一个 .rlib 文件，其中包含一些已编译代码，可用于创建二进制文件和其他 .rlib 文件。
+
+编译程序时，Cargo 会使用 \texttt{--crate-type bin}，结果是目标平台的二进制可执行文件，比如 Windows 上的 mandelbrot.exe。
+
+对于每个 \texttt{rustc} 命令，Cargo 都会传入 \texttt{--extern} 选项，给出 crate 将使用的每个库的文件名。这样，当 \texttt{rustc} 看到一行代码（如 \texttt{use image::png::PNGEncoder}）时，就可以确定 \texttt{image} 是另一个 crate 的名称。感谢 Cargo，它知道在哪里可以找到磁盘上已编译的 crate。Rust 编译器需要访问这些 .rlib 文件，因为它们包含库的已编译代码。Rust 会将代码静态链接到最终的可执行文件中。.rlib 也包含一些类型信息，这样 Rust 就可以检查我们在代码中使用的库特性是否确实存在于 crate 中，以及我们是否正确使用了它们。.rlib 文件中还包含此 crate 的公共内联函数、泛型和宏这三者的副本，在 Rust 知道我们将如何使用它们之前，这些特性无法完全编译为机器码。
+
+\texttt{cargo build} 支持各种选项，其中大部分超出了本书的范畴，我们在这里只提一个：\texttt{cargo build --release} 会生成优化过的程序。这种程序运行得更快，但它们的编译时间更长、运行期不会检查整数溢出、会跳过 \texttt{debug\_assert!()} 断言，并且在 panic 时生成的调用栈跟踪通常不太可靠。
+
+\subsection{版本}
+
+Rust 具有极强的兼容性保证。任何能在 Rust 1.0 上编译的代码在 Rust 1.50 或 Rust 1.900（如果已经发布的话）上都必然编译得一样好。
+
+但有时会有一些必要的扩展提议加入语言中，这有可能导致旧代码无法再编译。例如，经过多次讨论，Rust 确定了一种支持异步编程的语法，该语法将标识符 \texttt{async} 和 \texttt{await} 重新用作关键字（参见第 20 章）。但是这种语言更改会破坏任何使用 \texttt{async} 或 \texttt{await} 作为变量名的现有代码。
+
+为了在不破坏现有代码的情况下继续演进，Rust 会使用\textbf{版本}。2015 版 Rust 会与 Rust 1.0 兼容。2018 版 Rust 将 \texttt{async} 和 \texttt{await} 改为关键字并精简了模块系统，而 2021 版 Rust 则提升了数组对人类的友好性，并默认让一些广泛使用的库定义随处可用。虽然这些都是对该语言的重要改进，但会破坏现有代码。为避免这种情况，每个 crate 都在其 Cargo.toml 文件顶部的 \texttt{[package]} 部分使用下面这样的行来表明自己是用哪个版本的 Rust 编写的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{2021}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+如果该关键字不存在，则假定为 2015 版，因此旧 crate 根本不必更改。但是如果你想使用异步函数或新的模块系统，就要在 Cargo.toml 文件中添加一句“\texttt{edition = "2018"} 或更高版本”。
+
+Rust 承诺编译器将始终接受该语言的所有现存版本，并且程序可以自由混用以不同版本编写的 crate。2015 版的 crate 甚至可以依赖 2021 版的 crate。换句话说，crate 的版本只影响其源代码的解释方式，编译代码时，版本的差异已然消失。这意味着你无须为了继续参与到现代 Rust 生态系统中而更新旧的 crate。同样，你也不必为了避免给用户带来不便而被迫使用旧的 crate。当你想在自己的代码中使用新的语言特性时，只要更改版本就可以了。
+
+Rust 项目组不会每年都发布新版本，只有认为确有必要时才会发布。例如，没有 2020 版 Rust。将 \texttt{edition} 设置为 \texttt{"2020"} 会导致错误。Rust 版本指南涵盖了每个版本中引入的更改，并提供了有关版本体系的完善的背景知识。
+
+使用最新版本几乎总是更好的做法，尤其是对于新代码。\texttt{cargo new} 默认会在最新版本上创建新项目。本书全程使用 2021 版。
+
+如果你有一个用旧版本的 Rust 编写的 crate，则 \texttt{cargo fix} 命令能帮助你自动将代码升级到新版本。Rust 版本指南详细解释了 \texttt{cargo fix} 命令。
+
+\subsection{创建配置文件}
+
+你可以在 Cargo.toml 文件中放置几个配置设定区段，这些设定会影响 \texttt{cargo} 生成的 \texttt{rustc} 命令行，如表 8-1 所示。
+
+\myCaption{表 8-1：Cargo.toml 的配置设定区段}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=1.040\hsize\raggedright\arraybackslash}X>{\hsize=0.960\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{命令行} & \textcolor{white}{使用的 Cargo.toml 区段} \\
+\texttt{cargo build} & \texttt{[profile.dev]} \\
+\texttt{cargo build --release} & \texttt{[profile.release]} \\
+\texttt{cargo test} & \texttt{[profile.test]} \\
+\end{tabularx}
+\myTableEnd
+
+通常情况下，默认设置是可以使用的，但当你想要使用剖析器（一种用来测量程序在哪些地方消耗了 CPU 时间的工具）时会出现例外情况。要从剖析器中获得最佳数据，需要同时启用优化（通常仅在发布构建中启用）和调试符号（通常仅在调试构建中启用）这两个选项。要同时启用它们，请将如下代码添加到你的 Cargo.toml 中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{profile}\PYG{p}{.}\PYG{n}{release}\PYG{p}{]}
+\PYG{n}{debug}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{+w}{  }\PYG{p}{\PYGZsh{}}\PYG{+w}{ }\PYG{err}{在}\PYG{n}{release构建中启用debug符号}
+\end{Verbatim}
+
+\texttt{debug} 设定会控制 \texttt{rustc} 的 \texttt{-g} 选项。通过这个配置，当你键入 \texttt{cargo build --release} 时，将获得带有调试符号的二进制文件。而优化设置未受影响。
+
+Cargo 文档中列出了可以在 Cargo.toml 中调整的许多其他设定。
+
+\section{模块}
+
+crate 是关于项目间代码共享的，而\textbf{模块}是关于项目内代码组织的。它们扮演着 Rust 命名空间的角色，是构成 Rust 程序或库的函数、类型、常量等的容器。一个模块看起来是这样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{spores}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{cells}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Cell}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Gene}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 由成年蕨类植物产生的细胞。作为蕨类植物生命周期的一部分，细胞会随风}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 传播。一个孢子会长成原叶体（一个完整的独立有机体，最大直径达5毫米），}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 原叶体产生的受精卵会长成新的蕨类植物（植物的性别很复杂）}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Spore}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 模拟减数分裂产生孢子}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{produce\PYGZus{}spore}\PYG{p}{(}\PYG{n}{factory}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Sporangium}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Spore}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 提取特定孢子中的基因}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{p}{(}\PYG{k}{crate}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{genes}\PYG{p}{(}\PYG{n}{spore}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Spore}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{Gene}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 混合基因以准备减数分裂（细胞分裂间期的一部分）}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{recombine}\PYG{p}{(}\PYG{n}{parent}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Cell}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+模块是一组\textbf{语法项}的集合，这些语法项具有命名的特性，比如此示例中的 \texttt{Spore} 结构体和 3 个函数。\texttt{pub} 关键字会使某个语法项声明为公共项，这样它就可以从模块外部访问了。
+
+如果把一个函数标记为 \texttt{pub(crate)}，那么就意味着它可以在这个 crate 中的任何地方使用，但不会作为外部接口的一部分公开。它不能被其他 crate 使用，也不会出现在这个 crate 的文档中。
+
+任何未标记为 \texttt{pub} 的内容都是私有的，只能在定义它的模块及其任意子模块中使用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{spores}\PYG{p}{::}\PYG{n}{produce\PYGZus{}spore}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{factory}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+
+\PYG{n}{spores}\PYG{p}{::}\PYG{n}{recombine}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{cell}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：`recombine`是私有的}
+\end{Verbatim}
+
+将某个语法项标记为 \texttt{pub} 通常称为“导出”该语法项。
+
+本节的其余部分涵盖了要想充分利用模块所需了解的详细信息。
+
+\begin{itemize}
+\item 我们会展示如何嵌套模块并在需要时将它们分散到不同的文件和目录中。
+\item 我们会解释 Rust 使用的路径语法，以引用来自其他模块的语法项，并展示如何导入这些语法项，以便你使用它们而不必写出其完整路径。
+\item 我们会触及 Rust 对结构体字段的细粒度控制。
+\item 我们会介绍\textbf{预导入}（prelude，原意为“序曲”）模块，它们通过收集几乎所有用户都需要的常用导入，减少了样板代码的编写。
+\item 为了提高代码的清晰性和一致性，我们还会介绍\textbf{常量}和\textbf{静态变量}这两种定义命名值的方法。
+\end{itemize}
+
+\subsection{嵌套模块}
+
+模块可以嵌套，通常可以看到某个模块仅仅是一组子模块集合：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{plant\PYGZus{}structures}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{roots}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{stems}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{leaves}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果你希望嵌套模块中的语法项对其他 crate 可见，请务必将\textbf{它和它所在的模块}标记为公开的。否则可能会看到这样的警告：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+warning: function is never used: `is\PYGZus{}square`
+   |
+23 | /         pub fn is\PYGZus{}square(root: \PYGZam{}Root) \PYGZhy{}\PYGZgt{} bool \PYGZob{}
+24 | |             root.cross\PYGZus{}section\PYGZus{}shape().is\PYGZus{}square()
+25 | |         \PYGZcb{}
+   | |\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZus{}\PYGZca{}
+   |
+\end{Verbatim}
+
+也许这个函数目前确实是无用的代码。但是，如果你打算在其他 crate 中使用它，那么 Rust 就会提示你这个函数对它们实际上是不可见的。你应该确保它所在的模块也是 \texttt{pub} 形式。
+
+也可以指定 \texttt{pub(super)}，让语法项只对其父模块可见。还可以指定 \texttt{pub(in <path>)}，让语法项在特定的父模块及其后代中可见。这对于深度嵌套的模块特别有用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{plant\PYGZus{}structures}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{roots}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{products}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{pub}\PYG{p}{(}\PYG{k}{in}\PYG{+w}{ }\PYG{k}{crate}\PYG{p}{::}\PYG{n}{plant\PYGZus{}structures}\PYG{p}{::}\PYG{n}{roots}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Cytokinin}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{        }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{products}\PYG{p}{::}\PYG{n}{Cytokinin}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 正确：在`roots`模块中可见}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{roots}\PYG{p}{::}\PYG{n}{products}\PYG{p}{::}\PYG{n}{Cytokinin}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 错误：`Cytokinin`是私有的}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// 错误：`Cytokinin`是私有的}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{plant\PYGZus{}structures}\PYG{p}{::}\PYG{n}{roots}\PYG{p}{::}\PYG{n}{products}\PYG{p}{::}\PYG{n}{Cytokinin}\PYG{p}{;}
+\end{Verbatim}
+
+通过这种方式，我们可以写出一个完整的程序，把大量代码和完整的模块层次结构以我们想要的任何方式关联起来，并放在同一个源文件中。
+
+但实际上，以这种方式写代码相当痛苦，因此还有另一种选择。
+
+\subsection{单独文件中的模块}
+
+模块还可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{spores}\PYG{p}{;}
+\end{Verbatim}
+
+前面我们一直把 \texttt{spores} 模块的主体代码包裹在花括号中。在这里，我们告诉 Rust 编译器，\texttt{spores} 模块保存在一个单独的名为 spores.rs 的文件中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// spores.rs}
+
+\PYG{l+s+sd}{/// 由成年蕨类植物产生的细胞……}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Spore}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{l+s+sd}{/// 模拟减数分裂产生孢子}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{produce\PYGZus{}spore}\PYG{p}{(}\PYG{n}{factory}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Sporangium}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Spore}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{l+s+sd}{/// 提取特定孢子中的基因}
+\PYG{k}{pub}\PYG{p}{(}\PYG{k}{crate}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{genes}\PYG{p}{(}\PYG{n}{spore}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Spore}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{Gene}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{l+s+sd}{/// 混合基因以准备减数分裂（细胞分裂间期的一部分）}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{recombine}\PYG{p}{(}\PYG{n}{parent}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Cell}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+spores.rs 仅包含构成该模块的那些语法项，它不需要任何样板代码来声明自己是一个模块。
+
+代码的位置是这个 \texttt{spores} 模块与 8.2.1 节中展示的版本之间的\textbf{唯一}区别。Rust 遵循同样的规则，以决定什么是公共的以及什么是私有的。而且即便模块在单独的文件中，Rust 也永远不会分别编译它们，因为只要你构建 Rust crate，就会重新编译它的所有模块。
+
+模块可以有自己的目录。当 Rust 看到 \texttt{mod spore;} 时，会同时检查 spores.rs 和 spores/\allowbreak{}mod.rs，如果两个文件都不存在，或者都存在，就会报错。对于这个例子，我们使用了 spores.rs，因为 \texttt{spores} 模块没有任何子模块。但是考虑一下我们之前编写的 \texttt{plant\_structures} 模块。如果将该模块及其 3 个子模块拆分到它们自己的文件中，则会生成如下项目：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{fern\PYGZus{}sim}\PYG{o}{/}
+\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{toml}
+\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{src}\PYG{o}{/}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{main}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{spores}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{    }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{plant\PYGZus{}structures}\PYG{o}{/}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{k}{mod}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{leaves}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{roots}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{stems}\PYG{p}{.}\PYG{n}{rs}
+\end{Verbatim}
+
+在 main.rs 中，我们声明了 \texttt{plant\_structures} 模块：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{plant\PYGZus{}structures}\PYG{p}{;}
+\end{Verbatim}
+
+这会导致 Rust 加载 plant\_structures/\allowbreak{}mod.rs，该文件声明了 3 个子模块：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 在plant\PYGZus{}structures/mod.rs中}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{roots}\PYG{p}{;}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{stems}\PYG{p}{;}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{leaves}\PYG{p}{;}
+\end{Verbatim}
+
+这 3 个模块的内容存储在 leaves.rs、roots.rs 和 stems.rs 这 3 个单独的文件中，与 mod.rs 一样位于 plant\_structures 目录下。
+
+也可以使用同名的文件和目录来组成模块。如果 \texttt{stems}（茎）需要包含称为 \texttt{xylem}（木质部）和 \texttt{phloem}（韧皮部）的模块，那么可以选择将 \texttt{stems} 保留在 plant\_structures/\allowbreak{}stems.rs 中并添加一个 stems 目录：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{fern\PYGZus{}sim}\PYG{o}{/}
+\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{toml}
+\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{src}\PYG{o}{/}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{main}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{spores}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{    }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{plant\PYGZus{}structures}\PYG{o}{/}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{k}{mod}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{leaves}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{roots}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{stems}\PYG{o}{/}
+\PYG{+w}{        }\PYG{err}{│}\PYG{+w}{   }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{phloem}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{│}\PYG{+w}{   }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{xylem}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{stems}\PYG{p}{.}\PYG{n}{rs}
+\end{Verbatim}
+
+然后，在 stems.rs 中，我们声明了两个新的子模块：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 在plant\PYGZus{}structures/stems.rs中}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{xylem}\PYG{p}{;}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{phloem}\PYG{p}{;}
+\end{Verbatim}
+
+这 3 种选项（模块位于自己的文件中、模块位于自己的带有 mod.rs 的目录中，以及模块在自己的文件中，并带有包含子模块的补充目录）为模块系统提供了足够的灵活性，以支持你可能用到的几乎任何项目结构。
+
+\subsection{路径与导入}
+
+\texttt{::} 运算符用于访问模块中的各项特性。项目中任何位置的代码都可以通过写出其路径来引用标准库特性：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{if}\PYG{+w}{ }\PYG{n}{s1}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{s2}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{std}\PYG{p}{::}\PYG{n}{mem}\PYG{p}{::}\PYG{n}{swap}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{s1}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{s2}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{std} 是标准库的名称。路径 \texttt{std} 指的是标准库的顶层模块。\texttt{std::mem} 是标准库中的子模块，而 \texttt{std::mem::swap} 是该模块中的公共函数。
+
+可以用这种方式编写所有代码：如果你想要一个圆或字典，就明确写出 \texttt{std::f64::consts::PI} 或 \texttt{std::collections::HashMap::new}。但这样做会很烦琐并且难以阅读。另一种方法是将这些特性\textbf{导入}使用它们的模块中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{mem}\PYG{p}{;}
+
+\PYG{k}{if}\PYG{+w}{ }\PYG{n}{s1}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{s2}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{mem}\PYG{p}{::}\PYG{n}{swap}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{s1}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{s2}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这条 \texttt{use} 声明导致名称 \texttt{mem} 在整个封闭块或模块中成了 \texttt{std::mem} 的本地别名。
+
+可以通过写 \texttt{use std::mem::swap;} 来导入 \texttt{swap} 函数本身，而不是 \texttt{mem} 模块。然而，我们之前的编写风格通常被认为是最好的：导入类型、特型和模块（如 \texttt{std::mem}），然后使用相对路径访问其中的函数、常量和其他成员。
+
+可以一次导入多个名称：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{HashMap}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{HashSet}\PYG{p}{\PYGZcb{}}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 同时导入两个模块}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{\PYGZcb{}}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 同时导入`std::fs`和`std::fs::File`}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 导入所有语法项}
+\end{Verbatim}
+
+上述代码只是对“明确写出所有单独导入”的简写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashMap}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashSet}\PYG{p}{;}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{File}\PYG{p}{;}
+
+\PYG{c+c1}{// std::io::prelude中的全部公开语法项:}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{::}\PYG{n}{Read}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{::}\PYG{n}{BufRead}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{::}\PYG{n}{Seek}\PYG{p}{;}
+\end{Verbatim}
+
+可以使用 \texttt{as} 导入一个语法项，但在本地赋予它一个不同的名称：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n}{IOResult}\PYG{p}{;}
+
+\PYG{c+c1}{// 这个返回类型只是`std::io::Result\PYGZlt{}()\PYGZgt{}`的另一种写法：}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{save\PYGZus{}spore}\PYG{p}{(}\PYG{n}{spore}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{Spore}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{IOResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+模块\textbf{不会}自动从其父模块继承名称。假设 proteins/\allowbreak{}mod.rs 中有如下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// proteins/mod.rs}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{AminoAcid}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{synthesis}\PYG{p}{;}
+\end{Verbatim}
+
+那么 synthesis.rs 中的代码不会自动“看到”类型 \texttt{`AminoAcid`}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// proteins/synthesis.rs}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{synthesize}\PYG{p}{(}\PYG{n}{seq}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{AminoAcid}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 错误：找不到类型AminoAcid}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+其实，每个模块都会以“白板”开头，并且必须导入它使用的名称：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// proteins/synthesis.rs}
+\PYG{k}{use}\PYG{+w}{ }\PYG{k}{super}\PYG{p}{::}\PYG{n}{AminoAcid}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 从父模块显式导入}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{synthesize}\PYG{p}{(}\PYG{n}{seq}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{AminoAcid}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+默认情况下，路径是相对于当前模块的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// in proteins/mod.rs}
+
+\PYG{c+c1}{// 从某个子模块导入}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{synthesis}\PYG{p}{::}\PYG{n}{synthesize}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{self} 也是当前模块的同义词，所以可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// in proteins/mod.rs}
+
+\PYG{c+c1}{// 从枚举中导入名称，因此可以把赖氨酸写成`Lys`，而不是`AminoAcid::Lys`}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{::}\PYG{n}{AminoAcid}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\end{Verbatim}
+
+或者简单地写成如下形式。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 在proteins/mod.rs中}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{AminoAcid}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\end{Verbatim}
+
+（当然，这里的 \texttt{AminoAcid} 示例偏离了之前提到过的仅导入类型、特型和模块的样式规则。如果我们的程序中包含长氨基酸序列，那么这种调整就符合奥威尔第六规则：“为了表达准确，宁可打破上述规则”。）
+
+关键字 \texttt{super} 和 \texttt{crate} 在路径中有着特殊的含义：\texttt{super} 指的是父模块，\texttt{crate} 指的是当前模块所在的 crate。
+
+使用相对于 crate 根而不是当前模块的路径可以更容易地在项目中移动代码，因为如果当前模块的路径发生了变化，则不会破坏任何导入。例如，我们可以使用 \texttt{crate} 编写 synthesis.rs：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// proteins/synthesis.rs}
+\PYG{k}{use}\PYG{+w}{ }\PYG{k}{crate}\PYG{p}{::}\PYG{n}{proteins}\PYG{p}{::}\PYG{n}{AminoAcid}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 显式导入相对于crate根路径的语法项}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{synthesize}\PYG{p}{(}\PYG{n}{seq}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n}{AminoAcid}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+子模块可以使用 \texttt{use super::*} 访问其父模块中的私有语法项。
+
+如果有一个与你正使用的 crate 同名的模块，那么引用它们的内容时有一些注意事项。如果你的程序在其 Cargo.toml 文件中将 \texttt{image} crate 列为依赖项，但还有另一个名为 \texttt{image} 的模块，那么以 \texttt{image} 开头的路径就是有歧义的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{image}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Sampler}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// 错误：它引用的是我们的`image`模块还是`image crate`？}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{image}\PYG{p}{::}\PYG{n}{Pixels}\PYG{p}{;}
+\end{Verbatim}
+
+即使 \texttt{image} 模块中没有 \texttt{Pixels} 类型，这种歧义仍然是有问题的：如果模块中稍后添加了这样的定义，则可能会默默地改变程序中其他地方引用到的路径，而这将给人带来困扰。
+
+为了解决歧义，Rust 有一种特殊的路径，称为\textbf{绝对路径}，该路径以 \texttt{::} 开头，总会引用外部 crate。要引用 \texttt{image} crate 中的 \texttt{Pixels} 类型，可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{p}{::}\PYG{n}{image}\PYG{p}{::}\PYG{n}{Pixels}\PYG{p}{;}\PYG{+w}{        }\PYG{c+c1}{// `image crate`中的`Pixels`}
+\end{Verbatim}
+
+要引用你自己模块中的 \texttt{Sampler} 类型，可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{::}\PYG{n}{image}\PYG{p}{::}\PYG{n}{Sampler}\PYG{p}{;}\PYG{+w}{   }\PYG{c+c1}{// `image`模块中的`Sampler`}
+\end{Verbatim}
+
+模块与文件不是一回事，但模块与 Unix 文件系统中的目录和文件有些相似之处。\texttt{use} 关键字会创建别名，就像用 \texttt{ln} 命令创建链接一样。路径和文件名一样，有绝对和相对两种形式。\texttt{self} 和 \texttt{super} 类似于 \texttt{.} 和 \texttt{..} 这样的特殊目录。
+
+\subsection{标准库预导入}
+
+我们刚才说过，就导入的名称而言，每个模块都以“白板”开头。但这个“白板”并不是\textbf{完全}空白的。
+
+一方面，标准库 \texttt{std} 会自动链接到每个项目。这意味着你始终可以使用 \texttt{use std::whatever}，或者就按名称引用 \texttt{std} 中的语法项，比如代码中内联的 \texttt{std::mem::swap()}。另一方面，还有一些特别的便捷名称（如 \texttt{Vec} 和 \texttt{Result}）会包含在\textbf{标准库预导入}中并自动导入。Rust 的行为就好像每个模块（包括根模块）都用以下导入语句开头一样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{::}\PYG{n}{v1}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\end{Verbatim}
+
+标准库预导入包含几十个常用的特型和类型。
+
+我们在第 2 章中提到的那些库有时会提供一些名为 \texttt{prelude}（预导入）的模块。但 \texttt{std::prelude::v1} 是唯一会自动导入的预导入。把一个模块命名为 \texttt{prelude} 只是一种约定，旨在告诉用户应该使用 \texttt{*} 导入它。
+
+\subsection{公开 \texttt{use} 声明}
+
+虽然 \texttt{use} 声明只是个别名，但也可以公开它们：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 在plant\PYGZus{}structures/mod.rs中}
+\PYG{o}{..}\PYG{p}{.}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{use}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{::}\PYG{n}{leaves}\PYG{p}{::}\PYG{n}{Leaf}\PYG{p}{;}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{use}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{::}\PYG{n}{roots}\PYG{p}{::}\PYG{n}{Root}\PYG{p}{;}
+\end{Verbatim}
+
+这意味着 \texttt{Leaf} 和 \texttt{Root} 是 \texttt{plant\_structures} 模块的公共语法项。它们还是 \texttt{plant\_structures::leaves::Leaf} 和 \texttt{plant\_structures::roots::Root} 的简单别名。
+
+标准库预导入就是像这样编写的一系列 \texttt{pub} 导入。
+
+\subsection{公开结构体字段}
+
+模块可以包含用户定义的一些结构体类型（使用 \texttt{struct} 关键字引入）。第 9 章会详细介绍这些内容，但现在可以简单讲讲模块与结构体字段的可见性之间是如何相互作用的。
+
+一个简单的结构体如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Fern}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{n}{roots}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{RootSet}\PYG{p}{,}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{n}{stems}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{StemSet}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+结构体的字段，甚至是私有字段，都可以在声明该结构体的整个模块及其子模块中访问。在模块之外，只能访问公共字段。
+
+事实证明，通过模块而不是像 Java 或 C++ 那样通过类来强制执行访问控制对软件设计非常有帮助。它减少了样板“getter”方法和“setter”方法，并且在很大程度上消除了对诸如 C++ \texttt{friend}（友元）声明等语法的需求。单个模块可以定义多个紧密协作的类型，例如 \texttt{frond::LeafMap} 和 \texttt{frond::LeafMapIter}，它们可以根据需要访问彼此的私有字段，同时仍然对程序的其余部分隐藏这些实现细节。
+
+\subsection{静态变量与常量}
+
+除了函数、类型和嵌套模块，模块还可以定义\textbf{常量}和\textbf{静态变量}。
+
+关键字 \texttt{const} 用于引入常量，其语法和 \texttt{let} 一样，只是它可以标记为 \texttt{pub}，并且必须写明类型。此外，常量的命名规约是 \texttt{UPPERCASE\_NAMES}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{const}\PYG{+w}{ }\PYG{n}{ROOM\PYGZus{}TEMPERATURE}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{20.0}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 摄氏度}
+\end{Verbatim}
+
+\texttt{static} 关键字引入了一个静态语法项，跟常量几乎是一回事：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{static}\PYG{+w}{ }\PYG{n}{ROOM\PYGZus{}TEMPERATURE}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{68.0}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 华氏度}
+\end{Verbatim}
+
+常量有点儿像 C++ 的 \texttt{\#define}：该值在每个使用了它的地方都会编译到你的代码中。静态变量是在程序开始运行之前设置并持续到程序退出的变量。在代码中对魔数和字符串要使用常量，而在处理大量的数据或需要借用常量值的引用时则要使用静态变量。
+
+没有 \texttt{mut} 常量。静态变量可以标记为 \texttt{mut}，但正如第 5 章所述，Rust 没有办法强制执行其关于 \texttt{mut} 静态变量的独占访问规则。因此，\texttt{mut} 静态变量本质上是非线程安全的，安全代码根本不能使用它们：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{static}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{PACKETS\PYGZus{}SERVED}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} served}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{PACKETS\PYGZus{}SERVED}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：使用了mut静态变量}
+\end{Verbatim}
+
+Rust 不鼓励使用全局可变状态。有关备选方案的讨论，请参阅 19.3.11 节。
+
+\section{将程序变成库}
+
+随着蕨类植物模拟器成功运行，你会发现你所需要的不仅仅是单个程序。假设你有一个运行此模拟并将结果保存在文件中的命令行程序。现在，你想编写其他程序对这些保存下来的结果进行科学分析、实时显示正在生长的植物的 3D 渲染图、渲染足以乱真的图片，等等。所有这些程序都需要共享基本的蕨类植物模拟代码。这时候你应该建立一个库。
+
+第一步是将现有的项目分为两部分：一个库 crate，其中包含所有共享代码；一个可执行文件，其中只包含你现在的命令行程序才需要的代码。
+
+为了展示如何做到这一点，要使用一个极度简化的示例程序：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Fern}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{size}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{growth\PYGZus{}rate}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Fern}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 模拟一株蕨类植物在一天内的生长}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{grow}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{size}\PYG{+w}{ }\PYG{o}{*}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{growth\PYGZus{}rate}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{l+s+sd}{/// 执行days天内某株蕨类植物的模拟}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{run\PYGZus{}simulation}\PYG{p}{(}\PYG{n}{fern}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Fern}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{days}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{days}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{fern}\PYG{p}{.}\PYG{n}{grow}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{fern}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Fern}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{size}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{growth\PYGZus{}rate}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.001}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{run\PYGZus{}simulation}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{fern}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{final fern size: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{fern}\PYG{p}{.}\PYG{n}{size}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+假设这个程序有一个简单的 Cargo.toml 文件。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{package}\PYG{p}{]}
+\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fern\PYGZus{}sim}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.1.0}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{authors}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You \PYGZlt{}you@example.com\PYGZgt{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2021}\PYG{l+s}{\PYGZdq{}}
+\end{Verbatim}
+
+很容易将这个程序变成库，步骤如下。
+
+\begin{enumerate}
+\item 将文件 src/main.rs 重命名为 src/lib.rs。
+\item 将 \texttt{pub} 关键字添加到 src/lib.rs 中的语法项上，这些语法项将成为这个库的公共特性。
+\item 将 \texttt{main} 函数移动到某个临时文件中。（我们暂时不同管它。）
+\end{enumerate}
+
+生成的 src/lib.rs 文件如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Fern}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{n}{size}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{,}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{n}{growth\PYGZus{}rate}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Fern}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 模拟一株蕨类植物在一天内的生长}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{grow}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{size}\PYG{+w}{ }\PYG{o}{*}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{growth\PYGZus{}rate}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{l+s+sd}{/// 执行days天内某株蕨类植物的模拟}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{run\PYGZus{}simulation}\PYG{p}{(}\PYG{n}{fern}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Fern}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{days}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{days}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{fern}\PYG{p}{.}\PYG{n}{grow}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+请注意，不需要更改 Cargo.toml 中的任何内容。这是因为这个最小化的 Cargo.toml 文件只是为了让 Cargo 保持默认行为而已。默认设定下，\texttt{cargo build} 会查看源目录中的文件并根据文件名确定要构建的内容。当它发现存在文件 src/lib.rs 时，就知道要构建一个库。
+
+src/lib.rs 中的代码构成了库的\textbf{根模块}。其他使用这个库的 crate 只能访问这个根模块的公共语法项。
+
+\section{src/bin 目录}
+
+要让原来的命令行程序 \texttt{fern\_sim} 再次运行起来也很简单，因为 Cargo 对和库位于同一个 crate 中的小型程序有一些内置支持。
+
+其实 Cargo 本身就是用这样的方式编写的。它的大部分代码在一个 Rust 库中。本书中一直使用的 \texttt{cargo} 命令行程序只是一个很薄的包装程序，它会调用库来完成所有繁重的工作。库和命令行程序都位于同一个源代码存储库中。
+
+你也可以将自己的程序和库放在同一个 crate 中。请将下面这段代码放入名为 src/bin/efern.rs 的文件中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{fern\PYGZus{}sim}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Fern}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{run\PYGZus{}simulation}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{fern}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Fern}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{size}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{growth\PYGZus{}rate}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.001}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{run\PYGZus{}simulation}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{fern}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{final fern size: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{fern}\PYG{p}{.}\PYG{n}{size}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{main} 函数就是之前搁置的那个。我们为 \texttt{fern\_sim} crate 中的一些语法项（\texttt{Fern} 和 \texttt{run\_simulation}）添加了 \texttt{use} 声明。换句话说，我们在把这个 crate 当库来用。
+
+因为我们已将这个文件放入了 src/bin 中，所以 Cargo 将在我们下次运行 \texttt{cargo build} 时同时编译 \texttt{fern\_sim} 库和这个程序。可以使用 \texttt{cargo run --bin efern} 来运行 \texttt{efern} 程序。下面是它的输出，使用 \texttt{--verbose} 可以展示 Cargo 正在运行的命令：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }build\PYG{+w}{ }\PYGZhy{}\PYGZhy{}verbose
+\PYG{+w}{   }Compiling\PYG{+w}{ }fern\PYGZus{}sim\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../fern\PYGZus{}sim\PYG{o}{)}
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}rustc\PYG{+w}{ }src/lib.rs\PYG{+w}{ }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}name\PYG{+w}{ }fern\PYGZus{}sim\PYG{+w}{ }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}type\PYG{+w}{ }lib\PYG{+w}{ }...\PYG{l+s+sb}{`}
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}rustc\PYG{+w}{ }src/bin/efern.rs\PYG{+w}{ }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}name\PYG{+w}{ }efern\PYG{+w}{ }\PYGZhy{}\PYGZhy{}crate\PYGZhy{}type\PYG{+w}{ }bin\PYG{+w}{ }...\PYG{l+s+sb}{`}
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYGZhy{}\PYGZhy{}bin\PYG{+w}{ }efern\PYG{+w}{ }\PYGZhy{}\PYGZhy{}verbose
+\PYG{+w}{       }Fresh\PYG{+w}{ }fern\PYGZus{}sim\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../fern\PYGZus{}sim\PYG{o}{)}
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}target/debug/efern\PYG{l+s+sb}{`}
+final\PYG{+w}{ }fern\PYG{+w}{ }size:\PYG{+w}{ }\PYG{l+m}{2}.7169239322355985
+\end{Verbatim}
+
+我们仍然不必对 Cargo.toml 进行任何修改，因为 Cargo 的默认设定就是查看你的源文件并自行决定做什么。Cargo 会自动将 src/bin 中的 .rs 文件视为应该构建的额外程序。
+
+还可以利用子目录在 src/bin 目录中构建更大的程序。假设我们要提供第二个在屏幕上绘制蕨类植物的程序，但绘制代码规模很大而且是模块化的，因此它拥有自己的文件。我们可以给第二个程序建立它自己的子目录：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{fern\PYGZus{}sim}\PYG{o}{/}
+\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{toml}
+\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{src}\PYG{o}{/}
+\PYG{+w}{    }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{bin}\PYG{o}{/}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{efern}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{draw\PYGZus{}fern}\PYG{o}{/}
+\PYG{+w}{            }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{main}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{            }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{draw}\PYG{p}{.}\PYG{n}{rs}
+\end{Verbatim}
+
+这样做的好处是能让更大的二进制文件拥有自己的子模块，而不会弄乱库代码或 src/bin 目录。
+
+不过，既然 \texttt{fern\_sim} 现在是一个库，那么我们也就多了一种选择：把这个程序放在它自己的独立项目中，再保存到一个完全独立的目录中，然后在它自己的 Cargo.toml 中将 \texttt{fern\_sim} 列为依赖项：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{[}\PYG{k}{dependencies}\PYG{k}{]}
+\PYG{n}{fern\PYGZus{}sim}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{path}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{../fern\PYGZus{}sim}\PYG{l+s+s2}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+也许这就是你以后要为其他蕨类植物模拟程序专门做的事。src/bin 目录只适合像 \texttt{efern} 和 \texttt{draw\_fern} 这样的简单程序。
+
+\section{属性}
+
+Rust 程序中的任何语法项都可以用\textbf{属性}进行装饰。属性是 Rust 的通用语法，用于向编译器提供各种指令和建议。假设你收到了如下警告：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{libgit2}\PYG{p}{.}\PYG{n}{rs}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{warning}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{type}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{git\PYGZus{}revspec}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{should}\PYG{+w}{ }\PYG{n}{have}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{n}{camel}\PYG{+w}{ }\PYG{n}{case}\PYG{+w}{ }\PYG{n}{name}
+\PYG{+w}{    }\PYG{n}{such}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{GitRevspec}\PYG{err}{`}\PYG{p}{,}\PYG{+w}{ }\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{warn(non\PYGZus{}camel\PYGZus{}case\PYGZus{}types)}\PYG{c+cp}{]}\PYG{+w}{ }\PYG{n}{on}\PYG{+w}{ }\PYG{n}{by}\PYG{+w}{ }\PYG{n}{default}
+\end{Verbatim}
+
+但是你选择这个名字是有特别原因的，只希望 Rust 对此“闭嘴”。那么通过在此类型上添加 \texttt{\#[allow]} 属性就可以禁用这条警告：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{allow(non\PYGZus{}camel\PYGZus{}case\PYGZus{}types)}\PYG{c+cp}{]}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{git\PYGZus{}revspec}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+条件编译是使用名为 \texttt{\#[cfg]} 的属性编写的另一项特性：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 只有当我们为Android构建时才在项目中包含此模块}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(target\PYGZus{}os = }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{android}\PYG{l+s}{\PYGZdq{}}\PYG{c+cp}{)}\PYG{c+cp}{]}
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{mobile}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{\#[cfg]} 的完整语法可以到 Rust 参考手册中查看，表 8-2 列出了最常用的选项。
+
+\myCaption{表 8-2：最常用的 \texttt{\#[cfg]} 选项}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.785\hsize\raggedright\arraybackslash}X>{\hsize=1.215\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{\texttt{\#[cfg(...)]} 选项} & \textcolor{white}{当启用时·····} \\
+\texttt{test} & 启用测试（使用 \texttt{cargo test} 或 \texttt{rustc --test} 编译） \\
+\texttt{debug\_assertions} & 启用调试断言（通常在非优化构建中） \\
+\texttt{unix} & 为 Unix（包括 macOS）编译 \\
+\texttt{windows} & 为 Windows 编译 \\
+\texttt{target\_pointer\_width = "64"} & 针对 64 位平台。另一个可能的值是 \texttt{"32"} \\
+\texttt{target\_arch = "x86\_64"} & 特别针对 x86-64。其他值有：\texttt{"x86"}、\texttt{"arm"}、\texttt{"aarch64"}、\texttt{"powerpc"}、\texttt{"powerpc64"} 和 \texttt{"mips"} \\
+\texttt{target\_os = "macos"} & 为 macOS 编译。其他值有：\texttt{"windows"}、\texttt{"ios"}、\texttt{"android"}、\texttt{"linux"}、\texttt{"freebsd"}、\texttt{"openbsd"}、\texttt{"netbsd"} 和 \texttt{"dragonfly"} \\
+\texttt{feature = "robots"} & 启用名为 \texttt{"robots"} 的用户自定义特性（用 \texttt{cargo build --feature robots} 或 \texttt{rustc --cfg feature='"robots"'} 编译）。这些特性是在 Cargo.toml 的 \texttt{[features]} 区段中声明的 \\
+\texttt{not(}\emph{A}\texttt{)} & 不满足条件 \emph{A} 时。如果要提供某函数的两种实现，请将其中一个标记为 \texttt{\#[cfg(X)]}，另一个标记为 \texttt{\#[cfg(not(X))]} \\
+\texttt{all(}\emph{A}\texttt{,}\emph{B}\texttt{)} & 同时满足 \emph{A} 和 \emph{B}（相当于 \texttt{\&\&}） \\
+\texttt{any(}\emph{A}\texttt{,}\emph{B}\texttt{)} & 只要满足 \emph{A} 或 \emph{B} 之一（相当于 \texttt{||}） \\
+\end{tabularx}
+\myTableEnd
+
+有时，可能需要对函数的内联展开进行微观管理，但我们通常会把这种优化留给编译器。可以使用 \texttt{\#[inline]} 属性进行微观管理：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 由于相邻细胞之间存在渗透作用，因此需要调整它们的离子水平等}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{inline}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{do\PYGZus{}osmosis}\PYG{p}{(}\PYG{n}{c1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Cell}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{c2}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Cell}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在一种特定的情况下，如果没有 \texttt{\#[inline]}，\textbf{就不会}发生内联。当在一个 crate 中定义的函数或方法在另一个 crate 中被调用时，Rust 不会将其内联，除非它是泛型的（具有类型参数）或明确标记为 \texttt{\#[inline]}。
+
+在其他情况下，编译器只会将 \texttt{\#[inline]} 视为建议。Rust 还支持更坚定的 \texttt{\#[inline(always)]}（要求函数在每个调用点内联展开）和 \texttt{\#[inline(never)]}（要求函数永不内联）。
+
+一些属性（如 \texttt{\#[cfg]} 和 \texttt{\#[allow]}）可以附着到整个模块上并对其中的所有内容生效。另一些属性（如 \texttt{\#[test]} 和 \texttt{\#[inline]}）则必须附着到单个语法项上。正如你对这种包罗万象的语法特性的预期一样，每个属性都是定制的，并且有自己所支持的一组参数。Rust 参考文档详细记录了它支持的全套属性。
+
+要将属性附着到整个 crate 上，请将其添加到 main.rs 文件或 lib.rs 文件的顶部，放在任何语法项之前，并写成 \texttt{\#!}，而不是 \texttt{\#}，就像这样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// libgit2\PYGZus{}sys/lib.rs}
+\PYG{c+cp}{\PYGZsh{}![}\PYG{c+cp}{allow(non\PYGZus{}camel\PYGZus{}case\PYGZus{}types)}\PYG{c+cp}{]}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{git\PYGZus{}revspec}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{git\PYGZus{}error}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{\#!} 要求 Rust 将一个属性附着到整个封闭区中的语法项而不只是紧邻其后的内容上：在这种情况下，\texttt{\#![allow]} 属性会附着到整个 \texttt{libgit2\_sys} 包而不仅仅是 \texttt{struct git\_revspec} 上
+
+\texttt{\#!} 也可以在函数、结构体等内部使用（但 \texttt{\#!} 通常只用在文件的开头，以将属性附着到整个模块或 crate 上）。某些属性始终使用 \texttt{\#!} 语法，因为它们只能应用于整个 crate。
+
+例如，\texttt{\#![feature]} 属性用于启用 Rust 语言和库的\textbf{不稳定}特性，这些特性是实验性的，因此可能有 bug 或者未来可能会被更改或移除。例如，在我们撰写本章时，Rust 实验性地支持跟踪像 \texttt{assert!} 这样的宏的展开。但由于此支持是实验性的，因此你只能通过两种方式来使用：安装 Rust 的夜间构建版或明确声明你的 crate 使用宏跟踪。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}![}\PYG{c+cp}{feature(trace\PYGZus{}macros)}\PYG{c+cp}{]}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// 我想知道这个使用assert\PYGZus{}eq!的代码替换（展开）后会是什么样子！}
+\PYG{+w}{    }\PYG{n+nf+fm}{trace\PYGZus{}macros!}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+m+mi}{10}\PYG{o}{*}\PYG{l+m+mi}{10}\PYG{o}{*}\PYG{l+m+mi}{10}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{o}{*}\PYG{l+m+mi}{9}\PYG{o}{*}\PYG{l+m+mi}{9}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{12}\PYG{o}{*}\PYG{l+m+mi}{12}\PYG{o}{*}\PYG{l+m+mi}{12}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{o}{*}\PYG{l+m+mi}{1}\PYG{o}{*}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{trace\PYGZus{}macros!}\PYG{p}{(}\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+随着时间的推移，Rust 团队有时会将实验性特性\textbf{稳定}下来，使其成为语言标准的一部分。那时这个 \texttt{\#![feature]} 属性就会变得多余，因此 Rust 会生成一个警告，建议你将其移除。
+
+\section{测试与文档}
+
+正如 2.3 节所述，Rust 中内置了一个简单的单元测试框架。测试是标有 \texttt{\#[test]} 属性的普通函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{math\PYGZus{}works}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{x}\PYG{p}{.}\PYG{n}{is\PYGZus{}positive}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{x}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{cargo test} 会运行项目中的所有测试：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }\PYG{n+nb}{test}
+\PYG{+w}{   }Compiling\PYG{+w}{ }math\PYGZus{}test\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../math\PYGZus{}test\PYG{o}{)}
+\PYG{+w}{     }Running\PYG{+w}{ }target/release/math\PYGZus{}test\PYGZhy{}e31ed91ae51ebf22
+
+running\PYG{+w}{ }\PYG{l+m}{1}\PYG{+w}{ }\PYG{n+nb}{test}
+\PYG{n+nb}{test}\PYG{+w}{ }math\PYGZus{}works\PYG{+w}{ }...\PYG{+w}{ }ok
+
+\PYG{n+nb}{test}\PYG{+w}{ }result:\PYG{+w}{ }ok.\PYG{+w}{ }\PYG{l+m}{1}\PYG{+w}{ }passed\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }failed\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }ignored\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }measured\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }filtered\PYG{+w}{ }out
+\end{Verbatim}
+
+（你还会看到一些关于“文档测试”的输出，我们稍后会讲到。）
+
+无论你的 crate 是可执行文件还是库，你都可以通过将参数传给 Cargo 来运行特定测试：\texttt{cargo test math} 会运行名称中包含 \texttt{math} 的所有测试。
+
+测试通常会使用 \texttt{assert!} 和 \texttt{assert\_eq!} 这两个来自 Rust 标准库的宏。如果 \texttt{expr} 为真，那么 \texttt{assert!(expr)} 就会成功；否则，它会 panic，导致测试失败。\texttt{assert\_eq!(v1, v2)} 和 \texttt{assert!(v1 == v2)} 基本等效，但当断言失败时，其错误消息会展示两个值。
+
+你可以在普通代码中使用这些宏来检查不变条件，但请注意 \texttt{assert!} 和 \texttt{assert\_eq!} 会包含在发布构建中。因此，可以改用 \texttt{debug\_assert!} 和 \texttt{debug\_assert\_eq!} 来编写仅在调试构建中检查的断言。
+
+要测试各种出错情况，请将 \texttt{\#[should\_panic]} 属性添加到你的测试中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 正如我们在第7章中所讲的那样，只有当除以零导致panic时，这个测试才能通过}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{allow(unconditional\PYGZus{}panic, unused\PYGZus{}must\PYGZus{}use)}\PYG{c+cp}{]}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{should\PYGZus{}panic(expected=}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{divide by zero}\PYG{l+s}{\PYGZdq{}}\PYG{c+cp}{)}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{test\PYGZus{}divide\PYGZus{}by\PYGZus{}zero\PYGZus{}error}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 应该panic！}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在这个例子中，还需要添加一个 \texttt{allow} 属性，以让编译器允许我们做一些它本可以静态证明而无法触发 panic 的事情，然后才能执行除法并丢弃答案，因为在正常情况下，它会试图阻止这种愚蠢行为。
+
+还可以从测试中返回 \texttt{Result<(), E>}。只要错误变体实现了 \texttt{Debug} 特型（通常都实现了），你就可以简单地使用 \texttt{?} 抛弃 \texttt{Ok} 变体以返回 \texttt{Result}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{num}\PYG{p}{::}\PYG{n}{ParseIntError}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 如果\PYGZdq{}1024\PYGZdq{}是一个有效的数值（这里正是如此），那么本测试就会通过}
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{explicit\PYGZus{}radix}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ParseIntError}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{  }\PYG{k+kt}{i32}\PYG{p}{::}\PYG{n}{from\PYGZus{}str\PYGZus{}radix}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1024}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{  }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+标有 \texttt{\#[test]} 的函数是有条件编译的。普通的 \texttt{cargo build} 或 \texttt{cargo build --release} 会跳过测试代码。但是当你运行 \texttt{cargo test} 时，Cargo 会分两次来构建你的程序：一次以普通方式，一次带着你的测试和已启用的测试工具。这意味着你的单元测试可以与它们所测试的代码一起使用，按需访问内部实现细节，而且没有运行期成本。但是，这可能会导致一些警告。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{roughly\PYGZus{}equal}\PYG{p}{(}\PYG{n}{a}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{p}{(}\PYG{n}{a}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{)}\PYG{p}{.}\PYG{n}{abs}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{l+m+mf}{1e\PYGZhy{}6}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{trig\PYGZus{}works}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{consts}\PYG{p}{::}\PYG{n}{PI}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{roughly\PYGZus{}equal}\PYG{p}{(}\PYG{n}{PI}\PYG{p}{.}\PYG{n}{sin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在省略了测试代码的构建中，\texttt{roughly\_equal} 似乎从未使用过，于是 Rust 会报错：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }build
+\PYG{+w}{   }Compiling\PYG{+w}{ }math\PYGZus{}test\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../math\PYGZus{}test\PYG{o}{)}
+warning:\PYG{+w}{ }\PYG{k}{function}\PYG{+w}{ }is\PYG{+w}{ }never\PYG{+w}{ }used:\PYG{+w}{ }\PYG{l+s+sb}{`}roughly\PYGZus{}equal\PYG{l+s+sb}{`}
+\PYG{+w}{  }\PYG{p}{|}
+\PYG{l+m}{7}\PYG{+w}{ }\PYG{p}{|}\PYG{+w}{ }/\PYG{+w}{ }fn\PYG{+w}{ }roughly\PYGZus{}equal\PYG{o}{(}a:\PYG{+w}{ }f64,\PYG{+w}{ }b:\PYG{+w}{ }f64\PYG{o}{)}\PYG{+w}{ }\PYGZhy{}\PYGZgt{}\PYG{+w}{ }bool\PYG{+w}{ }\PYG{o}{\PYGZob{}}
+\PYG{l+m}{8}\PYG{+w}{ }\PYG{p}{|}\PYG{+w}{ }\PYG{p}{|}\PYG{+w}{     }\PYG{o}{(}a\PYG{+w}{ }\PYGZhy{}\PYG{+w}{ }b\PYG{o}{)}.abs\PYG{o}{(}\PYG{o}{)}\PYG{+w}{ }\PYGZlt{}\PYG{+w}{ }1e\PYGZhy{}6
+\PYG{l+m}{9}\PYG{+w}{ }\PYG{p}{|}\PYG{+w}{ }\PYG{p}{|}\PYG{+w}{ }\PYG{o}{\PYGZcb{}}
+\PYG{+w}{  }\PYG{p}{|}\PYG{+w}{ }\PYG{p}{|}\PYGZus{}\PYGZca{}
+\PYG{+w}{  }\PYG{p}{|}
+\PYG{+w}{   }\PYG{o}{=}\PYG{+w}{ }note:\PYG{+w}{ }\PYG{c+c1}{\PYGZsh{}[warn(dead\PYGZus{}code)] on by default}
+\end{Verbatim}
+
+因此，当你的测试变得很庞大以至于需要支撑性代码时，应该按照惯例将它们放在 \texttt{tests} 模块中，并使用 \texttt{\#[cfg]} 属性声明整个模块仅用于测试：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{cfg(test)}\PYG{c+cp}{]}\PYG{+w}{   }\PYG{c+c1}{// 只有在测试时才包含此模块}
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{tests}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{roughly\PYGZus{}equal}\PYG{p}{(}\PYG{n}{a}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{p}{(}\PYG{n}{a}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{)}\PYG{p}{.}\PYG{n}{abs}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{l+m+mf}{1e\PYGZhy{}6}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{trig\PYGZus{}works}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{consts}\PYG{p}{::}\PYG{n}{PI}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{roughly\PYGZus{}equal}\PYG{p}{(}\PYG{n}{PI}\PYG{p}{.}\PYG{n}{sin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+Rust 的测试工具会使用多个线程同时运行好几个测试，这是 Rust 代码默认线程安全的附带好处之一。要禁用此功能，请运行单个测试 \texttt{cargo test \emph{testname}} 或运行 \texttt{cargo test -- --test-threads 1}。（第一个 \texttt{--} 确保 \texttt{cargo test} 将 \texttt{--test-threads} 选项透传给实际执行测试的可执行文件。）这意味着，从严格意义上说，我们在第 2 章中展示的曼德博程序不是该章中第二个而是第三个多线程程序。2.3 节的 \texttt{cargo test} 运行的才是第一个多线程程序。
+
+通常，测试工具只会显示失败测试的输出。如果也想展示成功测试的输出，请运行 \texttt{cargo test -- --nocapture}。
+
+\subsection{集成测试}
+
+你的蕨类植物模拟器继续“成长”。你已决定将所有主要功能放入可供多个可执行文件使用的库中。如果能从最终使用者的视角编写一些测试，把 fern\_sim.rlib 像外部 crate 那样链接进来，那仿真度就更高了。此外，你有一些测试是通过从二进制文件加载已保存的模拟记录开始的，同时把这些大型测试文件放在 src 目录中会很棘手。集成测试有助于解决这两个问题。
+
+集成测试是 .rs 文件，位于项目的 src 目录旁边的 tests 目录中。当你运行 \texttt{cargo test} 时，Cargo 会将每个集成测试编译为一个独立的 crate，与你的库和 Rust 测试工具链接在一起。下面是一个例子：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// tests/unfurl.rs——蕨菜在阳光下舒展开}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{fern\PYGZus{}sim}\PYG{p}{::}\PYG{n}{Terrarium}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{time}\PYG{p}{::}\PYG{n}{Duration}\PYG{p}{;}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{test\PYGZus{}fiddlehead\PYGZus{}unfurling}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{world}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Terrarium}\PYG{p}{::}\PYG{n}{load}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{tests/unfurl\PYGZus{}files/fiddlehead.tm}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{world}\PYG{p}{.}\PYG{n}{fern}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{.}\PYG{n}{is\PYGZus{}furled}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{one\PYGZus{}hour}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Duration}\PYG{p}{::}\PYG{n}{from\PYGZus{}secs}\PYG{p}{(}\PYG{l+m+mi}{60}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{60}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{world}\PYG{p}{.}\PYG{n}{apply\PYGZus{}sunlight}\PYG{p}{(}\PYG{n}{one\PYGZus{}hour}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{world}\PYG{p}{.}\PYG{n}{fern}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{.}\PYG{n}{is\PYGZus{}fully\PYGZus{}unfurled}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+集成测试之所以有价值，部分原因在于它们会从外部视角看待你的 crate，就像用户的做法一样。集成测试会测试你的 crate 的公共 API。
+
+\texttt{cargo test} 会运行单元测试和集成测试。如果仅运行某个特定文件（如 tests/\allowbreak{}unfurl.rs）中的集成测试，请使用命令 \texttt{cargo test --test unfurl}。
+
+\subsection{文档}
+
+命令 \texttt{cargo doc} 会为你的库创建 HTML 文档：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }doc\PYG{+w}{ }\PYGZhy{}\PYGZhy{}no\PYGZhy{}deps\PYG{+w}{ }\PYGZhy{}\PYGZhy{}open
+\PYG{+w}{ }Documenting\PYG{+w}{ }fern\PYGZus{}sim\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../fern\PYGZus{}sim\PYG{o}{)}
+\end{Verbatim}
+
+\texttt{--no-deps} 选项会要求 Cargo 只为 \texttt{fern\_sim} 本身生成文档，而不会为它依赖的所有 crate 生成文档。
+
+\texttt{--open} 选项会要求 Cargo 随后在浏览器中打开此文档。
+
+你可以在图 8-2 中看到结果。Cargo 会将这个新文档文件保存在 target/\allowbreak{}doc 中。起始页是 target/\allowbreak{}doc/\allowbreak{}fern\_sim/\allowbreak{}index.html。
+
+\myFigure{images/ch08/fig-8-2.jpeg}{图 8-2：\texttt{rustdoc} 生成的文档示例}
+
+该文档是根据你库中的 \texttt{pub} 特性以及附加的所有\textbf{文档型注释}生成的。我们已经在本章中看到了一些文档型注释。它们看起来很像注释：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 模拟减数分裂产生孢子}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{produce\PYGZus{}spore}\PYG{p}{(}\PYG{n}{factory}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Sporangium}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Spore}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+但是当 Rust 看到以 3 个斜杠开头的注释时，会将它们视为 \texttt{\#[doc]} 属性。如下代码的效果和 Rust 处理前面那个例子的效果完全一样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{doc = }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{模拟减数分裂产生孢子。}\PYG{l+s}{\PYGZdq{}}\PYG{c+cp}{]}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{produce\PYGZus{}spore}\PYG{p}{(}\PYG{n}{factory}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Sporangium}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Spore}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当你编译一个库或二进制文件时，这些属性不会改变任何东西，但是当你生成文档时，关于公共特性的文档型注释会包含在其输出中。
+
+同样，以 \texttt{//!} 开头的注释会被视为 \texttt{\#![doc]} 属性并附着到封闭块一级的特性（通常是模块或 crate）上。例如，你的 fern\_sim/\allowbreak{}src/\allowbreak{}lib.rs 文件可能从这句话开始：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{//! 模拟蕨类植物从单个细胞开始的生长过程}
+\end{Verbatim}
+
+文档型注释的内容是 Markdown 格式的，这是一种等效于简单 HTML 格式的简写法。星号用于表示 \texttt{*}斜体\texttt{*} 和 \texttt{**}粗体\texttt{**}，空行用于表示分段符，等等。你还可以使用 HTML 标记，这些标记会原样复制到格式化后的文档中。
+
+Rust 中文档型注释的一大特色是，Markdown 链接中可以使用 Rust 语法项路径（如 \texttt{leaves::Leaf}），而不是相对 URL，来指示它们所指的内容。Cargo 会查找路径所指的内容，并在相应的文档页面中将其替换为正确的链接。例如，从如下代码生成的文档会链接到 \texttt{VascularPath}、\texttt{Leaf} 和 \texttt{Root} 的文档页面：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 创建并返回一个[`VascularPath`]，它表示从给定的[`Root`][r]到}
+\PYG{l+s+sd}{/// 给定的[`Leaf`](leaves::Leaf)之间的营养路径}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// [r]: roots::Root}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{trace\PYGZus{}path}\PYG{p}{(}\PYG{n}{leaf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{leaves}\PYG{p}{::}\PYG{n}{Leaf}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{root}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{roots}\PYG{p}{::}\PYG{n}{Root}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{VascularPath}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+你还可以添加搜索别名，以便使用内置搜索功能更轻松地查找内容。在此 crate 的文档中搜索“\texttt{path}”或“\texttt{route}”都能找到 \texttt{VascularPath}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{doc(alias = }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{route}\PYG{l+s}{\PYGZdq{}}\PYG{c+cp}{)}\PYG{c+cp}{]}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{VascularPath}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+为了处理较长的文档块或者简化工作流，还可以在文档中包含外部文件。如果存储库的 README.md 文件中包含与准备用作 crate 的顶层文档相同的文本，那么可以将下面这句话放在 lib.rs 或 main.rs 的顶部：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}![}\PYG{c+cp}{doc = include\PYGZus{}str!(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{../README.md}\PYG{l+s}{\PYGZdq{}}\PYG{c+cp}{)}\PYG{c+cp}{]}
+\end{Verbatim}
+
+你可以使用反引号（\texttt{`}）来标出文本中的少量代码。在输出中，这些片段会格式化为等宽字体。还可以通过“4 空格缩进”来添加更大的代码示例：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 文档型注释里的代码块：}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{///     if samples::everything().works() \PYGZob{}}
+\PYG{l+s+sd}{///         println!(\PYGZdq{}ok\PYGZdq{});}
+\PYG{l+s+sd}{///     \PYGZcb{}}
+\end{Verbatim}
+
+也可以使用 Markdown 的三重反引号（\texttt{```}）来标记代码块。效果完全一样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 另一种代码片段，代码一样，但写法不同：}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// ```}
+\PYG{l+s+sd}{/// if samples::everything().works() \PYGZob{}}
+\PYG{l+s+sd}{///     println!(\PYGZdq{}ok\PYGZdq{});}
+\PYG{l+s+sd}{/// \PYGZcb{}}
+\PYG{l+s+sd}{/// ```}
+\end{Verbatim}
+
+无论使用哪种格式，当你在文档型注释里包含一段代码时，都会发生一些有意思的事。Rust 会自动将它转成一个测试。
+
+\subsection{文档测试}
+
+当你在 Rust 库 crate 中运行测试时，Rust 会检查文档中出现的所有代码是否真能如预期般工作。为此，Rust 会获取文档型注释中出现的每个代码块，然后将其编译为单独的可执行包，再与你的库链接在一起，最后运行。
+
+这是一个独立的文档测试示例。通过运行 \texttt{cargo new --lib ranges} 创建一个新项目（\texttt{--lib} 标志告诉 Cargo 我们正在创建一个库 crate，而不是一个可执行 crate）并将以下代码放入 ranges/\allowbreak{}src/\allowbreak{}lib.rs 中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{ops}\PYG{p}{::}\PYG{n}{Range}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 如果两个范围重叠，就返回true}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{///     assert\PYGZus{}eq!(ranges::overlap(0..7, 3..10), true);}
+\PYG{l+s+sd}{///     assert\PYGZus{}eq!(ranges::overlap(1..5, 101..105), false);}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// 如果任何一个范围为空，则它们不会被看作是重叠的}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{///     assert\PYGZus{}eq!(ranges::overlap(0..0, 0..10), false);}
+\PYG{l+s+sd}{///}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{overlap}\PYG{p}{(}\PYG{n}{r1}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Range}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{r2}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Range}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{r1}\PYG{p}{.}\PYG{n}{start}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{r1}\PYG{p}{.}\PYG{n}{end}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{n}{r2}\PYG{p}{.}\PYG{n}{start}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{r2}\PYG{p}{.}\PYG{n}{end}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZam{}}
+\PYG{+w}{        }\PYG{n}{r1}\PYG{p}{.}\PYG{n}{start}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{r2}\PYG{p}{.}\PYG{n}{end}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{n}{r2}\PYG{p}{.}\PYG{n}{start}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{r1}\PYG{p}{.}\PYG{n}{end}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+文档型注释中的这两小段代码会出现在 \texttt{cargo doc} 生成的文档中，如图 8-3 所示。
+
+\myFigure{images/ch08/fig-8-3.jpeg}{图 8-3：展示一些文档测试的文档}
+
+它们也会成为两个独立的测试：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }\PYG{n+nb}{test}
+\PYG{+w}{   }Compiling\PYG{+w}{ }ranges\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../ranges\PYG{o}{)}
+...
+\PYG{+w}{   }Doc\PYGZhy{}tests\PYG{+w}{ }ranges
+
+running\PYG{+w}{ }\PYG{l+m}{2}\PYG{+w}{ }tests
+\PYG{n+nb}{test}\PYG{+w}{ }overlap\PYGZus{}0\PYG{+w}{ }...\PYG{+w}{ }ok
+\PYG{n+nb}{test}\PYG{+w}{ }overlap\PYGZus{}1\PYG{+w}{ }...\PYG{+w}{ }ok
+
+\PYG{n+nb}{test}\PYG{+w}{ }result:\PYG{+w}{ }ok.\PYG{+w}{ }\PYG{l+m}{2}\PYG{+w}{ }passed\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }failed\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }ignored\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }measured\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }filtered\PYG{+w}{ }out
+\end{Verbatim}
+
+如果将 \texttt{--verbose} 标志传给 Cargo，你会看到它正在使用 \texttt{rustdoc --test} 运行这两个测试。\texttt{rustdoc} 会将每个代码示例存储在一个单独的文件中，并给它们添加几行样板代码，以生成两个程序。这是第一个：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{ranges}\PYG{p}{;}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{ranges}\PYG{p}{::}\PYG{n}{overlap}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{o}{..}\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{ranges}\PYG{p}{::}\PYG{n}{overlap}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{l+m+mi}{5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{101}\PYG{o}{..}\PYG{l+m+mi}{105}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这是第二个：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{ranges}\PYG{p}{;}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{ranges}\PYG{p}{::}\PYG{n}{overlap}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果这些程序能成功编译并运行，则测试通过。
+
+这两个代码示例都包含一些断言，但这只是因为在这种情况下，断言构成了不错的文档。文档测试背后的理念并不是将所有测试都放入注释中。相反，你应该编写尽可能好的文档，Rust 只会帮你确保文档中的代码示例能实际编译和运行。
+
+通常，哪怕一个最小的工作示例都会包含一些细节，像导入或设置代码这样的细节是编译代码所必需的，只是还没重要到值得在文档中展示。要隐藏代码示例中的一行，请在该行的开头放置一个 \texttt{\#}，后跟一个空格：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 让阳光照进来，并运行模拟器一段时间}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{///     \PYGZsh{} use fern\PYGZus{}sim::Terrarium;}
+\PYG{l+s+sd}{///     \PYGZsh{} use std::time::Duration;}
+\PYG{l+s+sd}{///     \PYGZsh{} let mut tm = Terrarium::new();}
+\PYG{l+s+sd}{///     tm.apply\PYGZus{}sunlight(Duration::from\PYGZus{}secs(60));}
+\PYG{l+s+sd}{///}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{apply\PYGZus{}sunlight}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{time}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Duration}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+有时在文档中展示完整的示例程序（包含 \texttt{main} 函数）会很有帮助。显然，如果这些代码片段出现在代码示例中，你也不希望 \texttt{rustdoc} 自动添加包装代码，因为那样会导致编译无法通过。因此，\texttt{rustdoc} 会将所有精确包含字符串 \texttt{fn main} 的代码块视为一个完整的程序，不向其中添加任何代码。
+
+可以针对特定的代码块禁用测试。要告诉 Rust 编译你的示例，但不实际运行它，请使用带有 \texttt{no\_run} 注释的多行代码块：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 将本地玻璃栽培箱的所有照片上传到在线画廊}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// ```no\PYGZus{}run}
+\PYG{l+s+sd}{/// let mut session = fern\PYGZus{}sim::connect();}
+\PYG{l+s+sd}{/// session.upload\PYGZus{}all();}
+\PYG{l+s+sd}{/// ```}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{upload\PYGZus{}all}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果代码甚至都不希望编译，请改用 \texttt{ignore} 而不是 \texttt{no\_run}。标记为 \texttt{ignore} 的块不会出现在 \texttt{cargo run} 的输出中，但 \texttt{no\_run} 测试如果编译了就会显示为已通过。如果代码块根本不是 Rust 代码，请使用语言的名称，比如 \texttt{c++} 或 \texttt{sh}，或用 \texttt{text} 表示纯文本。\texttt{rustdoc} 并不了解数百种编程语言的名称，相反，它将任何自己无法识别的注解都理解为该代码块不是 Rust。这会禁用代码的高亮显示和文档测试功能。
+
+\section{指定依赖项}
+
+前面我们看到过告诉 Cargo 从哪里获取项目所依赖的 crate 源代码的一种方法：通过版本号。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.6.1}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+还有几种指定依赖项的方法，以及一些关于要使用哪个版本的微妙细节，因此值得在这上面花一些时间来讲一下。
+
+首先，你可能想要使用根本没发布在 crates.io 上的依赖项。一种方法是指定 Git 存储库 URL 和修订号：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{git}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{https://github.com/Piston/image.git}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rev}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{528f19c}\PYG{l+s+s2}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个特定的 crate 是开源的，托管在 GitHub 上，但你也可以轻松地指向托管在公司内网上的私有 Git 存储库。如上述代码所示，你可以指定要使用的特定版本（\texttt{rev}）、标签（\texttt{tag}）或分支名（\texttt{branch}）。（这些都是告诉 Git 要检出哪个源代码版本的方法。）
+
+另一种方法是指定一个包含 crate 源代码的目录：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{path}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{vendor/image}\PYG{l+s+s2}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果你的团队有个做版本控制的单一存储库，而且其中包含多个 crate 的源代码，或者可能包含整个依赖图，那么这种方法就很方便。每个 crate 都可以使用相对路径指定其依赖项。
+
+对依赖项进行这种层级的控制是一项非常强大的特性。如果你要使用的任何开源 crate 都不完全符合你的喜好，那么可以简单地对其进行分叉：只需点击 GitHub 上的 Fork 按钮并更改 Cargo.toml 文件中的一行即可。你的下一次 \texttt{cargo build} 将自然使用此 crate 的分叉版本而非官方版本。
+
+\subsection{版本}
+
+当你在 Cargo.toml 文件中写入类似 \texttt{image = "0.13.0"} 这样的内容时，Cargo 会相当宽松地理解它。它会使用自认为与版本 0.13.0 兼容的最新版本的 \texttt{image}。
+
+这些兼容性规则改编自语义化版本规范。
+
+\begin{itemize}
+\item 以 0.0 开头的版本号还非常原始，所以 Cargo 永远不会假定它能与任何其他版本兼容。
+\item 以 0.\emph{x}（\emph{x} 不为 0）开头的版本号，可认为与 0.\emph{x} 系列的版本兼容。前面我们指定了 \texttt{image} 版本为 0.6.1，但如果可用，则 Cargo 会使用 0.6.3。（这跟语义化版本规范所说的 0.\emph{x} 版本号规则不太一样，但事实证明这条规则太有用了，不能遗漏。）
+\item 一旦项目达到 1.0，只有出现新的主版本号时才会破坏兼容性。因此，如果你要求版本为 2.0.1，那么 Cargo 可能会使用 2.17.99，但不会使用 3.0。
+\end{itemize}
+
+默认情况下版本号是灵活的，否则使用哪个版本的问题很快就会变成过度的束缚。假设一个库 \texttt{libA} 使用 \texttt{num = "0.1.31"}，而另一个库 \texttt{libB} 使用 \texttt{num = "0.1.29"}。如果版本号需要完全匹配，则没有项目能够同时使用这两个库。允许 Cargo 使用任何兼容版本是一个更实用的默认设定。
+
+不过，不同的项目在依赖性和版本控制方面有不同的需求。你可以使用一些运算符来指定确切的版本或版本范围，如表 8-3 所示。
+
+\myCaption{表 8-3：在 Cargo.toml 文件中指定版本}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=1.019\hsize\raggedright\arraybackslash}X>{\hsize=0.981\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{Cargo.toml 行} & \textcolor{white}{含义} \\
+\texttt{image = "=0.10.0"} & 仅使用确切的版本 0.10.0 \\
+\texttt{image = ">=1.0.5"} & 使用 1.0.5 或更高版本（甚至 2.9，如果其可用的话） \\
+\texttt{image = ">1.0.5 <1.1.9"} & 使用高于 1.0.5 但低于 1.1.9 的版本 \\
+\texttt{image = "<=2.7.10"} & 使用 2.7.10 或更早的任何版本 \\
+\end{tabularx}
+\myTableEnd
+
+你偶尔会看到的另一种版本规范是使用通配符 \texttt{*}。它会告诉 Cargo 任何版本都可以。除非其他 Cargo.toml 文件包含更具体的约束，否则 Cargo 将使用最新的可用版本。doc.crates.io 上的 Cargo 文档更详细地介绍了这些版本规范。
+
+请注意，兼容性规则意味着不能纯粹出于营销目的而选择版本号。这实际上意味着它们是 crate 的维护者与其用户之间的契约。如果你维护一个版本为 1.7 的 crate，并且决定移除一个函数或进行任何其他不完全向后兼容的更改，则必须将版本号提高到 2.0。如果你将其称为 1.8，就相当于声称这个新版本与 1.7 兼容，而用户可能会发现构建失败了。
+
+\subsection{Cargo.lock}
+
+Cargo.toml 中的版本号是刻意保持灵活的，但我们不希望每次构建 Cargo 时都将其升级到最新的库版本。想象一下，当你正处于紧张的调试过程中时，\texttt{cargo build} 突然升级到了新版本的库。这可能带来难以估量的破坏性。调试过程中引入的任何变数都是坏事。事实上，对库而言，从来就没有什么好的时机进行意料之外的改变。
+
+因此，Cargo 有一种内置机制来防止发生这种情况。当第一次构建项目时，Cargo 会输出一个 Cargo.lock 文件，以记录它使用的每个 crate 的确切版本。以后的构建都将参考此文件并继续使用相同的版本。仅当你要求 Cargo 升级时它才会升级到更新版本，方法是手动增加 Cargo.toml 文件中的版本号或运行 \texttt{cargo update}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }update
+\PYG{+w}{    }Updating\PYG{+w}{ }registry\PYG{+w}{ }\PYG{l+s+sb}{`}https://github.com/rust\PYGZhy{}lang/crates.io\PYGZhy{}index\PYG{l+s+sb}{`}
+\PYG{+w}{    }Updating\PYG{+w}{ }libc\PYG{+w}{ }v0.2.7\PYG{+w}{ }\PYGZhy{}\PYGZgt{}\PYG{+w}{ }v0.2.11
+\PYG{+w}{    }Updating\PYG{+w}{ }png\PYG{+w}{ }v0.4.2\PYG{+w}{ }\PYGZhy{}\PYGZgt{}\PYG{+w}{ }v0.4.3
+\end{Verbatim}
+
+\texttt{cargo update} 只会升级到与你在 Cargo.toml 中指定的内容兼容的最新版本。如果你指定了 \texttt{image = "0.6.1"}，并且想要升级到版本 0.10.0，则必须自己在 Cargo.toml 中进行更改。下次构建时，Cargo 会将 \texttt{image} 库更新到这个新版本并将新版本号存储在 Cargo.lock 中。
+
+前面的示例展示 Cargo 更新了托管在 crates.io 上的两个 crate。存储在 Git 中的依赖项会发生非常相似的情况。假设 Cargo.toml 文件包含以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{git}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{https://github.com/Piston/image.git}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{branch}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{master}\PYG{l+s+s2}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果 \texttt{cargo build} 发现我们有一个 Cargo.lock 文件，那么它将不会从 Git 存储库中拉取新的更改。相反，它会读取 Cargo.lock 并使用与上次相同的修订版。但是 \texttt{cargo update} 会重新从 \texttt{master} 中拉取，以便我们的下一个构建使用最新版本。
+
+Cargo.lock 是自动生成的，通常不用手动编辑。不过，如果此项目是可执行文件，那你就应该将 Cargo.lock 提交到版本控制。这样，构建项目的每个人总是会获得相同的版本。Cargo.lock 文件的版本历史中会记录这些依赖项更新。
+
+如果你的项目是一个普通的 Rust 库，请不要费心提交 Cargo.lock。你的库的下游用户拥有包含其整个依赖图版本信息的 Cargo.lock 文件，他们将忽略这个库的 Cargo.lock 文件。在极少数情况下，你的项目是一个共享库（比如输出是 .dll 文件、.dylib 文件或 .so 文件），它没有这样的下游 \texttt{cargo} 用户，这时候就应该提交 Cargo.lock。
+
+Cargo.toml 灵活的版本说明符使你可以轻松地在项目中使用 Rust 库，并最大限度地提高库之间的兼容性。Cargo.lock 中的这些详尽记录可以支持跨机器的一致且可重现的构建。它们会共同帮你避开“依赖地狱”的问题。
+
+\section{将 crate 发布到 crates.io}
+
+如果你已决定将这个蕨类植物模拟库作为开源软件发布，那么，恭喜！这部分很简单。
+
+首先，确保 Cargo 可以为你打包 crate。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }package
+warning:\PYG{+w}{ }manifest\PYG{+w}{ }has\PYG{+w}{ }no\PYG{+w}{ }description,\PYG{+w}{ }license,\PYG{+w}{ }license\PYGZhy{}file,\PYG{+w}{ }documentation,
+homepage\PYG{+w}{ }or\PYG{+w}{ }repository.\PYG{+w}{ }See\PYG{+w}{ }http://doc.crates.io/manifest.html\PYGZsh{}package\PYGZhy{}metadata
+\PYG{k}{for}\PYG{+w}{ }more\PYG{+w}{ }info.
+\PYG{+w}{   }Packaging\PYG{+w}{ }fern\PYGZus{}sim\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../fern\PYGZus{}sim\PYG{o}{)}
+\PYG{+w}{   }Verifying\PYG{+w}{ }fern\PYGZus{}sim\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../fern\PYGZus{}sim\PYG{o}{)}
+\PYG{+w}{   }Compiling\PYG{+w}{ }fern\PYGZus{}sim\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../fern\PYGZus{}sim/target/package/fern\PYGZus{}sim\PYGZhy{}0.1.0\PYG{o}{)}
+\end{Verbatim}
+
+\texttt{cargo package} 命令会创建一个文件（在本例中为 target/\allowbreak{}package/\allowbreak{}fern\_sim-0.1.0.crate），其中包含所有库的源文件（包括 Cargo.toml）。这是你要上传到 crates.io 以便与全世界分享的文件。（可以使用 \texttt{cargo package --list} 来查看包含哪些文件。）然后 Cargo 会像最终用户一样，从 .crate 文件构建这个库，以仔细检查其工作。
+
+Cargo 会警告 Cargo.toml 的 \texttt{[package]} 部分缺少一些对下游用户很重要的信息，比如你分发代码所依据的许可证。警告中给出的 URL 是一个很好的资源，因此我们不会在这里详细解释所有字段。简而言之，你可以通过向 Cargo.toml 添加几行代码来修复此警告。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{package}\PYG{p}{]}
+\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fern\PYGZus{}sim}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.1.0}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2021}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{authors}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You \PYGZlt{}you@example.com\PYGZgt{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}
+\PYG{n}{license}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{MIT}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{homepage}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{https://fernsim.example.com/}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{repository}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{https://gitlair.com/sporeador/fern\PYGZus{}sim}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{documentation}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{http://fernsim.example.com/docs}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{description}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}
+\PYG{l+s}{Fern simulation, from the cellular level up.}
+\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}
+\end{Verbatim}
+
+\begin{myNote}
+一旦在 crates.io 上发布了这个 crate，任何下载你的 crate 的人都能看到此 Cargo.toml 文件。因此，如果 \texttt{authors} 字段包含你希望保密的电子邮件地址，那么现在是更改它的时候了。
+\end{myNote}
+
+这个阶段有时会出现的另一个问题是你的 Cargo.toml 文件可能通过 \texttt{path} 指定其他 crate 的位置，如 8.7 节所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{path}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{vendor/image}\PYG{l+s+s2}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+对你和你的团队来说，这可能没什么问题。但当其他人下载 \texttt{fern\_sim} 库时，他们的计算机上可能不会有与你一样的文件和目录。因此，Cargo 会\textbf{忽略}自动下载的库中的 \texttt{path} 键，而这可能会导致构建错误。解决方案一目了然：如果你的库要发布在 crates.io 上，那么它的依赖项也应该在 crates.io 上。应该指定版本号而不是 \texttt{path}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.13.0}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+如果你愿意，可以同时指定一个 \texttt{path}（供你自己在本地构建时优先使用）和一个 \texttt{version}（供所有其他用户使用）：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{path}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{vendor/image}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{version}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.13.0}\PYG{l+s+s2}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当然，在这种情况下，你有责任确保两者保持同步。
+
+最后，在发布 crate 之前，你需要登录 crates.io 并获取 API 密钥。这一步很简单：一旦你在 crates.io 上有了账户，其“账户设置”页面就会展示一条 \texttt{cargo login} 命令，就像这样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }login\PYG{+w}{ }5j0dV54BjlXBpUUbfIj7G9DvNl1vsWW1
+\end{Verbatim}
+
+Cargo 会把密钥保存在配置文件中，API 密钥应该像密码一样保密。因此，你应该只在自己控制的计算机上运行此命令。
+
+这些都完成后，最后一步是运行 \texttt{cargo publish}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }publish
+\PYG{+w}{    }Updating\PYG{+w}{ }registry\PYG{+w}{ }\PYG{l+s+sb}{`}https://github.com/rust\PYGZhy{}lang/crates.io\PYGZhy{}index\PYG{l+s+sb}{`}
+\PYG{+w}{   }Uploading\PYG{+w}{ }fern\PYGZus{}sim\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}file:///.../fern\PYGZus{}sim\PYG{o}{)}
+\end{Verbatim}
+
+做完这一步，你的库就成为 crates.io 中成千上万个库中的一员了。
+
+\section{工作空间}
+
+随着项目不断“成长”，你最终会写出很多 crate。它们并存于同一个源代码存储库中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{fernsoft}\PYG{o}{/}
+\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{p}{.}\PYG{n}{git}\PYG{o}{/}\PYG{o}{..}\PYG{p}{.}
+\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{fern\PYGZus{}sim}\PYG{o}{/}
+\PYG{err}{│}\PYG{+w}{   }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{toml}
+\PYG{err}{│}\PYG{+w}{   }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{lock}
+\PYG{err}{│}\PYG{+w}{   }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{src}\PYG{o}{/}\PYG{o}{..}\PYG{p}{.}
+\PYG{err}{│}\PYG{+w}{   }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{target}\PYG{o}{/}\PYG{o}{..}\PYG{p}{.}
+\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{fern\PYGZus{}img}\PYG{o}{/}
+\PYG{err}{│}\PYG{+w}{   }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{toml}
+\PYG{err}{│}\PYG{+w}{   }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{lock}
+\PYG{err}{│}\PYG{+w}{   }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{src}\PYG{o}{/}\PYG{o}{..}\PYG{p}{.}
+\PYG{err}{│}\PYG{+w}{   }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{target}\PYG{o}{/}\PYG{o}{..}\PYG{p}{.}
+\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{fern\PYGZus{}video}\PYG{o}{/}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{toml}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{lock}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{src}\PYG{o}{/}\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{target}\PYG{o}{/}\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+Cargo 的工作方式是，每个 crate 都有自己的构建目录 \texttt{target}，其中包含该 crate 的所有依赖项的单独构建。这些构建目录是完全独立的。即使两个 crate 具有共同的依赖项，它们也不能共享任何已编译的代码。这好像有点儿浪费。
+
+你可以使用 Cargo 工作空间来节省编译时间和磁盘空间。Cargo \textbf{工作空间}是一组 crate，它们共享着公共构建目录和 Cargo.lock 文件。
+
+你需要做的就是在存储库的根目录中创建一个 Cargo.toml 文件，并将下面这两行代码放入其中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{workspace}\PYG{p}{]}
+\PYG{n}{members}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fern\PYGZus{}sim}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fern\PYGZus{}img}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fern\PYGZus{}video}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}
+\end{Verbatim}
+
+这里的 \texttt{fern\_sim} 等是那些包含你的 crate 的子目录名。这些子目录中所有残存的 Cargo.lock 文件和 target 目录都需要删除。
+
+完成此操作后，任何 crate 中的 \texttt{cargo build} 都会自动在根目录（在本例中为 fernsoft/\allowbreak{}target）下创建和使用共享构建目录。命令 \texttt{cargo build --workspace} 会构建当前工作空间中的所有 crate。\texttt{cargo test} 和 \texttt{cargo doc} 也能接受 \texttt{--workspace} 选项。
+
+\section{更多好资源}
+
+如果你仍然意犹未尽，Rust 社区还准备了一些你可能感兴趣的资源。
+
+\begin{itemize}
+\item 当你在 crates.io 上发布一个开源 crate 时，你的文档会自动渲染并托管在 docs.rs 上，这要归功于 Onur Aslan。
+\item 如果你的项目在 GitHub 上，那么 Travis CI 可以在每次推送时构建和测试你的代码。设置起来非常容易，有关详细信息，请参阅 travis-ci.org。如果你已经熟悉 Travis，则可以从下面这个 .travis.yml 文件开始。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{language}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{rust}
+\PYG{n}{rust}\PYG{p}{:}
+\PYG{+w}{  }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{stable}
+\end{Verbatim}
+
+\item 你可以从 crate 的顶层文档型注释生成 README.md 文件。此特性是由 Livio Ribeiro 作为第三方 Cargo 插件提供的。运行 \texttt{cargo install cargo-readme} 来安装此插件，然后运行 \texttt{cargo readme --help} 来学习如何使用它。
+\end{itemize}
+
+我们将继续前行。
+
+虽然 Rust 是一门新语言，但它旨在支持大型、雄心勃勃的项目。它有很棒的工具和活跃的社区。系统程序员\textbf{也能}享受美好。
+

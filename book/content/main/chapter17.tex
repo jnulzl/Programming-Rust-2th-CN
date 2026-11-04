@@ -1,0 +1,1808 @@
+% chapter17 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_148.html, part0000_split_149.html, part0000_split_150.html, part0000_split_151.html, part0000_split_152.html, part0000_split_153.html, part0000_split_154.html
+
+\begin{myEpigraph}{——Alan Perlis，警句 \#34}
+字符串是一个光秃秃的数据结构，其途经之地会出现很多重复的处理。它简直是隐藏重要信息的“完美”手段。
+\end{myEpigraph}
+
+本书一直在使用 Rust 的主要文本类型 \texttt{String}、\texttt{str} 和 \texttt{char}。3.7 节曾讲解过字符和字符串字面量的语法，也展示过字符串在内存中的表示方式。在本章中，我们将更详细地介绍文本处理技术。
+
+本章包括如下内容。
+
+\begin{itemize}
+\item 提供一些 Unicode 背景知识来帮助你理解标准库的设计。
+\item 讲解表示单个 Unicode 码点的 \texttt{char} 类型。
+\item 讲解 \texttt{String} 类型和 \texttt{str} 类型，二者是表示拥有和借用的 Unicode 字符序列。它们有各种各样的方法来构建、搜索、修改和迭代其内容。
+\item 介绍 Rust 的字符串格式化工具，比如 \texttt{println!} 宏和 \texttt{format!} 宏。你可以编写自己的宏来处理格式化字符串，并扩展它们以支持自己的类型。
+\item 概述 Rust 对正则表达式的支持。
+\item 讨论为什么 Unicode 的规范化很重要，并展示如何在 Rust 中对其进行规范化。
+\end{itemize}
+
+\section{一些 Unicode 背景知识}
+
+本书是关于 Rust 而不是 Unicode 的，后者已经有专门的书介绍它了。但是，Rust 的字符类型和字符串类型都是围绕 Unicode 设计的。此处介绍一些 Unicode 的背景知识有助于更好地理解 Rust。
+
+\subsection{ASCII、Latin-1 和 Unicode}
+
+Unicode 和 ASCII 对于从 \texttt{0} 到 \texttt{0x7f} 的所有 ASCII 码点是一一对应的，比如，它们都为字符 \texttt{*} 分配了码点 \texttt{42}。同样，Unicode 也将 \texttt{0} 到 \texttt{0xff} 分配给了与 ISO/IEC 8859-1 字符集相同的字符，这是 ASCII 字符集用于西欧语言的 8 位超集。Unicode 将此码点范围称为 \textbf{Latin-1 码块}，因此我们也将使用耳熟能详的名称 \textbf{Latin-1} 来指代 ISO/IEC 8859-1。
+
+由于 Unicode 是 Latin-1 的超集，因此将 Latin-1 转换为 Unicode 甚至不需要查表：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{latin1\PYGZus{}to\PYGZus{}char}\PYG{p}{(}\PYG{n}{latin1}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u8}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{char}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{latin1}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{char}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+反向转换也很简单，假设码点落在了 Latin-1 范围内。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{char\PYGZus{}to\PYGZus{}latin1}\PYG{p}{(}\PYG{n}{c}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{char}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{c}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mh}{0xff}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{c}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u8}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{None}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{UTF-8 编码}
+
+Rust 的 \texttt{String} 类型和 \texttt{str} 类型表示使用了 UTF-8 编码形式的文本。UTF-8 会将字符编码为 1\textasciitilde{}4 字节的序列，如图 17-1 所示。
+
+\myFigure{images/ch17/fig-17-1.jpeg}{图 17-1：UTF-8 编码}
+
+格式良好的 UTF-8 序列有两个限制。首先，只有任何给定码点的最短编码才被认为是格式良好的，你不能花费 4 字节来编码原本只需要 3 字节的码点。此规则确保了每个码点只会有唯一一个 UTF-8 编码。其次，格式良好的 UTF-8 不得对从 \texttt{0xd800} 到 \texttt{0xdfff} 或超过 \texttt{0x10ffff} 的数值进行编码：这些数值要么保留用作非字符目的，要么完全超出了 Unicode 的范围。
+
+图 17-2 展示了一些示例。
+
+\myFigure{images/ch17/fig-17-2.jpeg}{图 17-2：UTF-8 示例}
+
+请注意，虽然在螃蟹表情符号的编码中其前导字节对码点只贡献了一串 0，但是它仍然需要用 4 字节来编码：3 字节的 UTF-8 编码只能表达 16 位码点，而 \texttt{0x1f980} 有 17 位长。
+
+下面是一个包含具有不同编码长度字符的字符串的简单示例：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{うどん: udon}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{as\PYGZus{}bytes}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+m+mh}{0xe3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x81}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x86}\PYG{p}{,}\PYG{+w}{ }\PYG{c+c1}{// う}
+\PYG{+w}{             }\PYG{l+m+mh}{0xe3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x81}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0xa9}\PYG{p}{,}\PYG{+w}{ }\PYG{c+c1}{// ど}
+\PYG{+w}{             }\PYG{l+m+mh}{0xe3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x82}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x93}\PYG{p}{,}\PYG{+w}{ }\PYG{c+c1}{// ん}
+\PYG{+w}{             }\PYG{l+m+mh}{0x3a}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x20}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x75}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x64}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x6f}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x6e}\PYG{+w}{ }\PYG{c+c1}{// : udon}
+\PYG{+w}{           }\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+图 17-2 还展示了 UTF-8 一些非常有用的属性。
+
+\begin{itemize}
+\item 由于 UTF-8 会把码点 \texttt{0} \textasciitilde{} \texttt{0x7f} 编码为字节 \texttt{0} \textasciitilde{} \texttt{0x7f}，因此一段 ASCII 文本必然是有效的 UTF-8 字符串。反过来，如果 UTF-8 字符串中只包含 ASCII 字符，则它也必然是有效的 ASCII 字符串。
+
+对于 Latin-1 则不是这样的，比如，Latin-1 会将 \texttt{é} 编码为字节 \texttt{0xe9}，而 UTF-8 会将其解释为三字节编码中的第一字节。
+\item 通过查看任何字节的高位，就能立刻判断出它是某个字符的 UTF-8 编码的起始字节还是中间字节。
+\item 编码的第一字节会单独通过其前导位告诉你编码的全长。
+\item 由于不会有任何编码超过 4 字节，因此 UTF-8 在处理时从不需要无限循环，这在处理不受信任的数据时非常有用。
+\item 在格式良好的 UTF-8 中，即使从字节中间的任意点开始，你也始终可以明确地找出该字符编码的起始位置和结束位置。UTF-8 的第一字节和后面的字节一定不同，所以一段编码不可能从另一段编码的中间开始。第一字节会确定编码的总长度，因此任何一段编码都不可能是另一段编码的前缀。这很有用。例如，要在 UTF-8 字符串中搜索 ASCII 分隔符只需对分隔符的字节进行简单扫描即可。这个分隔符永远不会作为多字节编码的任何部分出现，因此根本不需要跟踪 UTF-8 的结构。类似地，在一个字节串中搜索另一个字节串的算法无须针对 UTF-8 字符串做修改即可正常工作，甚至连那些根本不会检查待搜文本中每字节的算法也没问题。
+\end{itemize}
+
+尽管可变宽度编码比固定宽度编码更复杂，但以上特征让 UTF-8 比预想的更容易使用。标准库会帮你处理绝大部分问题。
+
+\subsection{文本方向性}
+
+拉丁文、西里尔文、泰文等文字是从左向右书写的，而希伯来文、阿拉伯文等文字则是从右向左书写的。Unicode 以写入或读取字符的常规顺序存储字符，因此在这种情况下字符串（如希伯来语文本）中保存的首字节是对写在最右端的字符的编码。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{{\hebrewfont ערב} {\hebrewfont טוב}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}{\hebrewfont ע}\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\section{字符（char）}
+
+Rust 的 \texttt{char} 类型是一个包含 Unicode 码点的 32 位值。\texttt{char} 保证会落在 \texttt{0}\textasciitilde{} \texttt{0xd7ff} 或 \texttt{0xe000}\textasciitilde{} \texttt{0x10ffff} 范围内，所有用于创建和操作 \texttt{char} 值的方法都会确保此规则永远成立。\texttt{char} 类型实现了 \texttt{Copy} 和 \texttt{Clone}，以及用于比较、哈希和格式化的所有常用特型。
+
+字符串切片可以使用 \texttt{slice.chars()} 生成针对其字符的迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{カニ}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}カ\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+接下来的讲解中出现的变量 \texttt{ch} 全都是 \texttt{char} 类型的。
+
+\subsection{字符分类}
+
+\texttt{char} 类型的一些方法可以将字符分入几个常见类别，如表 17-1 所示。这些都是从 Unicode 中提取的定义。
+
+\myCaption{表 17-1：\texttt{char} 类型的分类方法}
+
+\myFigure{images/ch17/00064.jpeg}{}
+
+一组仅限于 ASCII 的方法，对任何非 ASCII \texttt{char} 都会返回 \texttt{false}，如表 17-2 所示。
+
+\myCaption{表 17-2：\texttt{char} 的 ASCII 分类方法}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.883\hsize\raggedright\arraybackslash}X>{\hsize=0.947\hsize\raggedright\arraybackslash}X>{\hsize=1.170\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{方法} & \textcolor{white}{描述} & \textcolor{white}{例子} \\
+\texttt{ch.is\_ascii()} & ASCII 字符：码点介于 \texttt{0} 和 \texttt{127} 之间的字符 & \texttt{'n'.is\_ascii()}\newline{}\texttt{!'ñ'.is\_ascii()} \\
+\texttt{ch.is\_ascii\_alphabetic()} & 大写或小写 ASCII 字母，在 \texttt{'A'..='Z'} 或 \texttt{'a'..='z'} 范围内 & \texttt{'n'.is\_ascii\_alphabetic()}\newline{}\texttt{!'1'.is\_ascii\_alphabetic()}\newline{}\texttt{!'ñ'.is\_ascii\_alphabetic()} \\
+\texttt{ch.is\_ascii\_digit()} & ASCII 数字，在 \texttt{'0'..='9'} 范围内 & \texttt{'8'.is\_ascii\_digit()}\newline{}\texttt{!'-'.is\_ascii\_digit()}\newline{}\texttt{!'⑧'.is\_ascii\_digit()} \\
+\texttt{ch.is\_ascii\_hexdigit()} & \texttt{'0'..='9'}、\texttt{'A'..='F'} 或 \texttt{'a'..='f'} 范围内的任何字符 &  \\
+\texttt{ch.is\_ascii\_alphanumeric()} & ASCII 数字或者大写字母或小写字母 & \texttt{'q'.is\_ascii\_alphanumeric()}\newline{}\texttt{'0'.is\_ascii\_alphanumeric()} \\
+\texttt{ch.is\_ascii\_control()} & ASCII 控制字符，包括 \texttt{DEL} & \texttt{'\textbackslash{}n'.is\_ascii\_control()}\newline{}\texttt{'\textbackslash{}x7f'.is\_ascii\_control()} \\
+\texttt{ch.is\_ascii\_graphic()} & 会在页面上留下墨迹的任何 ASCII 字符：既不是空白字符也不是控制字符 & \texttt{'Q'.is\_ascii\_graphic()}\newline{}\texttt{'\textasciitilde{}'.is\_ascii\_graphic()}\newline{}\texttt{!' '.is\_ascii\_graphic()} \\
+\texttt{ch.is\_ascii\_uppercase(), ch.is\_ascii\_lowercase()} & ASCII 大写字母和小写字母 & \texttt{'z'.is\_ascii\_lowercase()}\newline{}\texttt{'Z'.is\_ascii\_uppercase()} \\
+\texttt{ch.is\_ascii\_punctuation()} & 既不是字母也不是数字的任何 ASCII 图形字符 \footnote{也就是广义标点。——译者注} &  \\
+\texttt{ch.is\_ascii\_whitespace()} & ASCII 空白字符：空格、水平制表符、换行符、换页符或回车符 & \texttt{' '.is\_ascii\_whitespace()}\newline{}\texttt{'\textbackslash{}n'.is\_ascii\_whitespace()}\newline{}\texttt{!'\textbackslash{}u\{A0\}'.is\_ascii\_whitespace()} \\
+\end{tabularx}
+\myTableEnd
+
+所有 \texttt{is\_ascii\_...} 方法也可用于 \texttt{u8} 字节类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{l+m+mi}{32}\PYG{k}{u8}\PYG{p}{.}\PYG{n}{is\PYGZus{}ascii\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{l+s+sc}{b\PYGZsq{}9\PYGZsq{}}\PYG{p}{.}\PYG{n}{is\PYGZus{}ascii\PYGZus{}digit}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+在使用这些函数来实现现有规范（如编程语言标准或文件格式）时一定要小心，因为这些分类可能存在某些令人吃惊的差异。例如，注意 \texttt{is\_whitespace} 和 \texttt{is\_ascii\_whitespace} 对某些字符的处理不同：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line\PYGZus{}tab}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}u\PYGZob{}000b\PYGZcb{}\PYGZsq{}}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{//“行间制表符”，也叫“垂直制表符”}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{line\PYGZus{}tab}\PYG{p}{.}\PYG{n}{is\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{line\PYGZus{}tab}\PYG{p}{.}\PYG{n}{is\PYGZus{}ascii\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这是因为 \texttt{char::is\_ascii\_whitespace} 函数实现了许多 Web 标准中通用的空白字符定义，而 \texttt{char::is\_whitespace} 遵循的是 Unicode 标准。
+
+\subsection{处理数字}
+
+对于数字的处理，可以使用以下方法。
+
+\begin{mySidenote}
+\texttt{ch.to\_digit(radix)}（转数字）
+\end{mySidenote}
+
+判断 \texttt{ch} 是不是以 \texttt{radix} 为基数的数字。如果是，就返回 \texttt{Some(num)}，其中 \texttt{num} 是 \texttt{u32}；否则，返回 \texttt{None}。此方法只会识别 ASCII 数字，而不包括 \texttt{char::is\_numeric} 涵盖的更广泛的字符类别。\texttt{radix} 参数的范围可以从 2 到 36。对于大于 10 的基数，会用 ASCII 字母（不分大小写）表示值为 10 到 35 的数字。
+
+\begin{myNote}
+\texttt{std::char::from\_digit(num, radix)}（来自数字）
+\end{myNote}
+
+自由函数，只要有可能，就可以把 \texttt{u32} 数字值 \texttt{num} 转换为 \texttt{char}。如果 \texttt{num} 可以表示为 \texttt{radix} 中的单个数字，那么 \texttt{from\_digit} 就会返回 \texttt{Some(ch)}，其中 \texttt{ch} 是数字。当 \texttt{radix} 大于 \texttt{10} 时，\texttt{ch} 可以是小写字母。否则，它会返回 \texttt{None}。
+
+这是 \texttt{to\_digit} 的逆函数。如果 \texttt{std::char::from\_digit(num, radix)} 等于 \texttt{Some(ch)}，则 \texttt{ch.to\_digit(radix)} 等于 \texttt{Some(num)}。如果 \texttt{ch} 是 ASCII 数字或小写字母，则反之亦成立。
+
+\begin{mySidenote}
+\texttt{ch.is\_digit(radix)}（是数字？）
+\end{mySidenote}
+
+如果 \texttt{ch} 可以表示以 \texttt{radix} 为基数的 ASCII 数字，就返回 \texttt{true}。此方法等效于 \texttt{ch.to\_digit(radix) != None}。
+
+关于上述方法，举例如下。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}F\PYGZsq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}digit}\PYG{p}{(}\PYG{l+m+mi}{16}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{15}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{from\PYGZus{}digit}\PYG{p}{(}\PYG{l+m+mi}{15}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{16}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}f\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{is\PYGZus{}digit}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}f\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{16}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{字符大小写转换}
+
+处理字符大小写的方法如下。
+
+\begin{myNote}
+\texttt{ch.is\_lowercase()}（是小写？）和 \texttt{ch.is\_uppercase()}（是大写？）
+\end{myNote}
+
+指出 \texttt{ch} 是小写字母字符还是大写字母字符。这两个方法遵循 Unicode 的派生属性 Lowercase（小写字母）和 Uppercase（大写字母），因此它们涵盖了非拉丁字母表（如希腊字母和西里尔字母），并给出了和 ASCII 一样的预期结果。
+
+\begin{myNote}
+\texttt{ch.to\_lowercase()}（转小写）和 \texttt{ch.to\_uppercase()}（转大写）
+\end{myNote}
+
+根据 Unicode 的默认大小写转换算法，返回生成 \texttt{ch} 的小写和大写对应字符的迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{upper}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}s\PYGZsq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}uppercase}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{upper}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}S\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{upper}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这两个方法会返回迭代器而不是单个字符，因为 Unicode 中的大小写转换并不总是一对一的过程：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 德文字母\PYGZdq{}ß\PYGZdq{}的大写形式是\PYGZdq{}SS\PYGZdq{}：}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{upper}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}ß\PYGZsq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}uppercase}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{upper}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}S\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{upper}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}S\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{upper}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// Unicode规定在将带点的土耳其大写字母\PYGZsq{}İ\PYGZsq{}变为小写时要转成\PYGZsq{}i\PYGZsq{}后跟一个}
+\PYG{c+c1}{// `\PYGZsq{}\PYGZbs{}u\PYGZob{}307\PYGZcb{}\PYGZsq{}`，把点组合到字母上，以便在随后转换回大写字母时保留这个点}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{ch}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}İ\PYGZsq{}}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// `\PYGZsq{}\PYGZbs{}u\PYGZob{}130\PYGZcb{}\PYGZsq{}`}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{lower}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{ch}\PYG{p}{.}\PYG{n}{to\PYGZus{}lowercase}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{lower}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}i\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{lower}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}u\PYGZob{}307\PYGZcb{}\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{lower}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+为便于使用，这些迭代器都实现了 \texttt{std::fmt::Display} 特型，因此可以将它们直接传给 \texttt{println!} 或 \texttt{write!} 宏。
+
+\subsection{与整数之间的转换}
+
+Rust 的 \texttt{as} 运算符会将 \texttt{char} 转换为任何整数类型，并抹掉高位：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}B\PYGZsq{}}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{66}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}饂\PYGZsq{}}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u8}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{66}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{   }\PYG{c+c1}{// 截断高位}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}二\PYGZsq{}}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{i8}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{116}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 同上}
+\end{Verbatim}
+
+\texttt{as} 运算符会将任何 \texttt{u8} 值转换为 \texttt{char}，并且 \texttt{char} 也实现了 \texttt{From<u8>}。但是，更宽的整数类型可以表示无效码点，因此对于那部分整数，必须使用 \texttt{std::char::from\_u32} 进行转换，它会返回 \texttt{Option<char>}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{from}\PYG{p}{(}\PYG{l+m+mi}{66}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}B\PYGZsq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{from\PYGZus{}u32}\PYG{p}{(}\PYG{l+m+mh}{0x9942}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}饂\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{from\PYGZus{}u32}\PYG{p}{(}\PYG{l+m+mh}{0xd800}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 为UTF\PYGZhy{}16保留的码点}
+\end{Verbatim}
+
+\section{String 与 str}
+
+Rust 的 \texttt{String} 类型和 \texttt{str} 类型会保证自己只包含格式良好的 UTF-8。标准库通过限制你创建 \texttt{String} 值和 \texttt{str} 值的方式以及可以对它们执行的操作来确保这一点。这样，当引入这些值时一定是格式良好的，而且在使用中也是如此。它们所有的方法都会坚守这个保证：对它们的任何安全操作都不会引入格式错误的 UTF-8。这就简化了处理文本的代码。
+
+Rust 可以将文本处理方法关联到 \texttt{str} 或 \texttt{String} 上，具体关联到哪个取决于该方法是需要可调整大小的缓冲区还是仅满足于就地使用文本。由于 \texttt{String} 可以解引用成 \texttt{\&str}，因此在 \texttt{str} 上定义的每个方法都可以直接在 \texttt{String} 上使用。本节会介绍这两种类型的方法，并按其功能粗略分组。
+
+文本处理方法会按字节偏移量索引文本并以字节而不是字符为单位测量其长度。实际上，考虑到 Unicode 的性质，按字符索引并不像看起来那么有用，按字节偏移量索引反而更快且更简单。如果试图使用位于某个字符的 UTF-8 编码中间的字节偏移量，则该方法会发生 panic，因此不能通过这种方式引入格式错误的 UTF-8。
+
+\texttt{String} 通过封装 \texttt{Vec<u8>} 实现，并可以确保向量中的内容永远是格式良好的 UTF-8。Rust 永远不会把 \texttt{String} 改成更复杂的表示形式，因此你可以假设 \texttt{String} 的性能表现始终会和 \texttt{Vec} 保持一致。
+
+在后面的讲解里，所有用到的变量都具有表 17-3 中给出的类型。
+
+\myCaption{表 17-3：后面的讲解里要用到的变量类型}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.562\hsize\raggedright\arraybackslash}X>{\hsize=1.438\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{变量} & \textcolor{white}{预设类型} \\
+\texttt{string} & \texttt{String} \\
+\texttt{slice} & \texttt{\&str} 或对某值（如 \texttt{String} 或 \texttt{Rc<String>}）的解引用 \\
+\texttt{ch} & \texttt{char} \\
+\texttt{n} & \texttt{usize}，长度 \\
+\texttt{i}、\texttt{j} & \texttt{usize}，字节偏移量 \\
+\texttt{range} & 字节偏移量的 \texttt{usize} 范围，可以像 \texttt{i..j} 一样完全有界，也可以像 \texttt{i..}、\texttt{..j} 或 \texttt{..} 一样部分有界 \\
+\texttt{pattern} & 任何模式类型：\texttt{char}、\texttt{String}、\texttt{\&str}、\texttt{\&[char]} 或 \texttt{FnMut(char) -> bool} \\
+\end{tabularx}
+\myTableEnd
+
+17.3.6 节会讲解模式类型。
+
+\subsection{创建字符串值}
+
+创建 \texttt{String} 值的常见方法有以下几种。
+
+\begin{mySidenote}
+\texttt{String::new()}（新建）
+\end{mySidenote}
+
+返回一个新的空字符串。这时还没有在堆上分配缓冲区，但将来会按需分配。
+
+\begin{myNote}
+\texttt{String::with\_capacity(n)}（自带容量）
+\end{myNote}
+
+返回一个新的空字符串，其中预先分配了一个足以容纳至少 \texttt{n} 字节的缓冲区。如果事先知道要构建的字符串的长度，则此构造函数可以让你从一开始就正确设置缓冲区大小，而不是等构建字符串时再进行调整。如果字符串的长度超过 \texttt{n} 字节，则该字符串仍会根据需要增加其缓冲区。与向量一样，字符串也有 \texttt{capacity} 方法、\texttt{reserve} 方法和 \texttt{shrink\_to\_fit} 方法，但一般来说默认的分配逻辑就很好。
+
+\begin{myNote}
+\texttt{str\_slice.to\_string()}（转字符串）
+\end{myNote}
+
+分配一个新的 \texttt{String}，其内容是 \texttt{str\_slice} 的副本。本书一直在使用诸如 \texttt{"literal text".to\_string()} 之类的表达式来从字符串字面量生成 \texttt{String}。
+
+\begin{mySidenote}
+\texttt{iter.collect()}（收集）
+\end{mySidenote}
+
+通过串联迭代器的各个条目构造出字符串，迭代器的条目可以是 \texttt{char} 值、\texttt{\&str} 值或 \texttt{String} 值。例如，要从字符串中移除所有空格，可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{spacey}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{man hat tan}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{spaceless}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{spacey}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{filter}\PYG{p}{(}\PYG{o}{|}\PYG{n}{c}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{c}\PYG{p}{.}\PYG{n}{is\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{spaceless}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{manhattan}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+以这种方式使用 \texttt{collect} 可以充分利用 \texttt{String} 对 \texttt{std::iter::FromIterator} 特型的实现。
+
+\begin{mySidenote}
+\texttt{slice.to\_owned()}（转自有）
+\end{mySidenote}
+
+将 \texttt{slice} 的副本作为新分配的 \texttt{String} 返回。\texttt{str} 类型无法实现 \texttt{Clone}：该特型需要在 \texttt{\&str} 上进行 \texttt{clone} 以返回 \texttt{str} 值，但 \texttt{str} 是无固定大小类型。不过，\texttt{\&str} 实现了 \texttt{ToOwned}，这能让实现者指定其自有（\texttt{Owned}）版本的等效类型。
+
+\subsection{简单探查}
+
+下面这些方法可以从字符串切片中获取基本信息。
+
+\begin{mySidenote}
+\texttt{slice.len()}（长度）
+\end{mySidenote}
+
+\texttt{slice} 的长度，以字节为单位。
+
+\begin{mySidenote}
+\texttt{slice.is\_empty()}（为空？）
+\end{mySidenote}
+
+如果 \texttt{slice.len() == 0}，就返回 \texttt{True}。
+
+\begin{mySidenote}
+\texttt{slice[range]}（范围内切片）
+\end{mySidenote}
+
+返回借用了 \texttt{slice} 给定部分的切片。有界的范围、部分有界的范围和无界的范围都可以。
+
+例如：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{full}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{bookkeeping}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{full}\PYG{p}{[}\PYG{o}{..}\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{book}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{full}\PYG{p}{[}\PYG{l+m+mi}{5}\PYG{o}{..}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{eeping}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{full}\PYG{p}{[}\PYG{l+m+mi}{2}\PYG{o}{..}\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ok}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{full}\PYG{p}{[}\PYG{o}{..}\PYG{p}{]}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{11}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{full}\PYG{p}{[}\PYG{l+m+mi}{5}\PYG{o}{..}\PYG{p}{]}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{boo}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{false}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+请注意，不能索引具有单个位置的字符串切片，比如 \texttt{slice[i]}。要想在给定的字节偏移处获取单个字符有点儿笨拙：必须在切片上生成一个 \texttt{chars} 迭代器，并要求它解析成单个字符的 UTF-8：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{parenthesized}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Rust (饂)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parenthesized}\PYG{p}{[}\PYG{l+m+mi}{6}\PYG{o}{..}\PYG{p}{]}\PYG{p}{.}\PYG{n}{chars}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}饂\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+不过，你很少需要这样做。Rust 有更好的方法来迭代切片，17.3.8 节会对此进行讲解。
+
+\begin{mySidenote}
+\texttt{slice.split\_at(i)}（拆分于）
+\end{mySidenote}
+
+返回从 \texttt{slice} 借来的两个共享切片的元组：一个是字节偏移量 \texttt{i} 之前的部分，另一个是字节偏移量 \texttt{i} 之后的部分。换句话说，这会返回 \texttt{(slice[..i], slice[i..])}。
+
+\begin{myNote}
+\texttt{slice.is\_char\_boundary(i)}（是字符边界？）
+\end{myNote}
+
+如果字节偏移量 \texttt{i} 恰好落在字符边界之间并且适合作为 \texttt{slice} 的偏移量，就返回 \texttt{True}。
+
+自然，也可以对切片做相等性比较、排序和哈希。有序比较只是将字符串视为一系列 Unicode 码点，并按字典顺序进行比较。
+
+\subsection{追加文本与插入文本}
+
+以下方法会将文本添加到 \texttt{String} 中。
+
+\begin{mySidenote}
+\texttt{string.push(ch)}（压入）
+\end{mySidenote}
+
+将字符 \texttt{ch} 追加到 \texttt{string} 的末尾。
+
+\begin{myNote}
+\texttt{string.push\_str(slice)}（压入字符串）
+\end{myNote}
+
+追加 \texttt{slice} 的全部内容。
+
+\begin{myNote}
+\texttt{string.extend(iter)}（以 \texttt{iter} 扩展）
+\end{myNote}
+
+将迭代器 \texttt{iter} 生成的条目追加到字符串中。迭代器可以生成 \texttt{char} 值、\texttt{str} 值或 \texttt{String} 值。这是 \texttt{String} 对 \texttt{std::iter::Extend} 特型的实现。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{also\PYGZus{}spaceless}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{con}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{also\PYGZus{}spaceless}\PYG{p}{.}\PYG{n}{extend}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{tri but ion}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{also\PYGZus{}spaceless}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{contribution}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{string.insert(i, ch)}（插入于）
+\end{mySidenote}
+
+在 \texttt{string} 内的字节偏移量 \texttt{i} 处插入单个字符 \texttt{ch}。这需要平移 \texttt{i} 之后的所有字符以便为 \texttt{ch} 腾出空间，因此用这种方式构建字符串的时间复杂度是 \emph{O}(\emph{n})\footnote{不考虑重新分配内存的情况。——译者注}。
+
+\begin{myNote}
+\texttt{string.insert\_str(i, slice)}（插入字符串于）
+\end{myNote}
+
+这会在 \texttt{string} 内插入 \texttt{slice}，但同样需要注意性能问题。
+
+\texttt{String} 实现了 \texttt{std::fmt::Write}，这意味着 \texttt{write!} 宏和 \texttt{writeln!} 宏可以将格式化后的文本追加到 \texttt{String} 上：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{letter}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{writeln!}\PYG{p}{(}\PYG{n}{letter}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Whose \PYGZob{}\PYGZcb{} these are I think I know}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{rutabagas}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{n+nf+fm}{writeln!}\PYG{p}{(}\PYG{n}{letter}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{His house is in the village though;}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{letter}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Whose rutabagas these are I think I know}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{                    His house is in the village though;}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+由于 \texttt{write!} 和 \texttt{writeln!} 是专为写入输出流而设计的，因此它们会返回一个 \texttt{Result}，如果你忽略 \texttt{Result}，则 Rust 会报错。上述代码使用了 \texttt{?} 运算符来处理错误，但实际上写入 \texttt{String} 是肯定不会出错的，因此这种情况下也可以调用 \texttt{.unwrap()}。
+
+因为 \texttt{String} 实现了 \texttt{Add<\&str>} 和 \texttt{AddAssign<\&str>}，所以你可以编写如下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{left}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{partners}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{right}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{crime}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{left}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ in }\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{right}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{partners in crime}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n}{right}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ doesn\PYGZsq{}t pay}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{right}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{crime doesn\PYGZsq{}t pay}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+当应用于字符串时，\texttt{+} 运算符会按值获取其左操作数，所以实际上它可以重用该 \texttt{String} 的缓冲区作为加法的结果。因此，如果左操作数的缓冲区足够容纳结果，那么就不需要分配内存。
+
+遗憾的是，此运算不是对称的，\texttt{+} 的左操作数不能是 \texttt{\&str}，所以不能写成：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{parenthetical}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{(}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{string}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\end{Verbatim}
+
+只能改成：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{parenthetical}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{(}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{string}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\end{Verbatim}
+
+不过，此限制确实妨碍了从末尾向开头反向构建字符串的方式。这种方式性能不佳，因为必须反复把文本平移到缓冲区的末尾。
+
+然而，通过向末尾追加小片段的方式从头到尾构建字符串是高效的。\texttt{String} 的行为方式与向量是一样的，当它需要更多容量时，总是至少将其缓冲区大小加倍。这就令再次复制的开销与字符串的最终大小成正比。不过，使用 \texttt{String::with\_capacity} 创建具有正确缓冲区大小的字符串可以完全避免调整大小，并且可以减少对堆分配器的调用次数。
+
+\subsection{移除文本与替换文本}
+
+\texttt{String} 有以下几个移除文本的方法。（这些方法不会影响字符串的容量，如果需要释放内存，请使用 \texttt{shrink\_to\_fit}。）
+
+\begin{mySidenote}
+\texttt{string.clear()}（清空）
+\end{mySidenote}
+
+将 \texttt{string} 重置为空字符串。
+
+\begin{mySidenote}
+\texttt{string.truncate(n)}（截断为 \emph{n} 个）
+\end{mySidenote}
+
+丢弃字节偏移量 \texttt{n} 之后的所有字符，留下长度最多为 \texttt{n} 的 \texttt{string}。如果 \texttt{string} 短于 \texttt{n} 字节，则毫无效果。
+
+\begin{mySidenote}
+\texttt{string.pop()}（弹出）
+\end{mySidenote}
+
+从 \texttt{string} 中移除最后一个字符（如果有的话），并将其作为 \texttt{Option<char>} 返回。
+
+\begin{mySidenote}
+\texttt{string.remove(i)}（移除）
+\end{mySidenote}
+
+从 \texttt{string} 中移除字节偏移量 \texttt{i} 处的字符并返回该字符，将后面的所有字符平移到前面。这个操作所花费的时间与后续字符的数量呈线性关系。
+
+\begin{mySidenote}
+\texttt{string.drain(range)}（抽取）
+\end{mySidenote}
+
+返回给定字节索引范围内的迭代器，并在迭代器被丢弃后移除字符。范围之后的所有字符都会向前平移：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{choco}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{chocolate}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{choco}\PYG{p}{.}\PYG{n}{drain}\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{o}{..}\PYG{l+m+mi}{6}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{col}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{choco}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{choate}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如果只是想移除这个范围，则可以立即丢弃此迭代器，而不从中提取任何条目。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{winston}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Churchill}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{winston}\PYG{p}{.}\PYG{n}{drain}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{o}{..}\PYG{l+m+mi}{6}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{winston}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Chill}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{string.replace\_range(range, replacement)}（替换范围）
+\end{myNote}
+
+用给定的替代字符串切片替换 \texttt{string} 中的给定范围。切片不必与要替换的范围长度相同，但除非要替换的范围已到达 \texttt{string} 的末尾，否则将需要移动范围末尾之后的所有字节。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{beverage}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{a piña colada}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{beverage}\PYG{p}{.}\PYG{n}{replace\PYGZus{}range}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{o}{..}\PYG{l+m+mi}{7}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{kahlua}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// \PYGZsq{}ñ\PYGZsq{} 是两字节的！}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{beverage}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{a kahlua colada}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{搜索与迭代的约定}
+
+Rust 用于搜索文本和迭代文本的标准库函数遵循了一些命名约定，以便于记忆。
+
+\begin{mySidenote}
+\texttt{r}
+\end{mySidenote}
+
+大多数操作会从头到尾处理文本，但名称以 \textbf{\texttt{r}} 开头的操作会从尾到头处理。例如，\texttt{rsplit} 是 \texttt{split} 的从尾到头版本。在某些情况下，改变处理方向不仅会影响值生成的顺序，还会影响值本身。具体示例请参见图 17-3。
+
+\begin{mySidenote}
+\texttt{n}
+\end{mySidenote}
+
+名称以 \textbf{\texttt{n}} 结尾的迭代器会将自己限定为只取给定数量的匹配项。
+
+\begin{mySidenote}
+\texttt{\_indices}\footnote{\texttt{index} 的复数形式。——译者注}
+\end{mySidenote}
+
+名称以 \texttt{\_indices} 结尾的迭代器会生成通常的迭代值和在此 \texttt{slice} 中的字节偏移量组成的值对。
+
+标准库并不会提供每个操作的所有组合。例如，许多操作并不需要 \texttt{n} 变体，因为很容易简单地提前结束迭代。
+
+\subsection{搜索文本的模式}
+
+当标准库函数需要搜索、匹配、拆分或修剪文本时，它能接受如下几种类型来表示要查找的内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{haystack}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{One fine day, in the middle of the night}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{haystack}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{12}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{haystack}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{night}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{35}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{haystack}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{is\PYGZus{}whitespace}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这些类型称为\textbf{模式}，大多数操作支持它们。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZsh{}\PYGZsh{} Elephants}\PYG{l+s}{\PYGZdq{}}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{trim\PYGZus{}start\PYGZus{}matches}\PYG{p}{(}\PYG{o}{|}\PYG{n}{ch}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{char}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{ch}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}\PYGZsh{}\PYGZsq{}}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{ch}\PYG{p}{.}\PYG{n}{is\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Elephants}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+标准库支持 4 种主要的模式。
+
+\begin{itemize}
+\item 以 \texttt{char} 作为模式意味着要匹配该字符。
+\item 以 \texttt{String}、\texttt{\&str} 或 \texttt{\&\&str} 作为模式，意味着要匹配等于该模式的子串。
+\item 以 \texttt{FnMut(char) -> bool} 闭包作为模式，意味着要匹配该闭包返回 \texttt{true} 的单个字符。
+\item 以 \texttt{\&[char]}（注意并不是 \texttt{\&str}，而是 \texttt{char} 的切片）作为模式，意味着要匹配该列表中出现的任何单个字符。请注意，如果将此列表写成数组字面量，那么可能要调用 \texttt{as\_ref()} 来获得正确的类型。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{code}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s+se}{\PYGZbs{}t}\PYG{l+s}{    function noodle() \PYGZob{} }\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{code}\PYG{p}{.}\PYG{n}{trim\PYGZus{}start\PYGZus{}matches}\PYG{p}{(}\PYG{p}{[}\PYG{l+s+sc}{\PYGZsq{} \PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}t\PYGZsq{}}\PYG{p}{]}\PYG{p}{.}\PYG{n}{as\PYGZus{}ref}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{function noodle() \PYGZob{} }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{c+c1}{// 更短的等效形式：\PYGZam{}[\PYGZsq{} \PYGZsq{}, \PYGZsq{}\PYGZbs{}t\PYGZsq{}][..]4}
+\end{Verbatim}
+
+\begin{myNote}
+\textsuperscript{\textbf{4}}从 Rust 1.51.0 开始，通常可以使用更简短的形式，即 \texttt{\&[' ', '\textbackslash{}t']}。——译者注
+\end{myNote}
+
+如果不这么做，则 Rust 会误以为这是固定大小数组类型 \texttt{\&[char; 2]}。遗憾的是，\texttt{\&[char; 2]} 不是有效的模式类型。
+\end{itemize}
+
+在标准库本身的代码中，模式就是实现了 \texttt{std::str::Pattern} 特型的任意类型。\texttt{Pattern} 的细节还不稳定，所以你不能在稳定版的 Rust 中为自己的类型实现它。但是，将来要支持正则表达式和其他复杂模式也很容易。Rust 可以保证现在支持的模式类型将来仍会继续有效。
+
+\subsection{搜索与替换}
+
+Rust 提供了一些可以在切片中搜索某些模式并可能将其替换成新文本的方法。
+
+\begin{mySidenote}
+\texttt{slice.contains(pattern)}（包含）
+\end{mySidenote}
+
+如果 \texttt{slice} 包含 \texttt{pattern} 的匹配项，就返回 \texttt{true}。
+
+\begin{myNote}
+\texttt{slice.starts\_with(pattern)}（以 \texttt{pattern} 开头）和 \texttt{slice.ends\_with(pattern)}（以 \texttt{pattern} 结尾）
+\end{myNote}
+
+如果 \texttt{slice} 的起始文本或结尾文本与 \texttt{pattern} 相匹配，就返回 \texttt{true}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2017}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{starts\PYGZus{}with}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{is\PYGZus{}numeric}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.find(pattern)}（查找）和 \texttt{slice.rfind(pattern)}（右起查找）
+\end{myNote}
+
+如果 \texttt{slice} 包含 \texttt{pattern} 的匹配项，就返回 \texttt{Some(i)}，其中的 \texttt{i} 是模式出现的字节偏移量。\texttt{find} 方法会返回第一个匹配项，\texttt{rfind} 方法则返回最后一个。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{quip}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{We also know there are known unknowns}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{quip}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{know}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{8}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{quip}\PYG{p}{.}\PYG{n}{rfind}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{know}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{31}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{quip}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ya know}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{quip}\PYG{p}{.}\PYG{n}{rfind}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{is\PYGZus{}uppercase}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.replace(pattern, replacement)}（替换）
+\end{myNote}
+
+返回新的 \texttt{String}，它是通过用 \texttt{replacement} 急性\footnote{急性（eagerly）是惰性（lazily）的反义词。——译者注}替换 \texttt{pattern} 的所有匹配项而形成的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The only thing we have to fear is fear itself}\PYG{l+s}{\PYGZdq{}}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{replace}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fear}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{spin}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The only thing we have to spin is spin itself}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{`Borrow` and `BorrowMut`}\PYG{l+s}{\PYGZdq{}}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{replace}\PYG{p}{(}\PYG{o}{|}\PYG{n}{ch}\PYG{p}{:}\PYG{k+kt}{char}\PYG{o}{|}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{ch}\PYG{p}{.}\PYG{n}{is\PYGZus{}alphanumeric}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{BorrowandBorrowMut}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+因为替换是急性完成的，所以 \texttt{.replace()} 在彼此重叠的几个匹配段上的行为可能令人惊讶。这里有 4 个匹配 \texttt{"aba"} 模式的实例，但在替换了第一个和第三个之后，第二个和第四个就不再匹配了。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{cabababababbage}\PYG{l+s}{\PYGZdq{}}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{replace}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{aba}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{***}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{c***b***babbage}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.replacen(pattern, replacement, n)}（替换 \emph{n} 次）
+\end{myNote}
+
+与上一个方法类似，但最多替换前 \texttt{n} 个匹配项。
+
+\subsection{遍历文本}
+
+标准库提供了几种对切片的文本进行迭代的方法。图 17-3 展示了一些示例。
+
+\myFigure{images/ch17/fig-17-3.jpeg}{图 17-3：迭代切片的一些方法}
+
+\texttt{split}（拆分）和 \texttt{match}（匹配）系列方法是互补的：拆分取的是匹配项之间的范围。
+
+这些方法中大多数会返回可逆的迭代器（也就是说，它们实现了 \texttt{DoubleEndedIterator}）：调用它们的 \texttt{.rev()} 适配器方法会为你提供一个迭代器，该迭代器会生成相同的条目，只是顺序相反。
+
+\begin{mySidenote}
+\texttt{slice.chars()}（字符迭代器）
+\end{mySidenote}
+
+返回访问 \texttt{slice} 中各个字符的迭代器。
+
+\begin{myNote}
+\texttt{slice.char\_indices()}（字符及其偏移量迭代器）
+\end{myNote}
+
+返回访问 \texttt{slice} 中各个字符及其字节偏移量的迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{élan}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{char\PYGZus{}indices}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}é\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{c+c1}{// 有一个双字节UTF\PYGZhy{}8编码}
+\PYG{+w}{                }\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}l\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}a\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{p}{(}\PYG{l+m+mi}{4}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}n\PYGZsq{}}\PYG{p}{)}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+请注意，这并不等同于 \texttt{.chars().enumerate()}，因为本方法提供的是每个字符在切片中的字节偏移量，而不仅仅是字符的序号。
+
+\begin{mySidenote}
+\texttt{slice.bytes()}（字节迭代器）
+\end{mySidenote}
+
+返回访问 \texttt{slice} 中各字节的迭代器，对外暴露 UTF-8 编码细节。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{élan}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{bytes}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{195}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{169}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{b\PYGZsq{}l\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{b\PYGZsq{}a\PYGZsq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{b\PYGZsq{}n\PYGZsq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{slice.lines()}（文本行迭代器）
+\end{mySidenote}
+
+返回访问 \texttt{slice} 中各行的迭代器。各行以 \texttt{"\textbackslash{}n"} 或 \texttt{"\textbackslash{}r\textbackslash{}n"} 结尾。生成的每个条目都是从 \texttt{slice} 中借入的 \texttt{\&str}。这些条目不包括行的终止字符。
+
+\begin{mySidenote}
+\texttt{slice.split(pattern)}（拆分）
+\end{mySidenote}
+
+返回一个迭代器，该迭代器会迭代 \texttt{slice} 中由 \texttt{pattern} 匹配项分隔开的各个部分。这会在紧邻的两个匹配项之间、位于 \texttt{slice} 开头的匹配项与头部之间，以及结尾的匹配项与尾部之间生成空字符串。
+
+如果 \texttt{pattern} 是 \texttt{\&str}，则返回的迭代器不可逆，因为这类模式会根据不同的扫描方向生成不同的匹配序列，但可逆迭代器不允许这种行为。可以改用接下来要讲的 \texttt{rsplit} 方法。
+
+\begin{mySidenote}
+\texttt{slice.rsplit(pattern)}（右起拆分）
+\end{mySidenote}
+
+与上一个方法类似，但此方法会从尾到头扫描 \texttt{slice}，并按该顺序生成匹配项。
+
+\begin{myNote}
+\texttt{slice.split\_terminator(pattern)}（终结符拆分）和 \texttt{slice.rsplit\_terminator(pattern)}（右起终结符拆分）
+\end{myNote}
+
+与刚刚讲过的拆分方法类似，但这两个方法会把模式视为终结符，而不是分隔符：如果 \texttt{pattern} 在 \texttt{slice} 的末尾匹配上了，则迭代器不会像 \texttt{split} 和 \texttt{rsplit} 那样生成表示匹配项和切片末尾之间空字符串的空切片。例如：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 这里把\PYGZsq{}:\PYGZsq{}字符视为分隔符。注意结尾的\PYGZdq{}\PYGZdq{}（空串）}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{jimb:1000:Jim Blandy:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{split}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}:\PYGZsq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{jimb}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1000}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Jim Blandy}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 这里把\PYGZsq{}\PYGZbs{}n\PYGZsq{}字符视为终结符}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{127.0.0.1  localhost}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{            127.0.0.1  www.reddit.com}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}
+\PYG{+w}{           }\PYG{p}{.}\PYG{n}{split\PYGZus{}terminator}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}n\PYGZsq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{127.0.0.1  localhost}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{127.0.0.1  www.reddit.com}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{                }\PYG{c+c1}{// 注意，没有结尾的\PYGZdq{}\PYGZdq{}！}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.splitn(n, pattern)}（拆分为 \emph{n} 片）和 \texttt{slice.rsplitn(n, pattern)}（右起拆分为 \emph{n} 片）
+\end{myNote}
+
+与 \texttt{split} 和 \texttt{rsplit} 类似，但这两个方法会把字符串分成最多 \texttt{n} 个切片，拆分位置位于 \texttt{pattern} 的第 \texttt{n-1} 个（\texttt{split}）或倒数第 \texttt{n-1} 个（\texttt{rsplit}）匹配项处。
+
+\begin{myNote}
+\texttt{slice.split\_whitespace()}（按空白字符拆分）和 \texttt{slice.split\_ascii\_whitespace()}（按 ASCII 空白字符拆分）
+\end{myNote}
+
+返回访问 \texttt{slice} 中以空白字符分隔的各部分的迭代器。这两个方法会把连续多个空白字符视为单个分隔符。忽略尾部空白字符。
+
+\texttt{split\_whitespace} 方法会使用 Unicode 的空白字符定义，由 \texttt{char} 上的 \texttt{is\_whitespace} 方法实现。\texttt{split\_ascii\_whitespace} 方法则会使用只识别 ASCII 空白字符的 \texttt{char::is\_ascii\_whitespace}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{poem}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{This  is  just  to say}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{            I have eaten}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{            the plums}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{            again}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{poem}\PYG{p}{.}\PYG{n}{split\PYGZus{}whitespace}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{This}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{is}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{just}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{to}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{say}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{I}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{have}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{eaten}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{the}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{plums}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{again}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{mySidenote}
+\texttt{slice.matches(pattern)}（匹配项）
+\end{mySidenote}
+
+返回访问 \texttt{slice} 中 \texttt{pattern} 匹配项的迭代器。\texttt{slice.rmatches(pattern)} 也一样，但会从尾到头迭代。
+
+\begin{myNote}
+\texttt{slice.match\_indices(pattern)}（匹配项及其偏移量）和 \texttt{slice.rmatch\_indices(pattern)}（右起匹配项及其偏移量）
+\end{myNote}
+
+和上一个方法很像，但这两个方法生成的条目是 \texttt{(offset, match)} 值对，其中 \texttt{offset} 是匹配的起始字节的偏移量，而 \texttt{match} 是匹配到的切片。
+
+\subsection{修剪}
+
+\textbf{修剪}字符串就是从字符串的开头或结尾移除文本（通常是空白字符）。修剪常用于清理从文件中读取的输入，在此文件中，用户可能为了易读性而添加了文本缩进，或者不小心在一行中留下了尾随空白字符。
+
+\begin{mySidenote}
+\texttt{slice.trim()}（修剪）
+\end{mySidenote}
+
+返回略去了任何前导空白字符和尾随空白字符的 \texttt{slice} 的子切片。\texttt{slice.trim\_start()} 只会略去前导空白字符，\texttt{slice.trim\_end()} 只会略去尾随空白字符。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s+se}{\PYGZbs{}t}\PYG{l+s}{*.rs  }\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{trim}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{*.rs}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s+se}{\PYGZbs{}t}\PYG{l+s}{*.rs  }\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{trim\PYGZus{}start}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{*.rs  }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s+se}{\PYGZbs{}t}\PYG{l+s}{*.rs  }\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{trim\PYGZus{}end}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s+se}{\PYGZbs{}t}\PYG{l+s}{*.rs}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.trim\_matches(pattern)}（按匹配修剪）
+\end{myNote}
+
+返回 \texttt{slice} 的子切片，该子切片从开头和结尾略去了 \texttt{pattern} 的所有匹配项。\texttt{trim\_start\_matches} 方法和 \texttt{trim\_end\_matches} 方法只会对匹配的前导内容或尾随内容执行修剪操作。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{001990}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{trim\PYGZus{}start\PYGZus{}matches}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}0\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1990}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{slice.strip\_prefix(pattern)}（剥离前缀）和 \texttt{slice.strip\_suffix(pattern)}（剥离后缀）
+\end{myNote}
+
+如果 \texttt{slice} 以 \texttt{pattern} 开头，则 \texttt{strip\_prefix} 会返回一个 \texttt{Some}，其中携带了移除匹配文本之后的切片。否则，它会返回 \texttt{None}。\texttt{strip\_suffix} 方法与此类似，但会检查字符串末尾的匹配项。
+
+与 \texttt{trim\_start\_matches} 和 \texttt{trim\_end\_matches} 类似，但这里的两个方法会返回 \texttt{Option}，并且只会移除一个匹配 \texttt{pattern} 的副本。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{slice}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{banana}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{slice}\PYG{p}{.}\PYG{n}{strip\PYGZus{}suffix}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{na}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{bana}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}
+\end{Verbatim}
+
+\subsection{字符串的大小写转换}
+
+\texttt{slice.to\_uppercase()} 方法和 \texttt{slice.to\_lowercase()} 方法会返回一个新分配的字符串，其中包含已转为大写或小写的 \texttt{slice} 文本。结果的长度可能与 \texttt{slice} 不同，有关详细信息，请参阅 17.2.3 节。
+
+\subsection{从字符串中解析出其他类型}
+
+Rust 为“从字符串解析出值”和“生成值的文本表示”提供了一些标准特型。
+
+如果一个类型实现了 \texttt{std::str::FromStr} 特型，那它就提供了一种从字符串切片中解析出值的标准方法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{FromStr}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{from\PYGZus{}str}\PYG{p}{(}\PYG{n}{s}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n+nb}{Err}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+所有常见的机器类型都实现了 \texttt{FromStr}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{FromStr}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{k+kt}{usize}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{3628800}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{l+m+mi}{3628800}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{128.5625}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{l+m+mf}{128.5625}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{k+kt}{bool}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{true}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{not a float at all}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{is\PYGZus{}err}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{k+kt}{bool}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{TRUE}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{is\PYGZus{}err}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{char} 类型也实现了 \texttt{FromStr}，用于解析只有一个字符的字符串：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{é}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}é\PYGZsq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{k+kt}{char}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{abcdefg}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{is\PYGZus{}err}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{std::net::IpAddr} 类型，即包含 IPv4 或 IPv6 互联网地址的 \texttt{enum}，同样实现了 \texttt{FromStr}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{net}\PYG{p}{::}\PYG{n}{IpAddr}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{address}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{IpAddr}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fe80::0000:3ea9:f4ff:fe34:7a50}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{address}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n}{IpAddr}\PYG{p}{::}\PYG{n}{from}\PYG{p}{(}\PYG{p}{[}\PYG{l+m+mh}{0xfe80}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x3ea9}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0xf4ff}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0xfe34}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x7a50}\PYG{p}{]}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+字符串切片有一个 \texttt{parse} 方法，该方法可以将切片解析为你想要的任何类型——只要它实现了 \texttt{FromStr}。与 \texttt{Iterator::collect} 一样，有时需要明确写出想要的类型，因此用 \texttt{parse} 不一定比直接调用 \texttt{from\_str} 可读性强。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{address}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fe80::0000:3ea9:f4ff:fe34:7a50}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{parse}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{IpAddr}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{将其他类型转换为字符串}
+
+将非文本值转换为字符串的方法主要有以下 3 种。
+
+\begin{itemize}
+\item 那些具有人类可读的自然打印形式的类型可以实现 \texttt{std::fmt::Display} 特型，该特型允许在 \texttt{format!} 宏的格式中使用 \texttt{\{\}} 格式说明符：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}, wow}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{doge}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{doge, wow}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{true}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{(\PYGZob{}:.3\PYGZcb{}, \PYGZob{}:.3\PYGZcb{})}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{0.5}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{sqrt}\PYG{p}{(}\PYG{l+m+mf}{3.0}\PYG{p}{)}\PYG{o}{/}\PYG{l+m+mf}{2.0}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{(0.500, 0.866)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 使用上一个例子中的`address`}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{formatted\PYGZus{}addr}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{address}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{formatted\PYGZus{}addr}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fe80::3ea9:f4ff:fe34:7a50}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+Rust 的所有机器数值类型都实现了 \texttt{Display}，字符、字符串和切片也是如此。智能指针类型 \texttt{Box<T>}、\texttt{Rc<T>} 和 \texttt{Arc<T>} 也实现了 \texttt{Display}（只要 \texttt{T} 本身实现了 \texttt{Display}）：它们的显示形式就只是其引用目标的显示形式而已。而像 \texttt{Vec} 和 \texttt{HashMap} 这样的容器则没有实现 \texttt{Display}，因为这些类型没有人类可读的单一自然形式。
+\item 如果一个类型实现了 \texttt{Display}，那么标准库就会自动为它实现 \texttt{std::str::ToString} 特型，当你不需要 \texttt{format!} 的灵活性时，使用此特型的唯一方法 \texttt{to\_string} 会更方便：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 接续前面的例子}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{address}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{fe80::3ea9:f4ff:fe34:7a50}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+Rust 在引入 \texttt{Display} 之前就已经引入 \texttt{ToString} 特型了，但该特型不太灵活。对于自己的类型，你通常应该实现 \texttt{Display} 而非 \texttt{ToString}。
+\item 标准库中的每个公共类型都实现了 \texttt{std::fmt::Debug}，这个特型会接受一个值并将其格式化为对程序员有用的字符串。用 \texttt{Debug} 生成字符串的最简单方法是使用 \texttt{format!} 宏的 \texttt{\{:?\}} 格式说明符：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 接续前面的例子}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{addresses}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{n}{address}\PYG{p}{,}
+\PYG{+w}{                     }\PYG{n}{IpAddr}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{192.168.0.1}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{]}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{addresses}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{[fe80::3ea9:f4ff:fe34:7a50, 192.168.0.1]}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+对于本身实现了 \texttt{Debug} 的任何类型 \texttt{T}，这里利用了 \texttt{Vec<T>} 对 \texttt{Debug} 的通用实现。Rust 的所有集合类型都有这样的实现。
+
+你也应该为自己的类型实现 \texttt{Debug}。通常，最好让 Rust 派生一个实现，就像我们在第 12 章中对 \texttt{Complex} 类型所做的那样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Copy, Clone, Debug)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\end{itemize}
+
+\texttt{format!} 及其相关宏在把值格式化为文本时用到了很多格式化特型，\texttt{Display} 和 \texttt{Debug} 只是其中的两个。17.4 节会介绍其他特型，并解释如何实现它们。
+
+\subsection{借用其他类似文本的类型}
+
+可以通过以下两种方式借用切片的内容。
+
+\begin{itemize}
+\item 切片和 \texttt{String} 都实现了 \texttt{AsRef<str>}、\texttt{AsRef<[u8]>}、\texttt{AsRef<Path>} 和 \texttt{AsRef<OsStr>}。许多标准库函数会使用这些特型作为参数类型的限界，因此可以直接将切片和字符串传给它们，即便它们真正想要的是其他类型。有关详细解释，请参阅 13.7 节。
+\item 切片和字符串还实现了 \texttt{std::borrow::Borrow<str>} 特型。\texttt{HashMap} 和 \texttt{BTreeMap} 会借助 \texttt{Borrow} 令 \texttt{String} 很好地用作表中的键。有关详细信息，请参阅 13 .8 节。
+\end{itemize}
+
+\subsection{以 UTF-8 格式访问文本}
+
+获取表示文本的那些字节有两个主要方法，具体取决于你是想获取字节的所有权还是只想借用它们。
+
+\begin{mySidenote}
+\texttt{slice.as\_bytes()}（用作字节切片）
+\end{mySidenote}
+
+把 \texttt{slice} 的字节借入为 \texttt{\&[u8]}。由于这不是可变引用，因此 \texttt{slice} 可以假定其字节将保持为格式良好的 UTF-8。
+
+\begin{mySidenote}
+\texttt{string.into\_bytes()}（转为字节切片）
+\end{mySidenote}
+
+获取 \texttt{string} 的所有权并按值返回字符串字节的 \texttt{Vec<u8>}。这是一个开销极低的转换，因为它只是移动了字符串一直用作缓冲区的 \texttt{Vec<u8>}。由于 \texttt{string} 已经不复存在，因此这些字节无须继续保持为格式良好的 UTF-8，而调用者可以随意修改 \texttt{Vec<u8>}。
+
+\subsection{从 UTF-8 数据生成文本}
+
+如果你有一个包含 UTF-8 数据的字节块，那么有几个方法可以将其转换为 \texttt{String} 或切片，但具体用哪个取决于你希望如何处理错误。
+
+\begin{myNote}
+\texttt{str::from\_utf8(byte\_slice)}（来自 \texttt{utf8} 切片）
+\end{myNote}
+
+接受 \texttt{\&[u8]} 字节切片并返回 \texttt{Result}：如果 \texttt{byte\_slice} 包含格式良好的 UTF-8，就返回 \texttt{Ok(\&str)}，否则，返回错误。
+
+\begin{myNote}
+\texttt{String::from\_utf8(vec)}（来自 \texttt{utf8} 向量）
+\end{myNote}
+
+尝试从按值传递的 \texttt{Vec<u8>} 中构造字符串。如果 \texttt{vec} 持有格式良好的 UTF-8，那么 \texttt{from\_utf8} 就会返回 \texttt{Ok(string)}，其中 \texttt{string} 会取得 \texttt{vec} 的所有权并将其用作缓冲区。此过程不会发生堆分配或文本复制。
+
+如果这些字节不是有效的 UTF-8，则返回 \texttt{Err(e)}，其中 \texttt{e} 是 \texttt{FromUtf8Error} 型的错误值。调用 \texttt{e.into\_bytes()} 会返回原始向量 \texttt{vec}，因此当转换失败时它并不会丢失：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{good\PYGZus{}utf8}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mh}{0xe9}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x8c}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x86}\PYG{p}{]}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{from\PYGZus{}utf8}\PYG{p}{(}\PYG{n}{good\PYGZus{}utf8}\PYG{p}{)}\PYG{p}{.}\PYG{n}{ok}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{錆}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{bad\PYGZus{}utf8}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u8}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mh}{0x9f}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0xf0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0xa6}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x80}\PYG{p}{]}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{from\PYGZus{}utf8}\PYG{p}{(}\PYG{n}{bad\PYGZus{}utf8}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{result}\PYG{p}{.}\PYG{n}{is\PYGZus{}err}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{c+c1}{// 由于String::from\PYGZus{}utf8失败了，因此它不会消耗原始向量，}
+\PYG{c+c1}{// 而是通过错误值把原始向量原原本本地还给了我们}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{result}\PYG{p}{.}\PYG{n}{unwrap\PYGZus{}err}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{into\PYGZus{}bytes}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mh}{0x9f}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0xf0}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0xa6}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x80}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\begin{myNote}
+\texttt{String::from\_utf8\_lossy(byte\_slice)}（来自 \texttt{utf8}，宽松版）
+\end{myNote}
+
+尝试从 \texttt{\&[u8]} 共享字节切片构造一个 \texttt{String} 或 \texttt{\&str}。此转换总会成功，任何格式错误的 UTF-8 都会被 Unicode 代用字符替换。返回值是一个 \texttt{Cow<str>}，如果它包含格式良好的 UTF-8，就会直接从 \texttt{byte\_slice} 借用 \texttt{\&str}，否则会拥有一个新分配的 \texttt{String}，其中格式错误的字节会被代用字符替换。因此，当 \texttt{byte\_slice} 是格式良好的 UTF-8 时，不会发生堆分配或复制。17.3.16 节会更详细地讨论 \texttt{Cow<str>}。
+
+\begin{myNote}
+\texttt{String::from\_utf8\_unchecked(vec)}（来自 \texttt{utf8}，不检查版）
+\end{myNote}
+
+如果你确信此 \texttt{Vec<u8>} 包含格式良好的 UTF-8，那就可以调用这个不安全的函数。此方法只是将 \texttt{vec} 包装为一个 \texttt{String} 并返回它，根本不检查字节。你有责任确保没有将格式错误的 UTF-8 引入系统，这就是此函数被标记为 \texttt{unsafe} 的原因。
+
+\begin{myNote}
+\texttt{str::from\_utf8\_unchecked(byte\_slice)}（来自 \texttt{utf8}，不检查版）
+\end{myNote}
+
+与上一个方法类似，但此方法会接受 \texttt{\&[u8]} 并将其作为 \texttt{\&str} 返回，而不检查它是否包含格式良好的 UTF-8。与 \texttt{String::from\_utf8\_unchecked} 一样，你有责任确保 \texttt{byte\_slice} 是安全的。
+
+\subsection{推迟分配}
+
+假设你想让程序向用户打招呼。在 Unix 上，可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{var}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{USER}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{+w}{ }\PYG{c+c1}{// 在Windows上要改成\PYGZdq{}USERNAME\PYGZdq{}}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{unwrap\PYGZus{}or}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{whoever you are}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Greetings, \PYGZob{}\PYGZcb{}!}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{get\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+对于 Unix 用户，这个程序会根据用户名向他们问好。对于 Windows 用户和无名用户，它提供了备用文本。
+
+\texttt{std::env::var} 函数会返回一个 \texttt{String}——并且有充分的理由这样做，所以我们不会在这里讨论。但这意味着备用文本也必须作为 \texttt{String} 返回。这不太理想：当 \texttt{get\_name} 返回静态字符串时，根本没必要分配内存。
+
+问题的关键在于，\texttt{get\_name} 的返回值有时应该是拥有型 \texttt{String}，有时则应该是 \texttt{\&'static str}，并且在运行程序之前我们无法知道会是哪一个。这种动态的特点预示着应该考虑使用 \texttt{std::borrow::Cow}，这个写入时克隆类型既可以持有拥有型数据也可以持有借入的数据。
+
+正如 13.12 节所述，\texttt{Cow<'a, T>} 是一个具有 \texttt{Owned} 和 \texttt{Borrowed} 两个变体的枚举。\texttt{Borrowed} 持有一个引用 \texttt{\&'a T}，而 \texttt{Owned} 持有 \texttt{\&T} 的拥有型版本：对于 \texttt{\&str} 是 \texttt{String}，对于 \texttt{\&[i32]} 是 \texttt{Vec<i32>}，等等。无论是 \texttt{Owned} 还是 \texttt{Borrowed}，\texttt{Cow<'a, T>} 总能生成一个 \texttt{\&T} 供你使用。事实上，\texttt{Cow<'a, T>} 可以解引用为 \texttt{\&T}，其行为类似于一种智能指针。
+
+更改 \texttt{get\_name} 以返回 \texttt{Cow}，结果如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{borrow}\PYG{p}{::}\PYG{n}{Cow}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Cow}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{var}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{USER}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{v}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{Cow}\PYG{p}{::}\PYG{n}{Owned}\PYG{p}{(}\PYG{n}{v}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{unwrap\PYGZus{}or}\PYG{p}{(}\PYG{n}{Cow}\PYG{p}{::}\PYG{n}{Borrowed}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{whoever you are}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果读取 \texttt{"USER"} 环境变量成功，那么 \texttt{map} 就会将结果 \texttt{String} 作为 \texttt{Cow::Owned} 返回。如果失败，则 \texttt{unwrap\_or} 会将其静态 \texttt{\&str} 作为 \texttt{Cow::Borrowed} 返回。调用者可以保持不变：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Greetings, \PYGZob{}\PYGZcb{}!}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{get\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+只要 \texttt{T} 实现了 \texttt{std::fmt::Display} 特型，显示 \texttt{Cow<'a, T>} 的结果就和显示 \texttt{T} 的结果是一样的。
+
+当你可能需要也可能不需要修改借用的某些文本时，\texttt{Cow} 也很有用。不需要修改时，可以继续借用。但是 \texttt{Cow} 名副其实的写入时克隆行为可以根据需要为你提供一个拥有型的、可变的值副本。\texttt{Cow} 的 \texttt{to\_mut} 方法会确保 \texttt{Cow} 是 \texttt{Cow::Owned}，必要时会应用该值的 \texttt{ToOwned} 实现，然后返回对该值的可变引用。
+
+因此，如果你发现某些用户（但不是全部）拥有他们更想使用的头衔，就可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get\PYGZus{}title}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{get\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{title}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{get\PYGZus{}title}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{name}\PYG{p}{.}\PYG{n}{to\PYGZus{}mut}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{push\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{, }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{name}\PYG{p}{.}\PYG{n}{to\PYGZus{}mut}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{push\PYGZus{}str}\PYG{p}{(}\PYG{n}{title}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Greetings, \PYGZob{}\PYGZcb{}!}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这可能会生成如下输出：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run
+Greetings,\PYG{+w}{ }jimb,\PYG{+w}{ }Esq.!
+\PYGZdl{}
+\end{Verbatim}
+
+这样做的好处是，如果 \texttt{get\_name()} 返回一个静态字符串并且 \texttt{get\_title} 返回 \texttt{None}，那么 \texttt{Cow} 只是将静态字符串透传到 \texttt{println!}。你已经设法把内存分配推迟到了确有必要的时候，并且代码仍然一目了然。
+
+由于 \texttt{Cow} 经常用于字符串，因此标准库对 \texttt{Cow<'a, str>} 有一些特殊支持。它提供了来自 \texttt{String} 和 \texttt{\&str} 的 \texttt{From} 和 \texttt{Into} 这两个转换特型，这样就可以更简洁地编写 \texttt{get\_name} 了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Cow}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{var}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{USER}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{v}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{unwrap\PYGZus{}or}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{whoever you are}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{into}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Cow<'a, str>} 还实现了 \texttt{std::ops::Add} 和 \texttt{std::ops::AddAssign}，因此要将标题添加到名称中，可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{title}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{get\PYGZus{}title}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{name}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{, }\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{name}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{title}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+或者，因为 \texttt{String} 可以作为 \texttt{write!} 宏的目标，所以也可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{;}
+
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{title}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{get\PYGZus{}title}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{write!}\PYG{p}{(}\PYG{n}{name}\PYG{p}{.}\PYG{n}{to\PYGZus{}mut}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{, \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{title}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+和以前一样，在尝试修改 \texttt{Cow} 之前不会发生内存分配。
+
+请记住，并非每个 \texttt{Cow<..., str>} 都必须是 \texttt{'static}：可以使用 \texttt{Cow} 借用以前计算好的文本，直到需要复制为止。
+
+\subsection{把字符串当作泛型集合}
+
+\texttt{String} 同时实现了 \texttt{std::default::Default} 和 \texttt{std::iter::Extend}：\texttt{default} 返回空字符串，而 \texttt{extend} 可以把字符、字符串切片、\texttt{Cow<..., str>} 或字符串追加到一个字符串尾部。这与 Rust 的其他集合类型（如 \texttt{Vec} 和 \texttt{HashMap}）为其泛型构造模式（如 \texttt{collect} 和 \texttt{partition}）实现的特型组合是一样的。
+
+\texttt{\&str} 类型也实现了 \texttt{Default}，返回一个空切片。这在某些极端情况下很方便，比如，这样可以让包含字符串切片的结构派生于 \texttt{Default}（\texttt{\#[derive(Default)}）。
+
+\section{格式化各种值}
+
+本书一直在使用像 \texttt{println!} 这样的文本格式化宏：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:.3\PYGZcb{}μs: relocated \PYGZob{}\PYGZcb{} at \PYGZob{}:\PYGZsh{}x\PYGZcb{} to \PYGZob{}:\PYGZsh{}x\PYGZcb{}, \PYGZob{}\PYGZcb{} bytes}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{         }\PYG{l+m+mf}{0.84391}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{object}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{         }\PYG{l+m+mi}{140737488346304\PYGZus{}}\PYG{k}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{6299664\PYGZus{}}\PYG{k}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{64}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+上述调用会生成如下输出：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+m+mf}{0.844}\PYG{err}{μ}\PYG{n}{s}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{relocated}\PYG{+w}{ }\PYG{n}{object}\PYG{+w}{ }\PYG{n}{at}\PYG{+w}{ }\PYG{l+m+mh}{0x7fffffffdcc0}\PYG{+w}{ }\PYG{n}{to}\PYG{+w}{ }\PYG{l+m+mh}{0x602010}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{64}\PYG{+w}{ }\PYG{n}{bytes}
+\end{Verbatim}
+
+字符串字面量可以用作输出模板：模板中的每个 \texttt{\{...\}} 都会被其后跟随的某个参数的格式化形式替换。模板字符串必须是常量，以便 Rust 在编译期根据参数的类型检查它。每个参数在检查时必须都用到，否则 Rust 就会报告编译期错误。
+
+以下几个标准库特性中都有这种用于格式化字符串的小型语言。
+
+\begin{itemize}
+\item \texttt{format!} 宏会用它来构建 \texttt{String}。
+\item \texttt{println!} 宏和 \texttt{print!} 宏会将格式化后的文本写入标准输出流。
+\item \texttt{writeln!} 宏和 \texttt{write!} 宏会将格式化后的文本写入指定的输出流。
+\item \texttt{panic!} 宏会使用它构建一个信息丰富的异常终止描述。
+\end{itemize}
+
+Rust 格式化工具的设计是开放式的。你可以通过实现 \texttt{std::fmt} 模块的格式化特型来扩展这些宏以支持自己的类型。也可以使用 \texttt{format\_args!} 宏和 \texttt{std::fmt::Arguments} 类型来让自己的函数和宏支持格式化语言。
+
+格式化宏总会借入对其参数的共享引用，但永远不会拥有或修改它们。
+
+模板的 \texttt{\{...\}} 形式称为\textbf{格式参数}，具体形式为 \texttt{\{\emph{which}:\emph{how}\}}。\emph{\texttt{Which}} 和 \emph{\texttt{how}} 都是可选的，很多时候用 \texttt{\{\}} 就行。
+
+\emph{\texttt{which}}（哪个）值用于选择模板后面的哪个实参应该取代该形参的位置。可以按索引或名称选择实参。没有 \emph{\texttt{which}} 值的形参只会简单地从左到右与实参配对。
+
+\emph{\texttt{how}}（如何）值表示应如何格式化参数：如何填补、精度如何、数值基数等。如果存在 \emph{\texttt{how}}，则需要写上前面的冒号。
+
+表 17-4 给出了一些示例。
+
+\myCaption{表 17-4：格式化字符串示例}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.947\hsize\raggedright\arraybackslash}X>{\hsize=0.917\hsize\raggedright\arraybackslash}X>{\hsize=1.136\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{模板字符串} & \textcolor{white}{参数列表} & \textcolor{white}{结果} \\
+\texttt{"number of \{\}: \{\}"} & \texttt{"elephants", 19} & \texttt{"number of elephants: 19"} \\
+\texttt{"from \{1\} to \{0\}"} & \texttt{"the grave", "the cradle"} & \texttt{"from the cradle to the grave"} \\
+\texttt{"v = \{:?\}"} & \texttt{vec![0,1,2,5,12,29]} & \texttt{"v = [0, 1, 2, 5, 12, 29]"} \\
+\texttt{"name = \{:?\}"} & \texttt{"Nemo"} & \texttt{"name = \textbackslash{}"Nemo\textbackslash{}""} \\
+\texttt{"\{:8.2\} km/s"} & \texttt{11.186} & \texttt{"   11.19 km/s"} \\
+\texttt{"\{:20\} \{:02x\} \{:02x\}"} & \texttt{"adc \#42", 105, 42} & \texttt{"adc \#42               69 2a"} \\
+\texttt{"\{1:02x\} \{2:02x\} \{0\}"} & \texttt{"adc \#42", 105, 42} & \texttt{"69 2a adc \#42"} \\
+\texttt{"\{lsb:02x\} \{msb:02x\} \{insn\}"} & \texttt{insn="adc \#42", lsb=105, msb=42} & \texttt{"69 2a adc \#42"} \\
+\texttt{"\{:02?\}"} & \texttt{[110, 11, 9]} & \texttt{"[110, 11, 09]"} \\
+\texttt{"\{:02x?\}"} & \texttt{[110, 11, 9]} & \texttt{"[6e, 0b, 09]"} \\
+\end{tabularx}
+\myTableEnd
+
+如果要在输出中包含 \texttt{\{} 或 \texttt{\}} 字符，可将模板中的这些字符连写两个。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZob{}a, c\PYGZcb{}\PYGZcb{} ⊂ \PYGZob{}\PYGZob{}a, b, c\PYGZcb{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}a, c\PYGZcb{} ⊂ \PYGZob{}a, b, c\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{格式化文本值}
+
+当格式化像 \texttt{\&str} 或 \texttt{String}（将 \texttt{char} 视为单字符字符串）这样的文本类型时，参数的 \emph{how} 值有几个部分，都是可选的。
+
+\begin{itemize}
+\item \textbf{文本长度限制}。如果参数比这个值长，Rust 就会截断它。如果未指定限制，Rust 就使用全文。
+\item \textbf{最小字段宽度}。在完成所有截断之后，如果参数比这个值短，Rust 就会在右边（默认）用空格（默认）填补它以让字段达到这个宽度。如果省略，Rust 则不会填补参数。
+\item \textbf{对齐方式}。如果参数需要填补空白以满足最小字段宽度，那么这个值表示应将文本放置在字段中的什么位置。\texttt{<}、\texttt{\textasciicircum{}} 和 \texttt{>} 分别会将文本放在开头、中间和结尾。
+\item 在此填补过程中使用的\textbf{填补}字符。如果省略，Rust 就会使用空格。如果指定了填补字符，则必须同时指定对齐方式。
+\end{itemize}
+
+表 17-5 举例说明了如何编写这些格式字符串及其实际效果。所有这些示例都使用了相同的八字符参数 \texttt{"bookends"}。
+
+\myCaption{表 17-5：文本的格式化字符串指令}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.546\hsize\raggedright\arraybackslash}X>{\hsize=1.227\hsize\raggedright\arraybackslash}X>{\hsize=1.227\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{使用的特性} & \textcolor{white}{模板字符串} & \textcolor{white}{结果} \\
+默认 & \texttt{"\{\}"} & \texttt{"bookends"} \\
+最小字段宽度 & \texttt{"\{:4\}"}\newline{}\texttt{"\{:12\}"} & \texttt{"bookends"}\newline{}\texttt{"bookends    "} \\
+文本长度限制 & \texttt{"\{:.4\}"}\newline{}\texttt{"\{:.12\}"} & \texttt{"book"}\newline{}\texttt{"bookends"} \\
+字段宽度、长度限制 & \texttt{"\{:12.20\}"}\newline{}\texttt{"\{:4.20\}"}\newline{}\texttt{"\{:4.6\}"}\newline{}\texttt{"\{:6.4\}"} & \texttt{"bookends    "}\newline{}\texttt{"bookends"}\newline{}\texttt{"booken"}\newline{}\texttt{"book  "} \\
+左对齐，宽度 & \texttt{"\{:<12\}"} & \texttt{"bookends    "} \\
+居中，宽度 & \texttt{"\{:\textasciicircum{}12\}"} & \texttt{"  bookends  "} \\
+右对齐，宽度 & \texttt{"\{:>12\}"} & \texttt{"    bookends"} \\
+用 \texttt{'='} 填补，居中，宽度 & \texttt{"\{:=\textasciicircum{}12\}"} & \texttt{"==bookends=="} \\
+用 \texttt{'*'} 填补，右对齐，宽度，限制 & \texttt{"\{:*>12.4\}"} & \texttt{"********book"} \\
+\end{tabularx}
+\myTableEnd
+
+Rust 的格式化程序对宽度的处理方式比较“简陋”：它假设每个字符占据一列，而不会考虑组合字符、半角片假名、零宽度空格或 Unicode 的其他乱七八糟的情况。例如：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:4\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{th}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}e9\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{   }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{th}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}e9\PYGZcb{}}\PYG{l+s}{ }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:4\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{the}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}301\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{the}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}301\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+尽管 Unicode 规定这两个字符串都等效于 \texttt{"thé"}，但 Rust 的格式化程序可不知道像 \texttt{'\textbackslash{}u\{301\}'} 这样的字符（组合重音符）需要做特殊处理。它正确地填补了第一个字符串，但假设第二个字符串是 4 列宽并且不需要填补。尽管很容易看出 Rust 该如何在这种特定情况下进行改进，但要支持所有 Unicode 脚本的真正多语言文本格式化是一项艰巨的任务。最好依靠所在平台的用户界面工具包来处理，或许也可以通过生成 HTML 和 CSS，让 Web 浏览器来处理。有一个流行的 crate（\texttt{unicode-width}）可以部分处理这个问题。
+
+除了 \texttt{\&str} 和 \texttt{String}，你也可以直接向格式化宏传入带有文本型引用目标的智能指针类型，比如 \texttt{Rc<String>} 或 \texttt{Cow<'a, str>}。
+
+由于文件名路径不一定是格式良好的 UTF-8，因此 \texttt{std::path::Path} 不完全是文本类型，不能将 \texttt{std::path::Path} 直接传给格式化宏。不过，\texttt{Path} 有个 \texttt{display} 方法会返回一个供格式化的 UTF-8 值，以适合所在平台的方式解决问题。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{processing file: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{.}\PYG{n}{display}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{格式化数值}
+
+当格式化参数具有 \texttt{usize} 或 \texttt{f64} 之类的数值类型时，参数的 \emph{\texttt{how}} 值可以有如下几个部分，它们全是可选的。
+
+\begin{itemize}
+\item \textbf{填补}与\textbf{对齐}，它们和对文本类型的含义一样。
+\item \texttt{+} 字符，要求始终显示数值的符号，即使相应参数是正数。
+\item \texttt{\#} 字符，要求加显式基数前缀，比如 \texttt{0x} 或 \texttt{0b}。参见稍后要讲的“进制符号”那一项。
+\item \texttt{0} 字符，要求通过在数值中包含前导零（而不是通常的填补方式）来满足最小字段宽度。
+\item \textbf{最小字段宽度}。如果格式化后的数值没有这么宽，那么 Rust 会在左侧（默认）用空格（默认）填补它以构成给定宽度的字段。
+\item 浮点参数的\textbf{精度}，指示 Rust 应在小数点后包含多少位数字。Rust 会根据需要进行舍入或零扩展以生成要求的小数位。如果省略精度，那么 Rust 会尝试使用尽可能少的数字来准确表示该值。对于整数类型的参数，精度会被忽略。
+\item \textbf{进制符号}。对于整数类型，二进制是 \texttt{b}，八进制是 \texttt{o}，十六进制是小写字母 \texttt{x} 或大写字母 \texttt{X}。如果包含 \texttt{\#} 字符，则它们会包含显式的 Rust 风格的基数前缀 \texttt{0b}、\texttt{0o}、\texttt{0x} 或 \texttt{0X}。对于浮点类型，\texttt{e} 或 \texttt{E} 的基数需要科学记数法，具有归一化系数，使用 \texttt{e} 或 \texttt{E} 作为指数。如果不指定任何进制符号，则 Rust 会将数值格式化为十进制。
+\end{itemize}
+
+表 17-6 展示了格式化 \texttt{i32} 值 \texttt{1234} 的一些示例。
+
+\myCaption{表 17-6：格式化整数的字符串指令}
+
+\myTableBegin
+\begin{xltabular}{\textwidth}{@{}>{\hsize=0.696\hsize\raggedright\arraybackslash}X>{\hsize=1.191\hsize\raggedright\arraybackslash}X>{\hsize=1.113\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{使用的特性} & \textcolor{white}{模板字符串} & \textcolor{white}{结果} \\
+\endfirsthead
+\rowcolor{tabhead}\textcolor{white}{使用的特性} & \textcolor{white}{模板字符串} & \textcolor{white}{结果} \\
+\endhead
+默认 & \texttt{"\{\}"} & \texttt{"1234"} \\
+强制正负号 & \texttt{"\{:+\}"} & \texttt{"+1234"} \\
+最小字段宽度 & \texttt{"\{:12\}"}\newline{}\texttt{"\{:2\}"} & \texttt{"        1234"}\newline{}\texttt{"1234"} \\
+正负号，宽度 & \texttt{"\{:+12\}"} & \texttt{"       +1234"} \\
+前导零，宽度 & \texttt{"\{:012\}"} & \texttt{"000000001234"} \\
+正负号，前导零，宽度 & \texttt{"\{:+012\}"} & \texttt{"+00000001234"} \\
+左对齐，宽度 & \texttt{"\{:<12\}"} & \texttt{"1234        "} \\
+居中，宽度 & \texttt{"\{:\textasciicircum{}12\}"} & \texttt{"    1234    "} \\
+右对齐，宽度 & \texttt{"\{:>12\}"} & \texttt{"        1234"} \\
+左对齐，正负号，宽度 & \texttt{"\{:<+12\}"} & \texttt{"+1234       "} \\
+居中，正负号，宽度 & \texttt{"\{:\textasciicircum{}+12\}"} & \texttt{"   +1234    "} \\
+右对齐，正负号，宽度 & \texttt{"\{:>+12\}"} & \texttt{"       +1234"} \\
+用 \texttt{'='} 填补，居中，宽度 & \texttt{"\{:=\textasciicircum{}12\}"} & \texttt{"====1234===="} \\
+二进制表示法 & \texttt{"\{:b\}"} & \texttt{"10011010010"} \\
+宽度，八进制表示法 & \texttt{"\{:12o\}"} & \texttt{"        2322"} \\
+正负号，宽度，十六进制表示法 & \texttt{"\{:+12x\}"} & \texttt{"        +4d2"} \\
+正负号，宽度，用大写数字的十六进制 & \texttt{"\{:+12X\}"} & \texttt{"        +4D2"} \\
+正负号，显式基数前缀，宽度，十六进制 & \texttt{"\{:+\#12x\}"} & \texttt{"      +0x4d2"} \\
+正负号，基数，前导零，宽度，十六进制 & \texttt{"\{:+\#012x\}"}\newline{}\texttt{"\{:+\#06x\}"} & \texttt{"+0x0000004d2"}\newline{}\texttt{"+0x4d2"} \\
+\end{xltabular}
+\myTableEnd
+
+如最后两个例子所示，最小字段宽度适用于整个数值、正负号、基数前缀等。
+
+负数总是包含它们的符号。结果和“强制正负号”例子中展示的一样。
+
+当你要求加前导零时，就会忽略对齐和填补字符，因为要用零扩展数值以填补整个字段。
+
+使用参数 \texttt{1234.5678}，可以展示对浮点类型的格式化效果，如表 17-7 所示。
+
+\myCaption{表 17-7：格式化浮点数的字符串指令}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.561\hsize\raggedright\arraybackslash}X>{\hsize=1.187\hsize\raggedright\arraybackslash}X>{\hsize=1.251\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{使用的特性} & \textcolor{white}{模板字符串} & \textcolor{white}{结果} \\
+默认 & \texttt{"\{\}"} & \texttt{"1234.5678"} \\
+精度 & \texttt{"\{:.2\}"}\newline{}\texttt{"\{:.6\}"} & \texttt{"1234.57"}\newline{}\texttt{"1234.567800"} \\
+最小字段宽度 & \texttt{"\{:12\}"} & \texttt{"   1234.5678"} \\
+最小宽度，精度 & \texttt{"\{:12.2\}"}\newline{}\texttt{"\{:12.6\}"} & \texttt{"     1234.57"}\newline{}\texttt{" 1234.567800"} \\
+前导零，最小宽度，精度 & \texttt{"\{:012.6\}"} & \texttt{"01234.567800"} \\
+科学记数法 & \texttt{"\{:e\}"} & \texttt{"1.2345678e3"} \\
+科学记数法，精度 & \texttt{"\{:.3e\}"} & \texttt{"1.235e3"} \\
+科学记数法，最小宽度，精度 & \texttt{"\{:12.3e\}"}\newline{}\texttt{"\{:12.3E\}"} & \texttt{"     1.235e3"}\newline{}\texttt{"     1.235E3"} \\
+\end{tabularx}
+\myTableEnd
+
+\subsection{格式化其他类型}
+
+除了字符串和数值，还可以格式化标准库中的其他几种类型。
+
+\begin{itemize}
+\item 错误类型全都可以直接格式化，从而很容易地将它们包含在错误消息中。每种错误类型都应该实现 \texttt{std::error::Error} 特型，该特型扩展了默认格式化特型 \texttt{std::fmt::Display}。因此，任何实现了 \texttt{Error} 的类型都可以格式化。
+\item 可以格式化 \texttt{std::net::IpAddr}、\texttt{std::net::SocketAddr} 等互联网协议地址类型。
+\item 布尔值 \texttt{true} 和 \texttt{false} 也可以被格式化，虽然它们通常不是直接呈现给最终用户的最佳格式。
+\end{itemize}
+
+对上述类型来说，应该使用与字符串相同类型的格式参数。长度限制、字段宽度和对齐方式控制都会如预期般工作。
+
+\subsection{格式化值以进行调试}
+
+为了帮助调试和记录日志，\texttt{\{:?\}} 参数能以对程序员有帮助的方式格式化 Rust 标准库中的任何公共类型。你可以使用它来检查向量、切片、元组、哈希表、线程和其他数百种类型。
+
+例如，你可以编写如下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashMap}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{map}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HashMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{map}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mf}{45.5237606}\PYG{p}{,}\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{122.6819273}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{map}\PYG{p}{.}\PYG{n}{insert}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Shanghai}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mf}{31.230416}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{121.473701}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{map}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这会打印出如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{\PYGZob{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Shanghai}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mf}{31.230416}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{121.473701}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mf}{45.5237606}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{122.6819273}\PYG{p}{)}\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{HashMap} 和 \texttt{(f64, f64)} 类型都知道该如何格式化自身，你无须额外做什么。
+
+如果你在格式参数中包含了 \texttt{\#} 字符，Rust 就会优美地打印出该值。将上面那行代码改成 \texttt{println!("\{:\#?\}", map)} 会输出如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Shanghai}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}
+\PYG{+w}{        }\PYG{l+m+mf}{31.230416}\PYG{p}{,}
+\PYG{+w}{        }\PYG{l+m+mf}{121.473701}
+\PYG{+w}{    }\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Portland}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}
+\PYG{+w}{        }\PYG{l+m+mf}{45.5237606}\PYG{p}{,}
+\PYG{+w}{        }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{122.6819273}
+\PYG{+w}{    }\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这些输出的精确格式并不能保证始终如一，比如升级 Rust 版本后就可能发生变化。
+
+供调试用的格式化通常会以十进制打印数值，但可以在问号前放置一个 \texttt{x} 或 \texttt{X} 以请求十六进制，并且会遵守前导零和字段宽度语法。例如，可以像下面这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ordinary: \PYGZob{}:02?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{9}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{15}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{240}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hex:      \PYGZob{}:02x?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{9}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{15}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{240}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这会打印出如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{ordinary}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{[}\PYG{l+m+mi}{09}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{15}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{240}\PYG{p}{]}
+\PYG{n}{hex}\PYG{p}{:}\PYG{+w}{      }\PYG{p}{[}\PYG{l+m+mi}{09}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{n}{f}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{f0}\PYG{p}{]}
+\end{Verbatim}
+
+如前所述，你可以用 \texttt{\#[derive(Debug)]} 语法让自己的类型支持 \texttt{\{:?\}}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Copy, Clone, Debug)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+有了这个定义，就可以使用 \texttt{\{:?\}} 格式来打印 \texttt{Complex} 值了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{third}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.5}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{sqrt}\PYG{p}{(}\PYG{l+m+mf}{0.75}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{third}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这会打印出如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.5}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.8660254037844386}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这对调试来说已经很好了，但如果能用 \texttt{\{\}} 以更传统的形式（如 \texttt{-0.5 + 0.8660254037844386i}）打印它们就更好了。17.4.8 会展示如何做到这一点。
+
+\subsection{格式化指针以进行调试}
+
+正常情况下，如果将任何种类的指针传给格式化宏（引用、\texttt{Box} 或 \texttt{Rc}），宏都会简单地追踪指针并格式化它的引用目标，指针本身并不重要。但是在调试时，查看指针有时很有帮助：地址可以用作单个值的粗略“名称”，这在检查含有循环或共享指针的结构体时可能很有帮助。
+
+\texttt{\{:p\}} 表示法会将引用、\texttt{Box} 和其他类似指针的类型格式化为地址：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{rc}\PYG{p}{::}\PYG{n}{Rc}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{original}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Rc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mazurka}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{cloned}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{original}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{impostor}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Rc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mazurka}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{text:     \PYGZob{}\PYGZcb{}, \PYGZob{}\PYGZcb{}, \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{       }\PYG{n}{original}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{cloned}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{impostor}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{pointers: \PYGZob{}:p\PYGZcb{}, \PYGZob{}:p\PYGZcb{}, \PYGZob{}:p\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{original}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{cloned}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{impostor}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这会打印出如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{text}\PYG{p}{:}\PYG{+w}{     }\PYG{n+nc}{mazurka}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{mazurka}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{mazurka}
+\PYG{n}{pointers}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mh}{0x7f99af80e000}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x7f99af80e000}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x7f99af80e030}
+\end{Verbatim}
+
+当然，具体的指针值每次运行时可能都不一样，但即便如此，比较这些地址也能清晰地看出前两个是对同一个 \texttt{String} 的引用，而第三个指向了不同的值。
+
+地址确实看起来是可读性很差的十六进制，因此更精致的展现形式可能会更有用，但 \texttt{\{:p\}} 样式仍然是一种有效的快速解决方案。
+
+\subsection{按索引或名称引用参数}
+
+格式参数可以明确选择它要使用的参数。例如：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}1\PYGZcb{},\PYGZob{}0\PYGZcb{},\PYGZob{}2\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{zeroth}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{first}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{second}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{first,zeroth,second}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+可以在冒号后包含格式参数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}2:\PYGZsh{}06x\PYGZcb{},\PYGZob{}1:b\PYGZcb{},\PYGZob{}0:=\PYGZgt{}10\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{first}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{100}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0x0064,1010,=====first}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+还可以按名称选择参数。这能让有许多参数的复杂模板更加清晰易读。例如：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}description:.\PYGZlt{}25\PYGZcb{}\PYGZob{}quantity:2\PYGZcb{} @ \PYGZob{}price:5.2\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{n}{price}\PYG{o}{=}\PYG{l+m+mf}{3.25}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{n}{quantity}\PYG{o}{=}\PYG{l+m+mi}{3}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{n}{description}\PYG{o}{=}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Maple Turmeric Latte}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Maple Turmeric Latte..... 3 @  3.25}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+（这里的命名型参数类似于 Python 中的关键字参数，但它们只是这些格式化宏的独有特性，而不是 Rust 函数调用语法的一部分。）
+
+可以在单个格式化宏中将索引型参数、命名型参数和位置型（没有索引或名称的）参数混用。位置型参数会从左到右与参数配对，就仿佛索引型参数和命名型参数不存在一样（不参与位置编号）：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}mode\PYGZcb{} \PYGZob{}2\PYGZcb{} \PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{people}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{eater}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{purple}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{mode}\PYG{o}{=}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{flying}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{flying purple people eater}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+命名型参数必须出现在列表的末尾。
+
+\subsection{动态宽度与动态精度}
+
+参数的最小字段宽度、文本长度限制和数值精度不必总是固定值，也可以在运行期进行选择。
+
+我们一直在研究类似于下面这个表达式的情况，它会生成在 20 个字符宽的字段中右对齐的字符串 \texttt{content}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:\PYGZgt{}20\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{content}\PYG{p}{)}
+\end{Verbatim}
+
+但是，如果想在运行期选择字段宽度，则可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:\PYGZgt{}1\PYGZdl{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{content}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{get\PYGZus{}width}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\end{Verbatim}
+
+将最小字段宽度写成 \texttt{1\$} 就是在告诉 \texttt{format!} 使用第二个参数的值作为宽度。它引用的参数必须是 \texttt{usize}。还可以按名称引用参数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:\PYGZgt{}width\PYGZdl{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{content}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{width}\PYG{o}{=}\PYG{n}{get\PYGZus{}width}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\end{Verbatim}
+
+同样的方法也适用于文本长度限制：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:\PYGZgt{}width\PYGZdl{}.limit\PYGZdl{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{content}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{width}\PYG{o}{=}\PYG{n}{get\PYGZus{}width}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{limit}\PYG{o}{=}\PYG{n}{get\PYGZus{}limit}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\end{Verbatim}
+
+要代替文本长度限制或浮点精度，还可以写成 \texttt{*}，表示将下一个位置参数作为精度。下面的代码会把 \texttt{content} 裁剪成最多 \texttt{get\_limit()} 个字符：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:.*\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{get\PYGZus{}limit}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{content}\PYG{p}{)}
+\end{Verbatim}
+
+用作精度的参数必须是 \texttt{usize}。字段宽度没有对应的语法。
+
+\subsection{格式化自己的类型}
+
+格式化宏会使用 \texttt{std::fmt} 模块中定义的一组特型将值转换为文本。通过自行实现这些特型中的一个或多个，就可以让 Rust 的格式化宏来格式化你的类型。
+
+格式参数中的符号指示了其参数类型必须实现的特型，如表 17-8 所示。
+
+\myCaption{表 17-8：格式化字符串指令符号}
+
+\myTableBegin
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.785\hsize\raggedright\arraybackslash}X>{\hsize=1.055\hsize\raggedright\arraybackslash}X>{\hsize=1.202\hsize\raggedright\arraybackslash}X>{\hsize=0.957\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{符号} & \textcolor{white}{例子} & \textcolor{white}{特型} & \textcolor{white}{目的} \\
+无 & \texttt{\{\}} & \texttt{std::fmt::Display} & 文本、数值、错误：通用特型 \\
+\texttt{b} & \texttt{\{bits:\#b\}} & \texttt{std::fmt::Binary} & 二进制中的数值 \\
+\texttt{o} & \texttt{\{:\#5o\}} & \texttt{std::fmt::Octal} & 八进制中的数值 \\
+\texttt{x} & \texttt{\{:4x\}} & \texttt{std::fmt::LowerHex} & 十六进制中的数值，小写数字 \\
+\texttt{X} & \texttt{\{:016X\}} & \texttt{std::fmt::UpperHex} & 十六进制中的数值，大写数字 \\
+\texttt{e} & \texttt{\{:.3e\}} & \texttt{std::fmt::LowerExp} & 科学记数法中的浮点数值 \\
+\texttt{E} & \texttt{\{:.3E\}} & \texttt{std::fmt::UpperExp} & 同上，但大写 \texttt{E} \\
+\texttt{?} & \texttt{\{:\#?\}} & \texttt{std::fmt::Debug} & 调试视图，适用于开发人员 \\
+\texttt{p} & \texttt{\{:p\}} & \texttt{std::fmt::Pointer} & 将指针作为地址，适用于开发人员 \\
+\end{tabularx}
+\myTableEnd
+
+当你将 \texttt{\#[derive(Debug)]} 属性放在类型定义上，以期支持 \texttt{\{:?\}} 格式参数时，其实只是在要求 Rust 替你实现 \texttt{std::fmt::Debug} 特型。
+
+这些格式化特型都具有相同的结构，只是名称不同而已。我们将以 \texttt{std::fmt::Display} 为代表来讲解：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Display}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{fmt}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dest}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Formatter}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{fmt} 方法的任务是为 \texttt{self} 生成格式良好的表达形式并将其字符写入 \texttt{dest}。除了用作输出流，\texttt{dest} 参数还携带着从格式参数解析出的详细信息，比如对齐方式和最小字段宽度。
+
+例如，本章前面曾建议，如果 \texttt{Complex} 值能以通常的 \texttt{a + bi} 形式打印自己则会更好。下面是执行本操作的 \texttt{Display} 实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Display}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{fmt}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dest}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Formatter}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{fmt}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{im\PYGZus{}sign}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{im}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}\PYGZhy{}\PYGZsq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}+\PYGZsq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nf+fm}{write!}\PYG{p}{(}\PYG{n}{dest}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{}i}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{re}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im\PYGZus{}sign}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{abs}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{im}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这利用了 \texttt{Formatter} 本身就是一个输出流的事实，所以 \texttt{write!} 宏可以帮我们完成大部分工作。有了这个实现，就可以写出如下代码了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{one\PYGZus{}twenty}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.5}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.866}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{one\PYGZus{}twenty}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZhy{}0.5 + 0.866i}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{two\PYGZus{}forty}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.5}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.866}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{two\PYGZus{}forty}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZhy{}0.5 \PYGZhy{} 0.866i}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+有时以极坐标形式显示复数会很有帮助：想象在复平面上画一条从原点到数值的线，极坐标形式会给出线的长度，以及线与正向 \emph{x} 轴之间的顺时针夹角。格式参数中的 \texttt{\#} 字符通常会选择某种替代的显示形式，\texttt{Display} 实现可以将其视为要求使用极坐标形式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Display}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{fmt}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{dest}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Formatter}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{fmt}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{re}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{re}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{im}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{dest}\PYG{p}{.}\PYG{n}{alternate}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{abs}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{sqrt}\PYG{p}{(}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{re}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{im}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{angle}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{atan2}\PYG{p}{(}\PYG{n}{im}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{consts}\PYG{p}{::}\PYG{n}{PI}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mf}{180.0}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n+nf+fm}{write!}\PYG{p}{(}\PYG{n}{dest}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} ∠ \PYGZob{}\PYGZcb{}°}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{abs}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{angle}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{im\PYGZus{}sign}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{im}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}\PYGZhy{}\PYGZsq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}+\PYGZsq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n+nf+fm}{write!}\PYG{p}{(}\PYG{n}{dest}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{} \PYGZob{}\PYGZcb{}i}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im\PYGZus{}sign}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{::}\PYG{n}{abs}\PYG{p}{(}\PYG{n}{im}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+使用此实现的代码如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{ninety}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{2.0}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ninety}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0 + 2i}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:\PYGZsh{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ninety}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{           }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2 ∠ 90°}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+尽管格式化特型的 \texttt{fmt} 方法会返回一个 \texttt{fmt::Result} 值（典型的模块专属的 \texttt{Result} 类型），但你只能从 \texttt{Formatter} 的操作中开始传播错误，就像刚才 \texttt{fmt::Display} 的实现中调用 \texttt{write!} 时的做法那样。你的格式化函数自身不应该引发错误。这样像 \texttt{format!} 这样的宏就可以简单地返回一个 \texttt{String} 而非 \texttt{Result<String, ...>}，因为将格式化后的文本追加到 \texttt{String} 上永远不会出错。这还会确保你从 \texttt{write!} 或 \texttt{writeln!} 上抛出的错误总能正确地反映出底层 I/O 流的实际问题，而不是某种格式问题。
+
+\texttt{Formatter} 还有许多其他的有用的方法，包括一些用于处理结构化数据（如映射、列表等）的方法，本书并没有介绍它们，有关详细信息，请参阅在线文档。
+
+\subsection{在自己的代码中使用格式化语言}
+
+使用 Rust 的 \texttt{format\_args!} 宏和 \texttt{std::fmt::Arguments} 类型，你可以编写能接受格式模板和参数的自定义函数和宏。假设你的程序需要在运行期记录状态消息，并且你想使用 Rust 的文本格式化语言来生成这些消息，那么可以参考以下代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{logging\PYGZus{}enabled}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{OpenOptions}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write\PYGZus{}log\PYGZus{}entry}\PYG{p}{(}\PYG{n}{entry}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{fmt}\PYG{p}{::}\PYG{n}{Arguments}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{logging\PYGZus{}enabled}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{c+c1}{// 尽量保持简单，所以每次只是打开文件}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{log\PYGZus{}file}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{OpenOptions}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{append}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{create}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{open}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{log\PYGZhy{}file\PYGZhy{}name}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{failed to open log file}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{n}{log\PYGZus{}file}\PYG{p}{.}\PYG{n}{write\PYGZus{}fmt}\PYG{p}{(}\PYG{n}{entry}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{failed to write to log}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+可以像这样调用 \texttt{write\_log\_entry}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{write\PYGZus{}log\PYGZus{}entry}\PYG{p}{(}\PYG{n+nf+fm}{format\PYGZus{}args!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hark! \PYGZob{}:?\PYGZcb{}}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{mysterious\PYGZus{}value}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+在编译期，\texttt{format\_args!} 宏会解析模板字符串并据此检查参数的类型，如果有任何问题则报告错误。在运行期，它会对参数求值并构建一个 \texttt{Arguments} 值，其中包含格式化文本时需要的所有信息：模板的预解析形式，以及对参数值的共享引用。
+
+构造一个 \texttt{Arguments} 值的代价很低：只是收集一些指针而已。这时尚未进行任何格式化工作，仅收集稍后要用到的信息。这很重要，否则如果未启用日志，那么像把数值转换为十进制、填补值之类的任何开销都会白白浪费。
+
+\texttt{File} 类型实现了 \texttt{std::io::Write} 特型，该特型的 \texttt{write\_fmt} 方法会接受一个 \texttt{Argument} 并进行格式化，然后会将结果写入底层流。
+
+对 \texttt{write\_log\_entry} 的调用并不漂亮。这时宏就可以大显身手了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{macro\PYGZus{}rules!}\PYG{+w}{ }\PYG{n}{log}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{c+c1}{// 在宏定义中的宏名后不需要叹号（!）}
+\PYG{+w}{    }\PYG{p}{(}\PYG{c+cp}{\PYGZdl{}format}\PYG{p}{:}\PYG{n+nc}{tt}\PYG{p}{,}\PYG{+w}{ }\PYG{c+cp}{\PYGZdl{}(}\PYG{c+cp}{\PYGZdl{}arg}\PYG{p}{:}\PYG{n+nc}{expr}\PYG{p}{)}\PYG{p}{,}\PYG{o}{*}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{(}
+\PYG{+w}{        }\PYG{n}{write\PYGZus{}log\PYGZus{}entry}\PYG{p}{(}\PYG{n+nf+fm}{format\PYGZus{}args!}\PYG{p}{(}\PYG{c+cp}{\PYGZdl{}format}\PYG{p}{,}\PYG{+w}{ }\PYG{c+cp}{\PYGZdl{}(}\PYG{c+cp}{\PYGZdl{}arg}\PYG{p}{)}\PYG{p}{,}\PYG{o}{*}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+第 21 章会详细介绍宏。现在，你只需知道这定义了一个新 \texttt{log!} 宏并将其参数传给 \texttt{format\_args!}，然后在生成的 \texttt{Arguments} 值上调用 \texttt{write\_log\_entry} 函数即可。诸如 \texttt{println!}，\texttt{writeln!} 和 \texttt{format!} 之类的格式化宏都采用了大致相同的思路。
+
+可以像这样使用 \texttt{log!}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{log}\PYG{o}{!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{O day and night, but this is wondrous strange! \PYGZob{}:?\PYGZcb{}}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{     }\PYG{n}{mysterious\PYGZus{}value}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+理论上，这会好看一点儿。
+
+\section{正则表达式}
+
+外部的 \texttt{regex} crate 是 Rust 的官方正则表达式库，它提供了通常的搜索函数和匹配函数。该库对 Unicode 有很好的支持，但它也可以搜索字节串。尽管不支持其他正则表达式包中的某些特性（比如反向引用和环视模式），但这些简化允许 \texttt{regex} 确保搜索时间始终与表达式的大小、表达式的长度和待搜文本的长度呈线性关系。此外，这些保证还让 \texttt{regex} 即使在搜索不可信文本的不可信表达式时也能安全地使用。
+
+本书将只提供 \texttt{regex} 的概述。有关详细信息，可以查阅其在线文档。
+
+尽管 \texttt{regex} crate 不在 \texttt{std} 中，但它是由 Rust 库团队维护的，该团队也负责维护标准库 \texttt{std}。要使用 \texttt{regex}，请将下面这行代码放在 crate 的 Cargo.toml 文件的 \texttt{[dependencies]} 部分：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{regex}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+在以下内容中，我们将假设你已做完了此项更改。
+
+\subsection{\texttt{Regex} 的基本用法}
+
+\texttt{Regex} 值表示已经解析好的正则表达式。\texttt{Regex::new} 构造函数会尝试将 \texttt{\&str} 解析为正则表达式，并返回一个 \texttt{Result}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{regex}\PYG{p}{::}\PYG{n}{Regex}\PYG{p}{;}
+
+\PYG{c+c1}{// 语义化版本号，比如0.2.1}
+\PYG{c+c1}{// 可以包含预发行版本后缀，比如0.2.1\PYGZhy{}alpha}
+\PYG{c+c1}{// （为简洁起见，没有“构建编号”元信息后缀）}
+\PYG{c+c1}{//}
+\PYG{c+c1}{// 注意，使用原始字符串语法r\PYGZdq{}...\PYGZdq{}是为了避免一大堆反斜杠}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{semver}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Regex}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{r\PYGZdq{}(\PYGZbs{}d+)\PYGZbs{}.(\PYGZbs{}d+)\PYGZbs{}.(\PYGZbs{}d+)(\PYGZhy{}[\PYGZhy{}.[:alnum:]]*)?\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{c+c1}{// 简单搜索，返回布尔型结果}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{haystack}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{r\PYGZsh{}\PYGZdq{}regex = \PYGZdq{}0.2.5\PYGZdq{}\PYGZdq{}\PYGZsh{}}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{semver}\PYG{p}{.}\PYG{n}{is\PYGZus{}match}\PYG{p}{(}\PYG{n}{haystack}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{Regex::captures} 方法会在字符串中搜索第一个匹配项并返回一个 \texttt{regex::Captures} 值，其中包含表达式中每个组的匹配信息：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 可以检索各个捕获组：}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{captures}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{semver}\PYG{p}{.}\PYG{n}{captures}\PYG{p}{(}\PYG{n}{haystack}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{ok\PYGZus{}or}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{semver regex should have matched}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{captures}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.2.5}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{captures}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{captures}\PYG{p}{[}\PYG{l+m+mi}{2}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{captures}\PYG{p}{[}\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{5}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+如果所请求的组不匹配，则对 \texttt{Captures} 值进行索引就会出现 panic。要测试特定组是否匹配，可以调用 \texttt{Captures::get}，它会返回 \texttt{Option<regex::Match>}，其中的 \texttt{Match} 值会记录单个组的匹配信息：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{captures}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{l+m+mi}{4}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{captures}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{start}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{13}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{captures}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{end}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{14}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{captures}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{l+m+mi}{3}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{as\PYGZus{}str}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{5}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+可以遍历字符串中的所有匹配项：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{haystack}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{In the beginning, there was 1.0.0. }\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{                For a while, we used 1.0.1\PYGZhy{}beta, }\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{                but in the end, we settled on 1.2.4.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{matches}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k+kt}{str}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{semver}\PYG{p}{.}\PYG{n}{find\PYGZus{}iter}\PYG{p}{(}\PYG{n}{haystack}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{match\PYGZus{}}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{match\PYGZus{}}\PYG{p}{.}\PYG{n}{as\PYGZus{}str}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{matches}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.0.0}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.0.1\PYGZhy{}beta}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.2.4}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{find\_iter} 迭代器会为表达式的每个非重叠匹配生成一个 \texttt{Match} 值，从字符串的开头走到结尾。\texttt{captures\_iter} 方法也类似，但会生成记录了所有捕获组的 \texttt{captures} 值。当必须报告出捕获组时搜索速度会变慢，因此如果并不实际需要捕获组，那么最好使用某个不返回它们的方法。
+
+\subsection{惰性构建正则表达式值}
+
+\texttt{Regex::new} 构造函数的开销可能很高：在速度较快的开发机器上为 1200 个字符的正则表达式构造一个 \texttt{Regex} 会花费差不多 1 毫秒时间，即使是一个微不足道的表达式也要花费几微秒时间。最好让 \texttt{Regex} 构造远离繁重的计算循环，这就意味着应该只构建一次 \texttt{Regex}，然后重复使用它。
+
+\texttt{lazy\_static} crate 提供了一种在首次使用时惰性构造静态值的好办法。首先，请注意 Cargo.toml 文件中的依赖项：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{[}\PYG{k}{dependencies}\PYG{k}{]}
+\PYG{n}{lazy\PYGZus{}static}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+这个 crate 提供了一个宏来声明这样的变量：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{lazy\PYGZus{}static}\PYG{p}{::}\PYG{n}{lazy\PYGZus{}static}\PYG{p}{;}
+
+\PYG{n}{lazy\PYGZus{}static}\PYG{o}{!}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{static}\PYG{+w}{ }\PYG{k}{ref}\PYG{+w}{ }\PYG{n}{SEMVER}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Regex}
+\PYG{+w}{        }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Regex}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{r\PYGZdq{}(\PYGZbs{}d+)\PYGZbs{}.(\PYGZbs{}d+)\PYGZbs{}.(\PYGZbs{}d+)(\PYGZhy{}[\PYGZhy{}.[:alnum:]]*)?\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{              }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error parsing regex}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+该宏会扩展成名为 \texttt{SEMVER} 的静态变量的声明，但其类型不完全是 \texttt{Regex}，而是一个实现了 \texttt{Deref<Target=Regex>} 的由宏生成的类型，并公开了与 \texttt{Regex} 相同的全部方法。第一次解引用 \texttt{SEMVER} 时，会执行初始化程序，并保存该值供以后使用。由于 \texttt{SEMVER} 是一个静态变量，而不仅仅是局部变量，因此每次执行程序时初始化器都最多运行一次。
+
+有了这个声明，使用 \texttt{SEMVER} 就很简单了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{BufRead}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{stdin}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{stdin}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{match\PYGZus{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{SEMVER}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{line}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{match\PYGZus{}}\PYG{p}{.}\PYG{n}{as\PYGZus{}str}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+可以把 \texttt{lazy\_static!} 声明放在模块中，甚至可以放在使用 \texttt{Regex} 的函数内部（如果这就是最合适的作用域的话）。无论采用哪种方式，每当程序执行时，正则表达式都只会编译一次。
+
+\section{规范化}
+
+大多数用户误以为法语单词 thé（意为“茶”）的长度是 3 个字符。然而，Unicode 实际上有两种方式来表示这个单词。
+
+\begin{itemize}
+\item 在\textbf{组合}形式中，“thé”包含 3 个字符，即 \texttt{'t'}、\texttt{'h'} 和 \texttt{'é'}，其中 \texttt{'é'} 是码点为 \texttt{0xe9} 的单个 Unicode 字符。
+\item 在\textbf{分解}形式中，“thé”包含 4 个字符，即 \texttt{'t'}、\texttt{'h'}、\texttt{'e'} 和 \texttt{'\textbackslash{}u\{301\}'}，其中的 \texttt{'e'} 是纯 ASCII 字符，没有重音符号，而码点 \texttt{0x301} 是“结合性锐音符号”字符，它会为它前面的任意字符添加一个锐音符号。
+\end{itemize}
+
+Unicode 并不认为 é 的组合形式或分解形式是“正确的”形式，相反，它认为它们是同一抽象字符的等价表示。Unicode 规定这两种形式应该以相同的方式显示，并且允许文本输入法生成任何一种形式，因此用户通常不知道他们正在查看或输入的是哪种形式。（Rust 允许直接在字符串字面量中使用 Unicode 字符，因此如果不关心自己获得的是哪种编码，则可以简单地写成 \texttt{"thé"}。但为了清楚起见，这里我们会使用 \texttt{\textbackslash{}u} 转义符。）
+
+然而，作为 Rust 的 \texttt{\&str} 值或 \texttt{String} 值，\texttt{"th\textbackslash{}u\{e9\}"} 和 \texttt{"the\textbackslash{}u\{301\}"} 是完全不同的。它们具有不同的长度，比较起来不相等，具有不同的哈希值，并且相对于其他字符串会以不同的方式排序：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{th}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}e9\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{the}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}301\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{th}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}e9\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{  }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{the}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}301\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 哈希器旨在累积求出一系列值的哈希值，因此仅哈希一个值有点儿大材小用}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{hash}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Hash}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Hasher}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{hash\PYGZus{}map}\PYG{p}{::}\PYG{n}{DefaultHasher}\PYG{p}{;}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{hash}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{?}\PYG{n+nb}{Sized}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{Hash}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{t}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{T}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{DefaultHasher}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{t}\PYG{p}{.}\PYG{n}{hash}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{s}\PYG{p}{.}\PYG{n}{finish}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// 这些值可能会在将来的Rust版本中发生变化}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{hash}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{th}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}e9\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{   }\PYG{l+m+mh}{0x53e2d0734eb1dff3}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{hash}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{the}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}301\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mh}{0x90d837f0a0928144}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+显然，如果打算比较用户提供的文本或者将其用作哈希表或 B 树中的键，则需要先将每个字符串转换成某种规范形式。
+
+幸运的是，Unicode 指定了字符串的\textbf{规范化}形式。每当根据 Unicode 规则应将两个字符串视为等同时，它们的规范化形式是逐字符全同的。当使用 UTF-8 编码时，它们是逐字节全同的。这意味着可以使用 \texttt{==} 来比较规范化后的字符串，可以将它们用作 \texttt{HashMap} 或 \texttt{HashSet} 中的键，等等，这样就能获得 Unicode 规定的相等性概念了。
+
+如果未做规范化，则甚至会产生安全隐患。如果你的网站对用户名在某些情况下做了规范化，但在其他情况下未做规范化，那么最终可能会出现两个名为 \texttt{bananasflambé} 的不同用户，你的一部分代码会将其视为同一用户，但另一部分代码会认为这是两个用户，导致一个人的权限被错误地扩展到另一个人身上。当然，有很多方法可以避开这种问题，但历史表明也有很多方法不能避开。
+
+\subsection{规范化形式}
+
+Unicode 定义了 4 种规范化形式，每一种都适用于不同的用途。这里要回答两个问题。
+
+\begin{itemize}
+\item 第一个问题是：你更喜欢让字符尽可能\textbf{组合}还是尽可能\textbf{分解}？
+̛̛
+例如，越南语单词 Phở 最常用的组合表示是三字符字符串 \texttt{"Ph\textbackslash{}u\{1edf\}"}，其中声调标记  ̉ 和元音标记 ̛  都应用于基本字符“o”上，而其单个 Unicode 字符是 \texttt{'\textbackslash{}u\{1edf\}'}，Unicode 很质朴地将其命名为“带角和钩形的拉丁文小写字母 o”。
+
+最常用的分解表示是将基本字母及其两个标记拆分为 3 个单独的 Unicode 字符：\texttt{'o'}、\texttt{'\textbackslash{}u\{31b\}'}（组合角符）和 \texttt{'\textbackslash{}u\{309\}'}（组合上钩符），其结果就是 \texttt{"Pho\textbackslash{}u\{31b\}\textbackslash{}u\{309\}"}。（每当组合标记作为单独的字符出现，而不是作为组合字符的一部分时，所有规范化形式都指定了它们必须以固定顺序出现，因此即使字符有多个重音符号，也能很好地进行规范化。）
+
+组合形式通常具有较少的兼容性问题，因为它更接近于在 Unicode 建立之前用于其文本的大多数语言的表示。它也可以更好地与简单的字符串格式化特性（如 Rust 的 \texttt{format!} 宏）协作。而分解形式可能更适合显示文本或搜索，因为它使文本的详细结构更加明确。
+\item 第二个问题是：如果两个字符序列表示相同的基础文本，但文本的格式化方式不同，那么你是要将它们视为等同的还是坚持认为有差异？
+
+Unicode 对普通数字 \texttt{5}、上标数字 \texttt{⁵}（或 \texttt{'\textbackslash{}u\{2075\}'}）和带圆圈的数字 ⑤（或 \texttt{'\textbackslash{}u\{2464\}'}）都有单独的字符，但声明这 3 个字符是\textbf{兼容性等效}的。类似地，Unicode 对连字 ffi（\texttt{'\textbackslash{}u\{fb03\}'}）也有一个单字符，但声明这与三字符序列 \texttt{ffi} 兼容性等效。
+
+兼容性等效对搜索很有意义：搜索仅使用了 ASCII 字符的 \texttt{"difficult"}，应该匹配使用了 ffi 连字符的字符串 \texttt{"di\textbackslash{}u\{fb03\}cult"}。对后一个字符串应用兼容性分解会将连字替换为 3 个纯字母 \texttt{"ffi"}，从而让搜索更容易。但是将文本规范化为其兼容的等效形式可能会丢失重要信息，因此不应草率应用。例如，在大多数情况下将 \texttt{"2⁵"} 存储为 \texttt{"25"} 是不正确的。
+\end{itemize}
+
+Unicode 规范化形式 C（NFC）和规范化形式 D（NFD）会使用每个字符的最大组合形式和最大分解形式，但不会试图统一兼容性等价序列。NFKC 规范化形式和 NFKD 规范化形式类似于 NFC 和 NFD，但它们会将所有兼容性等效序列规范化为各自的一些简单表示法。
+
+万维网联盟的“WWW 字符模型”建议对所有内容都使用 NFC。Unicode 标识符和模式语法附件则建议使用 NFKC 作为编程语言中的标识符，并提供了在必要时适配此形式的原则。
+
+\subsection{\texttt{unicode-normalization} crate}
+
+Rust 的 \texttt{unicode-normalization} crate 提供了一个特型，可以将方法添加到 \texttt{\&str} 中，以便将文本转成四种规范化形式中的任何一种。要使用这个 crate，请将下面这行代码添加到 Cargo.toml 文件的 \texttt{[dependencies]} 部分：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{unicode\PYGZhy{}normalization}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.1.17}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+有了这个声明，\texttt{\&str} 就有了 4 个新方法，它们会返回字符串的特定规范化形式的迭代器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{unicode\PYGZus{}normalization}\PYG{p}{::}\PYG{n}{UnicodeNormalization}\PYG{p}{;}
+
+\PYG{c+c1}{// 不管左边的字符串使用哪种表示形式（无法仅仅通过观察得知），这些断言都成立}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Phở}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{nfd}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Pho}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}31b\PYGZcb{}}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}309\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Phở}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{nfc}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Ph}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}1edf\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{c+c1}{// 左侧使用了\PYGZdq{}ffi\PYGZdq{}连字符}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{① Di}\PYG{l+s+se}{\PYGZbs{}u\PYGZob{}fb03\PYGZcb{}}\PYG{l+s}{culty}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{nfkc}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1 Difficulty}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+接受规范化的字符串并以相同的形式再次对其进行规范化可以保证返回相同的文本。
+
+尽管规范化字符串的任何子字符串本身也是规范化的，但两个规范化字符串拼接起来不一定是规范化的。例如，第二个字符串可能以组合字符开头，并且这个字符按规范应该排在第一个字符串末尾的组合字符之前。
+
+只要文本在规范化时没有使用未分配的码点，Unicode 就承诺其规范化形式在标准的未来版本中不会改变。这意味着规范化形式通常可以安全地用于持久存储，即使 Unicode 标准在不断发展也不会受影响。
+

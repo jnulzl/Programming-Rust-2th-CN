@@ -1,0 +1,562 @@
+% =============================================================================
+%  book/ccs.tex  ——  全书导言区（版式 / 字体 / 自定义命令与环境）
+%  版式依据：O'Reilly《Programming Rust, 2nd Edition》英文原版 PDF 实测
+%     页面 504 × 661.5bp（7in × 9.19in）；版心 360bp（左右边距各 72bp）；
+%     正文 Minion Pro 10.5pt / 行距 13.2pt；章号 16.8bp、章名 25.2bp、
+%     节 18.9bp、小节 15.8bp（均为 MyriadPro-SemiboldCond，黑色）；
+%     代码 UbuntuMono 8.5bp，无框无底色；页脚为「页码 | 章名 / 节名」+ 细线。
+%  文件结构沿用 CMake-Cookbook 模板：
+%     main.tex → book/ccs.tex（导言区）→ book/index.tex（封面 + 目录 + 章节装配）
+%     正文：book/content/<类别>/<slug>.tex，由 book/index.tex 的 \myChapter 加载
+% =============================================================================
+
+\documentclass[10.5bp,openright,twoside,UTF8]{book}
+\interfootnotelinepenalty=10000
+
+% -----------------------------------------------------------------------------
+%  基础宏包
+% -----------------------------------------------------------------------------
+\usepackage{textcomp}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{ifthen}
+\usepackage{pgffor}
+\usepackage{xspace}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{tabularx}
+\usepackage{xltabular}   % longtable + X 列：行数多的表要跨页（见 table() 注释）
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{multicol}
+\usepackage{indentfirst}
+\usepackage{subfiles}
+\usepackage[table]{xcolor}
+\usepackage{caption}
+\usepackage[export]{adjustbox}
+
+% -----------------------------------------------------------------------------
+%  ★★★ 页面尺寸与页边距：想改版面，只动这一段 ★★★
+%  单位一律用 bp（1/72 in），与 PDF 同单位，便于和原书实测值对齐。
+%    纸张     504 × 661.5bp
+%    版心     360bp 宽（left = right = 72bp）
+%    版心高   528bp（40 行 × 13.2bp）；正文首行基线 y ≈ 63bp
+%    ⚠ 章首页的版式由 \titlespacing*{\chapter} 控制，改 top 会一起移动。
+% -----------------------------------------------------------------------------
+\usepackage[
+  paperwidth=504bp, paperheight=661.5bp,
+  textwidth=360bp,
+  top=53bp, bottom=78.5bp,
+  headheight=14bp, headsep=10bp,
+  footskip=36bp]{geometry}
+
+% -----------------------------------------------------------------------------
+%  ★★★ 字体：想换字体、改字号，只改这一段 ★★★
+%  原书用 Minion Pro（正文）/ MyriadPro-SemiboldCond（标题）/ UbuntuMono（代码），
+%  三者都是商用字体，本机以 Cambria / Arial Narrow / Consolas 代替：
+%    · Cambria 的数字是等高数字，x 高度与 Minion 接近，替换后行宽变化最小；
+%    · Arial Narrow 是压缩无衬线，最接近 MyriadPro-SemiboldCond 的字宽密度；
+%    · Consolas 自带全套框线字符（代码里的目录树 ─├└│ 可以直接显示）。
+% -----------------------------------------------------------------------------
+\usepackage{fontspec}
+\usepackage[fontset=none]{ctex}      % 只借 ctex 的中文标题名与 \zihao，字体手工指定
+\usepackage[fontsize=10.5bp]{fontsize}
+\linespread{1.0476}                 % 10.5bp × 1.2 × 1.0476 ≈ 13.2bp 行距（原书实测）
+
+\setCJKmainfont[AutoFakeSlant=true]{Source Han Serif SC}                 % 中文正文
+\setCJKsansfont[AutoFakeBold=true,AutoFakeSlant=true]{Microsoft YaHei}   % 中文标题/表头
+\setCJKmonofont[AutoFakeBold=true,AutoFakeSlant=true]{Microsoft YaHei}   % 代码里的中文
+\setmainfont{Cambria}[BoldFont=*-Bold, ItalicFont=*-Italic, BoldItalicFont=*-BoldItalic]
+\setsansfont{Arial Narrow}
+\setmonofont{Consolas}[
+  Path=C:/Windows/Fonts/, Extension=.ttf,
+  UprightFont=consola, BoldFont=consolab,
+  ItalicFont=consolai, BoldItalicFont=consolaz]
+\newfontfamily\codehan{Microsoft YaHei}
+
+% -----------------------------------------------------------------------------
+%  版面与段落
+% -----------------------------------------------------------------------------
+\definecolor{ink}{HTML}{000000}          % 正文墨色（原书为纯黑）
+\definecolor{linkred}{HTML}{990000}      % 交叉引用 / 链接（原书实测 #990000）
+\definecolor{tabhead}{HTML}{000000}      % 表头黑底
+\definecolor{figframe}{HTML}{BFBFBF}     % 插图细边框
+\definecolor{rule}{HTML}{666666}         % 页脚横线
+
+\setlength{\parindent}{2em}                      % 中文惯例：首行缩进两字
+\setlength{\parskip}{0bp}
+\raggedbottom
+\emergencystretch=1em                            % 只给 1em 应急拉伸，避免中文字距被拉散
+\AtBeginDocument{\color{ink}}
+
+\setlist[itemize,enumerate,description]{nosep, topsep=5bp, partopsep=0bp,
+  parsep=0bp, itemsep=3bp, leftmargin=2.2em}
+
+% 脚注：原书 8bp，行距 10bp，编号为正文内上标
+\renewcommand{\footnotesize}{\fontsize{8bp}{10bp}\selectfont}
+% minus 必须留够：脚注页（正文末行 + 分隔线 + 脚注）一旦超出版心，
+% TeX 只能报 Overfull \vbox 而不会自己挤，实测第 13 章有一页超 11.5bp。
+% 允许压缩 12bp 后，这类页会被自动吸收，正常页不受影响。
+\setlength{\skip\footins}{14bp plus 4bp minus 14bp}
+\renewcommand{\footnoterule}{\kern-3bp\rule{120bp}{0.3bp}\kern 6bp}
+\makeatletter
+\renewcommand{\@makefnmark}{\hbox{\textsuperscript{\fontsize{7bp}{7bp}\selectfont\@thefnmark}}}
+\makeatother
+
+% -----------------------------------------------------------------------------
+%  代码高亮
+%  原书代码：无外框、无底色、无行号，8.5bp 等宽，左缘比正文再缩进 17bp。
+%
+%  ★ 两条路线，用下面的开关切换 ★
+%    \mintedcodefalse（默认）—— 构建期用 Pygments 预着色：convert.py 直接把
+%      \PYG{...} 序列写进 .tex，编译时只是 Verbatim 环境，不需要 -shell-escape，
+%      也不需要 latexminted。全书 1400+ 代码块，单遍编译约 3 分钟。
+%    \mintedcodetrue  —— 编译期用 minted 高亮（需 -shell-escape + Pygments + Python
+%      在 PATH 里）。观感一致，但这台机器上单遍编译要 19 分钟，且 minted v3 在
+%      Windows 下有缓存目录必须为绝对路径的坑（见下面的补丁，已保留备查）。
+% -----------------------------------------------------------------------------
+\newif\ifmintedcode
+\mintedcodefalse
+\newcommand{\codefont}{\fontsize{8.5bp}{10.2bp}\selectfont}
+
+\ifmintedcode
+\usepackage[cache=true]{minted}
+\setminted{obeytabs, tabsize=4, breaklines=true, breakanywhere=true,
+           fontsize=\codefont, autogobble=true}
+% 【关键】minted v3 在 Windows 下缓存目录必须是绝对路径：
+%   latexminted 只允许把文件写进 TEXMFOUTPUT / TEXMF_OUTPUT_DIRECTORY 指明的
+%   绝对路径内，相对路径一律拒绝；而 minted 默认 \minted@cachedir = "_minted"
+%   是相对路径 → 全部代码块写入失败，且报错信息极具误导性。
+\makeatletter
+\CatchFileDef{\mintedProjectRoot}{|"kpsewhich --var-value TEXMF_OUTPUT_DIRECTORY"}%
+  {\minted@standardcatcodes\endlinechar=-1}%
+\def\minted@stripcr#1\r{#1}%
+\edef\mintedProjectRoot{\expandafter\minted@stripcr\mintedProjectRoot\r}%
+\ifx\mintedProjectRoot\@empty
+  \CatchFileDef{\mintedProjectRoot}{|"kpsewhich --var-value TEXMFOUTPUT"}%
+    {\minted@standardcatcodes\endlinechar=-1}%
+  \edef\mintedProjectRoot{\expandafter\minted@stripcr\mintedProjectRoot\r}%
+\fi
+\ifx\mintedProjectRoot\@empty
+  \PackageWarning{minted-cn}{%
+    Neither TEXMF_OUTPUT_DIRECTORY nor TEXMFOUTPUT is set: code blocks will
+    FAIL to highlight. Build via build.bat.}%
+\else
+  \edef\minted@cachedir{\mintedProjectRoot}%
+\fi
+\makeatother
+% 注册原书配色，避免每次去调 Python 生成样式
+\makeatletter
+\CatchFileDef{\minted@styledef@oreilly}{book/oreilly-pygments.tex}%
+  {\minted@standardcatcodes\endlinechar=-1}%
+\minted@detectconfig
+\makeatother
+\setminted{style=oreilly}
+
+% 代码块：直接用 minted 环境（无框、无底色、无行号）
+\newenvironment{codebox}[1][rust]
+  {\VerbatimEnvironment
+   \begin{minted}[breaklines=true, breakanywhere=true,
+                  fontsize=\codefont, tabsize=4, obeytabs=true,
+                  autogobble=true, xleftmargin=17bp]{#1}}
+  {\end{minted}}
+
+\else
+% ---- 默认路线：构建期预着色 ----
+%  fvextra 提供 Verbatim 的 breaklines / xleftmargin 等选项
+\usepackage{fvextra}
+\input{book/oreilly-pygments.tex}     % \PYG 系列宏（与 minted 的样式文件同一套）
+\fvset{breaklines=true, breakanywhere=true, fontsize=\codefont,
+       xleftmargin=17bp, tabsize=4, commandchars=\\\{\}}
+\fi
+
+% -----------------------------------------------------------------------------
+%  标题样式（对齐原书：压缩无衬线、纯黑、右对齐章首）
+%   章：CHAPTER N（16.8bp）+ 通栏细线 + 章名（25.2bp，右对齐）
+%   节：18.9bp；小节：15.8bp —— 编号在标题行内，不悬挂（中文版保留编号）
+%   章首版式不用 titlesec 的 [display] 形状：那里不允许 label 里出现 \par，
+%   而「ChAPTER N / 细线 / 章名」三行结构必须在标题块内完成，故直接重定义
+%   \@makeschapterhead（全书只用 \chapter*，编号由 \myChapter 手工设定）。
+% -----------------------------------------------------------------------------
+\usepackage{titlesec}
+\newcommand{\mychaptergiant}{}
+\newcommand{\mychapterset}[1]{\gdef\mychaptergiant{#1}}
+\newcommand{\mychapterclear}{\gdef\mychaptergiant{}}
+\newcommand{\myChapterTopSkip}{3bp}
+\newcommand{\myChapterAfterSkip}{96bp}
+
+\makeatletter
+\def\@makeschapterhead#1{%
+  \vspace*{\myChapterTopSkip}%
+  \thispagestyle{plain}%
+  \begingroup
+    \raggedleft\sffamily
+    \ifx\mychaptergiant\empty\else
+      {\fontsize{16.8bp}{20bp}\selectfont\bfseries CHAPTER~\mychaptergiant\par}%
+      \vspace{1bp}%
+    \fi
+    {\color{ink}\rule{\textwidth}{0.5bp}\par}%
+    \vspace{-10bp}%
+    {\fontsize{25.2bp}{28bp}\selectfont\bfseries #1\par}%
+  \endgroup
+  \vspace{\myChapterAfterSkip}%
+  \@afterheading}
+\makeatother
+
+\titleformat{\section}
+  {\fontsize{18.9bp}{22bp}\selectfont\sffamily\bfseries\color{ink}}
+  {\thesection\hspace{0.5em}}{0bp}{}
+\titlespacing*{\section}{0bp}{22bp plus 4bp minus 2bp}{7bp}
+
+\titleformat{\subsection}
+  {\fontsize{15.8bp}{19bp}\selectfont\sffamily\bfseries\color{ink}}
+  {\thesubsection\hspace{0.5em}}{0bp}{}
+\titlespacing*{\subsection}{0bp}{16bp plus 3bp minus 2bp}{5bp}
+
+\setcounter{secnumdepth}{2}     % 章 / 节 / 小节都编号（对齐中文原版）
+\setcounter{tocdepth}{2}        % 目录与书签只到「小节」
+
+% -----------------------------------------------------------------------------
+%  插图：通栏细边框 + 下方题注（题注左缘与正文齐平）
+%  用法：\myFigure{images/ch03/fig-3-1.jpeg}{图 3-1：…}
+% -----------------------------------------------------------------------------
+%  ⚠ 图与题注必须打进同一个 \vbox：若用 center 环境 + \nopagebreak，
+%    \end{center} 之后的 \vspace 本身就是合法断点，图排到页底时题注会
+%    单独跑到下一页（第 3 章图 3-3 实测）。整块当成一个垂直盒子就拆不开。
+\newcommand{\myFigure}[2]{%
+  \par\addvspace{9bp}%
+  \noindent
+  \vbox{%
+    \hbox to \textwidth{\hfil
+      {\setlength{\fboxrule}{0.4bp}\setlength{\fboxsep}{0pt}%
+       \fcolorbox{figframe}{white}{%
+         \includegraphics[max width=\textwidth, max height=0.52\textheight,
+                          keepaspectratio]{#1}}}%
+      \hfil}%
+    \ifx\relax#2\relax\else
+      \vskip5bp
+      \hbox to \textwidth{\vtop{\hsize=\textwidth
+        \fontsize{9.8bp}{12.5bp}\selectfont\bfseries #2\par}\hfil}%
+    \fi}%
+  \par\addvspace{9bp}}
+
+% 表/图题注（原文单独成段加粗）：与图注同一套字号，段前段后收紧
+\newcommand{\myCaption}[1]{%
+  \par\addvspace{8bp}\noindent
+  {\fontsize{9.8bp}{12.5bp}\selectfont\bfseries #1\par}%
+  \addvspace{3bp}}
+
+% -----------------------------------------------------------------------------
+%  表格：无竖线、表头黑底白字（对齐原书）
+%  ⚠ 不能把 tabularx 包进自定义环境：tabularx 要**向前扫描**自己的 \end{tabularx}
+%    才能确定列宽，包一层会让它读到 \end{myTable}，报
+%    "File ended while scanning use of \TX@get@body"。
+%    所以只在两侧放「开关宏」，tabularx 本体留在正文里。
+%    行数多的表（>=14 行）由 convert.py 改用 xltabular，以便跨页并重复表头：
+%    tabularx 是不可分割的段落，比一页高的表会越过页脚、多出的行静默丢失。
+% -----------------------------------------------------------------------------
+\newcommand{\myTableBegin}{%
+  \par\addvspace{2bp}\noindent\begingroup
+  \fontsize{9bp}{11.5bp}\selectfont\sffamily
+  \renewcommand{\arraystretch}{1.25}%
+  \setlength{\arrayrulewidth}{0.3bp}%
+  % longtable 默认在表格前后各加 \bigskipamount，且靠 \fill 居中；
+  % 这里归零，让表与正文左缘严格对齐、段距只由 \myTableBegin/\myTableEnd 控制。
+  \setlength{\LTpre}{0bp}\setlength{\LTpost}{0bp}%
+  \setlength{\LTleft}{0bp}\setlength{\LTright}{0bp}}
+\newcommand{\myTableEnd}{\endgroup\par\addvspace{9bp}}
+
+% -----------------------------------------------------------------------------
+%  提示框（NOTE / TIP / WARNING）：页边距里的图标 + 缩进正文，无边框无底色
+%  原书实测：图标位于版心左缘外 17bp、宽 38bp；正文整块缩进 65bp，字号 9.6bp
+% -----------------------------------------------------------------------------
+\newcommand{\myNoteIcon}{images/icon-note.png}
+\newenvironment{myNote}
+  {\par\addvspace{8bp}\begingroup
+   \setlength{\leftskip}{65bp}\setlength{\parindent}{0bp}%
+   \noindent\hspace*{-65bp}%
+   \raisebox{-4bp}{\includegraphics[width=38bp]{\myNoteIcon}}%
+   \hspace*{27bp}%
+   \fontsize{9.6bp}{12.6bp}\selectfont\ignorespaces}
+  {\par\endgroup\addvspace{8bp}}
+
+% 短小的旁注（原文中的缩进小段）
+\newenvironment{mySidenote}
+  {\par\addvspace{5bp}\begingroup
+   \setlength{\leftskip}{2.2em}\setlength{\parindent}{0bp}%
+   \fontsize{9.6bp}{12.6bp}\selectfont\ignorespaces}
+  {\par\endgroup\addvspace{5bp}}
+
+% 章首/节首引文（epigraph）
+%   正文斜体 9.5bp、左侧缩进 18bp；出处另起一行、同样缩进、不斜体
+%   注意：环境的结束码里拿不到 #1，出处必须先存进 \my@epiattr。
+\newcommand{\myepiattr}{}
+\newenvironment{myEpigraph}[1]
+  {\par\addvspace{10bp}\begingroup
+   \gdef\myepiattr{#1}%
+   \setlength{\leftskip}{18bp}\setlength{\parindent}{0bp}%
+   \itshape\fontsize{9.5bp}{12.4bp}\selectfont\noindent\ignorespaces}
+  {\par\nopagebreak\vspace{2bp}%
+   \upshape\fontsize{9bp}{11.5bp}\selectfont\noindent
+   \ifx\myepiattr\empty\else\myepiattr\fi
+   \par\endgroup\addvspace{10bp}}
+
+% -----------------------------------------------------------------------------
+%  目录 / 书签 / 超链接
+% -----------------------------------------------------------------------------
+\usepackage{url}
+\usepackage[depth=2]{bookmark}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=linkred,
+  citecolor=linkred,
+  urlcolor=linkred,
+  filecolor=linkred,
+  breaklinks=true,
+  pdfstartview=Fit,
+  pdftitle={Rust 程序设计（第 2 版）},
+  pdfauthor={Jim Blandy, Jason Orendorff, Leonora F. S. Tindall 著；汪志成 译},
+  pdfsubject={Programming Rust: Fast, Safe Systems Development, Second Edition 中文版},
+  pdfkeywords={Rust, 系统编程, 所有权, 生命周期, 并发, 异步, 宏, FFI},
+}
+\renewcommand{\contentsname}{目录}
+
+% 章名上的脚注标记。直接用 \footnotemark 有两个问题：被 hyperref 包成链接、
+% 染成暗红；以及 \@makefnmark 的 7bp 是按正文 10.5bp 定的，放进 25.2bp 的
+% 章名里几乎看不见。这里局部改回正文字色，并给标记 11bp。
+\makeatletter
+\newcommand{\mychapterfnmark}{{\hypersetup{linkcolor=ink}%
+  \def\@makefnmark{\hbox{\textsuperscript{\fontsize{11bp}{11bp}\selectfont\@thefnmark}}}%
+  \footnotemark}}
+\makeatother
+
+% 目录页：标题后的空白比章首页小得多（原书目录紧跟标题），
+% 且目录条目不跟着链接染成暗红——书里的目录是纯黑。
+\makeatletter
+\let\myORItableofcontents\tableofcontents
+\renewcommand{\tableofcontents}{%
+  \begingroup
+    \hypersetup{linkcolor=ink}%
+    \renewcommand{\myChapterAfterSkip}{44bp}%
+    \myORItableofcontents
+  \endgroup}
+\makeatother
+
+% 目录条目：章条目补引导点，页码盒加宽到 1.9em（避免三位页码 Overfull）
+\makeatletter
+\def\@pnumwidth{1.9em}
+\renewcommand*\l@chapter[2]{%
+  \ifnum \c@tocdepth >\m@ne
+    \addpenalty{-\@highpenalty}%
+    \vskip 0.9em \@plus\p@
+    \begingroup
+      \parindent \z@ \rightskip \@pnumwidth
+      \parfillskip -\@pnumwidth
+      \leavevmode \bfseries
+      #1\nobreak
+      \leaders\hbox{$\m@th\mkern\@dotsep mu\hbox{.}\mkern\@dotsep mu$}\hfill
+      \nobreak\hb@xt@\@pnumwidth{\hss #2}\par
+      \penalty\@highpenalty
+    \endgroup
+  \fi}
+% 页脚里的节名：带节号（"2.6　并发"），去掉 book.cls 自带的句点
+\newcommand{\my@sectionmark}[1]{\markright{\normalfont
+  \ifnum\c@secnumdepth>\z@\thesection\quad\fi #1\quad|\quad}}
+\let\sectionmark\my@sectionmark
+\AtBeginDocument{\let\sectionmark\my@sectionmark}
+\makeatother
+
+% -----------------------------------------------------------------------------
+%  长串断行：URL 与行内长标识符允许折行（同 CMake 模板的做法）
+%   在 / . - _ ? = 之后放自然断点 \penalty 0，其余字符间放 \penalty 1000
+%   应急断点；控制序列后不注入（否则 \emph 等宏会把 \penalty 当参数吃掉）。
+% -----------------------------------------------------------------------------
+\ExplSyntaxOn
+\let\myORIhref\href
+\let\myORItt\texttt
+\cs_new:Npn \my_spcmark {}
+\tl_new:N \l_myin_tl
+\tl_new:N \l_myout_tl
+\str_new:N \l_my_head_str
+\str_new:N \l_my_first_str
+\cs_new_protected:Npn \my_breakinject:n #1
+  {
+    \tl_set:Nn \l_myin_tl { #1 }
+    \tl_replace_all:Nnn \l_myin_tl { ~ } { \my_spcmark }
+    \tl_clear:N \l_myout_tl
+    \tl_map_inline:Nn \l_myin_tl
+      {
+        \tl_put_right:Nn \l_myout_tl { ##1 }
+        \str_set:Nn \l_my_head_str { ##1 }
+        \str_set:Nx \l_my_first_str { \str_item:Nn \l_my_head_str { 1 } }
+        \str_if_eq:VVTF \l_my_first_str \c_backslash_str
+          { \tl_if_eq:nnT { ##1 } { \_ }
+              { \tl_put_right:Nn \l_myout_tl { \penalty 0 \scan_stop: } } }
+          { \tl_put_right:Nn \l_myout_tl { \penalty 1000 \scan_stop: } }
+      }
+    \tl_replace_all:Nnn \l_myout_tl { / \penalty 1000 \scan_stop: } { / \penalty 0 \scan_stop: }
+    \tl_replace_all:Nnn \l_myout_tl { . \penalty 1000 \scan_stop: } { . \penalty 0 \scan_stop: }
+    \tl_replace_all:Nnn \l_myout_tl { - \penalty 1000 \scan_stop: } { - \penalty 0 \scan_stop: }
+    \tl_replace_all:Nnn \l_myout_tl { ? \penalty 1000 \scan_stop: } { ? \penalty 0 \scan_stop: }
+    \tl_replace_all:Nnn \l_myout_tl { = \penalty 1000 \scan_stop: } { = \penalty 0 \scan_stop: }
+    \tl_replace_all:Nnn \l_myout_tl { \_ \penalty 1000 \scan_stop: } { \_ \penalty 0 \scan_stop: }
+    \tl_replace_all:Nnn \l_myout_tl { \my_spcmark } { ~ }
+  }
+\RenewDocumentCommand { \href } { m m }
+  { \my_breakinject:n { #2 } \myORIhref { #1 } { \l_myout_tl } }
+\RenewDocumentCommand { \texttt } { m }
+  { \my_breakinject:n { #1 } \myORItt { \l_myout_tl } }
+\ExplSyntaxOff
+
+% 裸 URL（原文链接文字就是网址）：链接目标 = 显示文字
+\newcommand{\texthref}[1]{\href{#1}{#1}}
+
+% -----------------------------------------------------------------------------
+%  页脚（对齐原书）：双页 = 「页码 | 章名」靠左；单页 = 「节名 | 页码」靠右；
+%  上方一条 0.3bp 细线；章首页只印页码，位置在外侧。
+% -----------------------------------------------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\newcommand{\myfootfont}{\sffamily\fontsize{9bp}{11bp}\selectfont}
+% 分隔符（竖线）跟着书眉内容走，而不是写死在页脚里：
+%   书眉为空（封面/扉页/版权页等 \markboth{}{} 的页）时自然什么都不印，
+%   否则会留下一个孤零零的「| 3」。
+%   也不能用 etoolbox 的 \ifdefempty 去判 \@leftmark —— LaTeX 在标记里
+%   存了大小写包装，永远判不出"空"。
+\fancyfoot[LE]{\myfootfont\bfseries\thepage\leftmark}
+\fancyfoot[RO]{\myfootfont\rightmark\bfseries\thepage}
+\renewcommand{\headrulewidth}{0bp}
+\renewcommand{\footrulewidth}{0.3bp}
+\renewcommand{\footrule}{%
+  \vskip-\footruleskip\vskip-\footrulewidth
+  {\color{rule}\hrule height\footrulewidth width\headwidth}%
+  \vskip\footruleskip}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[LE]{\myfootfont\bfseries\thepage}%
+  \fancyfoot[RO]{\myfootfont\bfseries\thepage}%
+  \renewcommand{\headrulewidth}{0bp}%
+  \renewcommand{\footrulewidth}{0.3bp}}
+% 书眉内容自带分隔符：左页「章名」、右页「章名/节名」，竖线由 \chapmark 与
+% \my@sectionmark 一并写进去，页脚只负责拼接（见上一条说明）。
+\newcommand{\chapmark}[1]{%
+  \markboth{\normalfont\quad|\quad #1}{\normalfont #1\quad|\quad}}
+
+% 空白页（openright 自动插入的偶数页）不印页脚：
+%   book.cls 的 \cleardoublepage 不会给空白页设 \pagestyle{empty}，fancy 页脚
+%   会留下「12 |」这种只有页码和竖线的残缺行。这里补一个只对空白页生效的 empty。
+\let\myorigcleardoublepage\cleardoublepage
+\renewcommand{\cleardoublepage}{%
+  \clearpage{\pagestyle{empty}\myorigcleardoublepage}}
+
+% -----------------------------------------------------------------------------
+%  Unicode 符号兜底（当前字体缺字形时映射到等价写法）
+% -----------------------------------------------------------------------------
+\usepackage{newunicodechar}
+\newunicodechar{→}{\(\to\)}
+\newunicodechar{←}{\(\leftarrow\)}
+\newunicodechar{⇒}{\(\Rightarrow\)}
+\newunicodechar{≤}{\(\leq\)}
+\newunicodechar{≥}{\(\geq\)}
+\newunicodechar{≠}{\(\neq\)}
+\newunicodechar{−}{\(-\)}
+\newunicodechar{×}{\(\times\)}
+\newunicodechar{·}{\(\cdot\)}
+\newunicodechar{∞}{\(\infty\)}
+\newunicodechar{⊂}{\(\subset\)}
+\newunicodechar{⊆}{\(\subseteq\)}
+\newunicodechar{∈}{\(\in\)}
+\newunicodechar{∠}{\(\angle\)}
+\newunicodechar{⊙}{\(\odot\)}
+\newunicodechar{≅}{\(\cong\)}
+\newunicodechar{π}{\(\pi\)}
+\newunicodechar{μ}{\(\mu\)}
+\newunicodechar{β}{\(\beta\)}
+\newunicodechar{✓}{\(\checkmark\)}
+\newunicodechar{✗}{\(\times\)}
+\newunicodechar{➊}{\textcircled{\scriptsize 1}}
+\newunicodechar{➋}{\textcircled{\scriptsize 2}}
+\newunicodechar{➌}{\textcircled{\scriptsize 3}}
+\newunicodechar{■}{\rule[0.2em]{0.62em}{0.62em}}
+\newunicodechar{▪}{\rule[0.2em]{0.4em}{0.4em}}
+\newunicodechar{☐}{\(\square\)}
+\newunicodechar{️}{}
+
+% 非拉丁字符的字体回退（Cambria / Consolas 都没有这些字形）
+%   · 第 17 章讲 String::chars 时的举例里有希伯来文 "ערב טוב"
+%   · 第 3 章讲字符类型时的举例里有卡纳达文 "ಠ_ಠ"
+%   · 第 18 章讲 Path 转字符串时会提到替换字符 U+FFFD
+% 代码块里的回退由 tools/convert.py 在生成 \PYG 序列时包 {\hebrewfont …} 完成
+% （Verbatim 的 commandchars 允许花括号与反斜杠，故在代码块内同样生效）。
+\newfontfamily\hebrewfont{Arial}
+\newfontfamily\kannadafont{Nirmala UI}
+\newfontfamily\symbolfallback{Segoe UI Symbol}
+% U+FFFD（替换字符）没有一款 Windows 字体真正带这个码位，原书里它是一个空心方框，
+% 这里直接画一个，既忠实又不留豆腐块。
+\newunicodechar{�}{{\setlength{\fboxsep}{0pt}%
+  \framebox[0.62em]{\rule{0pt}{0.5em}}}}
+\newunicodechar{ಠ}{{\kannadafont ಠ}}
+
+% -----------------------------------------------------------------------------
+%  章节命令（对应模板的 \myChapter / \myFront）
+% -----------------------------------------------------------------------------
+\ExplSyntaxOn
+% 编号正文章节：\myChapter{章号}{标题}{文件}
+\tl_new:N \l__my_toctitle_tl
+\NewDocumentCommand { \myChapter } { mmm }
+{
+  \setcounter{chapter}{#1}
+  \setcounter{section}{0}
+  % 脚注按章从 1 重新编（原书就是每章独立编号）。不重置的话，
+  % 第 4 章章名上那条译者注会显示成 [14]，因为前面三章累计了 13 条。
+  \setcounter{footnote}{0}
+  \mychapterset{#1}%
+  \tl_set:Nn \l__my_toctitle_tl { #2 }
+  % 章名上可能挂 \footnotemark（原书章名带脚注），它不该进目录与页眉
+  \tl_remove_all:Nn \l__my_toctitle_tl { \mychapterfnmark }
+  \tl_replace_all:Nnn \l__my_toctitle_tl { \\ } { \space }
+  \chapter*{#2}
+  \mychapterclear
+  \chapmark{第~#1~章\quad \l__my_toctitle_tl}
+  \addcontentsline{toc}{chapter}{第~#1~章\quad \l__my_toctitle_tl}
+  \subfile{#3}
+}
+% 前言类：进目录但无编号（章首无「CHAPTER N」行，标题上方无细线，
+%   标题后不留章首页那样的大空白）
+\NewDocumentCommand { \myFront } { mm }
+{
+  \mychapterclear
+  \setcounter{footnote}{0}
+  \group_begin:
+    \cs_set:Npn \myChapterAfterSkip { 34bp }
+    \cs_set:Npn \myChapterTopSkip { 24bp }
+    \chapter*{#1}
+  \group_end:
+  \addcontentsline{toc}{chapter}{#1}
+  \chapmark{#1}
+  % 前言类的小节不编号，否则目录里会冒出「0.1 致谢」「0.2 读者对象」这种
+  % 挂在第 0 章下的编号。\setcounter 是全局赋值，正文前再恢复成 2。
+  \setcounter{secnumdepth}{-1}
+  \subfile{#2}
+  \setcounter{secnumdepth}{2}
+}
+% 版权页：不进目录
+\NewDocumentCommand { \myFrontNoToc } { m }
+{
+  \clearpage
+  \markboth{}{}
+  \subfile{#1}
+}
+\ExplSyntaxOff
+
+% 版权页用的小号排版
+\newenvironment{myCopyright}
+  {\par\begingroup\fontsize{9bp}{13bp}\selectfont
+   \setlength{\parindent}{0bp}\setlength{\parskip}{4bp}}
+  {\par\endgroup}

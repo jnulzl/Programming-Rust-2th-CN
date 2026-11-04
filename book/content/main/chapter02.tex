@@ -1,0 +1,1464 @@
+% chapter02 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_023.html, part0000_split_024.html, part0000_split_025.html, part0000_split_026.html, part0000_split_027.html, part0000_split_028.html, part0000_split_029.html, part0000_split_030.html
+
+写这样一本书并不容易：Rust 这门语言如此卓尔不群，我们固然有能力在一开始就展示出其独特的、令人惊叹的特性，但更为重要的是它的各个部分之间能够良好协作，共同服务于我们在第 1 章中设定的目标——安全、高性能的系统编程。该语言的每个部分都与其他部分配合得天衣无缝。
+
+因此，我们并不打算每次讲透一个语言特性，而是准备了一些小而完备的程序作为导览，每个程序都会在其上下文中介绍该语言的更多特性。
+
+\begin{itemize}
+\item 作为暖场，我们会设计一个简单的程序，它可以解析命令行参数并进行简单计算，而且带有单元测试。这会展示 Rust 的一些核心类型并引入\textbf{特型}的概念。
+\item 接下来，我们一起构建一个 Web 服务器。我们将使用第三方库来处理 HTTP 的细节，并介绍字符串处理、闭包和错误处理功能。
+\item 第三个程序会绘制一张美丽的分形图，将计算工作分派到多个线程以提高效率。这包括一个泛型函数的示例，以说明该如何处理像素缓冲区之类的问题，并展示 Rust 对并发的支持。
+\item 最后，我们会展示一个强大的命令行工具，它利用正则表达式来处理文件。这展示了 Rust 标准库的文件处理功能，以及最常用的第三方正则表达式库。
+\end{itemize}
+
+Rust 承诺会在对性能影响最小的情况下防止未定义行为，这在潜移默化中引导着每个部分的设计——从标准数据结构（如向量和字符串）到使用第三方库的方式。关于如何做好这些的细节会贯穿全书。但就目前而言，我们只想向你证明 Rust 是一门功能强大且易于使用的语言。
+
+当然，你要先在计算机上安装 Rust。
+
+\section{\texttt{rustup} 与 Cargo}
+
+安装 Rust 的最佳方式是使用 \texttt{rustup}。请转到 rustup.rs 网站并按照那里的说明进行操作。
+
+还可以到 Rust 网站获取针对 Linux、macOS 和 Windows 的预构建包。Rust 也已经包含在某些操作系统的发行版中。建议使用 \texttt{rustup}，因为它是专门管理 Rust 安装的工具，就像 Ruby 中的 RVM 或 Node 中的 NVM。例如，当 Rust 发布新版本时，你就可以通过键入 \texttt{rustup update} 来实现一键升级。
+
+无论采用哪种方式，完成安装之后，你的命令行中都会有 3 条新命令：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }\PYGZhy{}\PYGZhy{}version
+cargo\PYG{+w}{ }\PYG{l+m}{1}.49.0\PYG{+w}{ }\PYG{o}{(}d00d64df9\PYG{+w}{ }\PYG{l+m}{2020}\PYGZhy{}12\PYGZhy{}05\PYG{o}{)}
+\PYGZdl{}\PYG{+w}{ }rustc\PYG{+w}{ }\PYGZhy{}\PYGZhy{}version
+rustc\PYG{+w}{ }\PYG{l+m}{1}.49.0\PYG{+w}{ }\PYG{o}{(}e1884a8e3\PYG{+w}{ }\PYG{l+m}{2020}\PYGZhy{}12\PYGZhy{}29\PYG{o}{)}
+\PYGZdl{}\PYG{+w}{ }rustdoc\PYG{+w}{ }\PYGZhy{}\PYGZhy{}version
+rustdoc\PYG{+w}{ }\PYG{l+m}{1}.49.0\PYG{+w}{ }\PYG{o}{(}e1884a8e3\PYG{+w}{ }\PYG{l+m}{2020}\PYGZhy{}12\PYGZhy{}29\PYG{o}{)}
+\end{Verbatim}
+
+在这里，\texttt{\$} 是命令提示符，在 Windows 上，则会是 \texttt{C:\textbackslash{}>} 之类的文本。在刚才的记录中，我们运行了 3 条已安装的命令，并要求每条命令报告其版本号。下面来逐个看看每条命令。
+
+\begin{itemize}
+\item \texttt{cargo} 是 Rust 的编译管理器、包管理器和通用工具。可以用 Cargo 启动新项目、构建和运行程序，并管理代码所依赖的任何外部库。
+\item \texttt{rustc} 是 Rust 编译器。通常 Cargo 会替我们调用此编译器，但有时也需要直接运行它。
+\item \texttt{rustdoc} 是 Rust 文档工具。如果你在程序源代码中以适当形式的注释编写文档，那么 \texttt{rustdoc} 就可以从中构建出格式良好的 HTML。与 \texttt{rustc} 一样，通常 Cargo 会替我们运行 \texttt{rustdoc}。
+\end{itemize}
+
+为便于使用，Cargo 可以为我们创建一个新的 Rust 包，并适当准备一些标准化的元数据：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }new\PYG{+w}{ }hello
+\PYG{+w}{     }Created\PYG{+w}{ }binary\PYG{+w}{ }\PYG{o}{(}application\PYG{o}{)}\PYG{+w}{ }\PYG{l+s+sb}{`}hello\PYG{l+s+sb}{`}\PYG{+w}{ }package
+\end{Verbatim}
+
+该命令会创建一个名为 hello 的新包目录，用于构建命令行可执行文件。
+
+查看包的顶层目录：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{cd}\PYG{+w}{ }hello
+\PYGZdl{}\PYG{+w}{ }ls\PYG{+w}{ }\PYGZhy{}la
+total\PYG{+w}{ }\PYG{l+m}{24}
+drwxrwxr\PYGZhy{}x.\PYG{+w}{  }\PYG{l+m}{4}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{ }\PYG{l+m}{4096}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:09\PYG{+w}{ }.
+drwx\PYGZhy{}\PYGZhy{}\PYGZhy{}\PYGZhy{}\PYGZhy{}\PYGZhy{}.\PYG{+w}{ }\PYG{l+m}{62}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{ }\PYG{l+m}{4096}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:09\PYG{+w}{ }..
+drwxrwxr\PYGZhy{}x.\PYG{+w}{  }\PYG{l+m}{6}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{ }\PYG{l+m}{4096}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:09\PYG{+w}{ }.git
+\PYGZhy{}rw\PYGZhy{}rw\PYGZhy{}r\PYGZhy{}\PYGZhy{}.\PYG{+w}{  }\PYG{l+m}{1}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{    }\PYG{l+m}{7}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:09\PYG{+w}{ }.gitignore
+\PYGZhy{}rw\PYGZhy{}rw\PYGZhy{}r\PYGZhy{}\PYGZhy{}.\PYG{+w}{  }\PYG{l+m}{1}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{   }\PYG{l+m}{88}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:09\PYG{+w}{ }Cargo.toml
+drwxrwxr\PYGZhy{}x.\PYG{+w}{  }\PYG{l+m}{2}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{ }\PYG{l+m}{4096}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:09\PYG{+w}{ }src
+\end{Verbatim}
+
+我们看到 Cargo 已经创建了一个名为 Cargo.toml 的文件来保存此包的元数据。目前这个文件还没有多少内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{package}\PYG{p}{]}
+\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{hello}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.1.0}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2021}\PYG{l+s}{\PYGZdq{}}
+
+\PYG{p}{\PYGZsh{}}\PYG{+w}{ }\PYG{err}{请}\PYG{err}{到}\PYG{err}{“}\PYG{n}{The}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{+w}{ }\PYG{n}{Book}\PYG{err}{”}\PYG{err}{查}\PYG{err}{看}\PYG{err}{更}\PYG{err}{多}\PYG{err}{的}\PYG{err}{键}\PYG{err}{及}\PYG{err}{其}\PYG{err}{定}\PYG{err}{义}
+
+\PYG{p}{[}\PYG{n}{dependencies}\PYG{p}{]}
+\end{Verbatim}
+
+如果程序依赖于其他库，那么可以把它们记录在这个文件中，Cargo 将为我们下载、构建和更新这些库。第 8 章会详细介绍 Cargo.toml 文件。
+
+Cargo 已将我们的包设置为与版本控制系统 \texttt{git} 一起使用，并为此创建了一个元数据子目录 .git 和一个 .gitignore 文件。可以通过在命令行中将 \texttt{--vcs none} 传给 \texttt{cargo new} 来要求 Cargo 跳过此步骤。
+
+src 子目录包含实际的 Rust 代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{cd}\PYG{+w}{ }src
+\PYGZdl{}\PYG{+w}{ }ls\PYG{+w}{ }\PYGZhy{}l
+total\PYG{+w}{ }\PYG{l+m}{4}
+\PYGZhy{}rw\PYGZhy{}rw\PYGZhy{}r\PYGZhy{}\PYGZhy{}.\PYG{+w}{ }\PYG{l+m}{1}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{ }\PYG{l+m}{45}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:09\PYG{+w}{ }main.rs
+\end{Verbatim}
+
+Cargo 似乎已经替我们写好一部分程序了。main.rs 文件包含以下文本：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hello, world!}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在 Rust 中，你甚至不需要编写自己的“Hello, World!”程序。这是 Rust 新程序样板的职责，该程序样板包括两个文件，总共 13 行代码。
+
+可以在包内的任意目录下调用 \texttt{cargo run} 命令来构建和运行程序：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run
+\PYG{+w}{   }Compiling\PYG{+w}{ }hello\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/home/jimb/rust/hello\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.28s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}/home/jimb/rust/hello/target/debug/hello\PYG{l+s+sb}{`}
+Hello,\PYG{+w}{ }world!
+\end{Verbatim}
+
+这里 Cargo 先调用 Rust 编译器 \texttt{rustc}，然后运行了它生成的可执行文件。Cargo 将可执行文件放在此包顶层的 target 子目录中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }ls\PYG{+w}{ }\PYGZhy{}l\PYG{+w}{ }../target/debug
+total\PYG{+w}{ }\PYG{l+m}{580}
+drwxrwxr\PYGZhy{}x.\PYG{+w}{ }\PYG{l+m}{2}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{   }\PYG{l+m}{4096}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:37\PYG{+w}{ }build
+drwxrwxr\PYGZhy{}x.\PYG{+w}{ }\PYG{l+m}{2}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{   }\PYG{l+m}{4096}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:37\PYG{+w}{ }deps
+drwxrwxr\PYGZhy{}x.\PYG{+w}{ }\PYG{l+m}{2}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{   }\PYG{l+m}{4096}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:37\PYG{+w}{ }examples
+\PYGZhy{}rwxrwxr\PYGZhy{}x.\PYG{+w}{ }\PYG{l+m}{1}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{ }\PYG{l+m}{576632}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:37\PYG{+w}{ }hello
+\PYGZhy{}rw\PYGZhy{}rw\PYGZhy{}r\PYGZhy{}\PYGZhy{}.\PYG{+w}{ }\PYG{l+m}{1}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{    }\PYG{l+m}{198}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:37\PYG{+w}{ }hello.d
+drwxrwxr\PYGZhy{}x.\PYG{+w}{ }\PYG{l+m}{2}\PYG{+w}{ }jimb\PYG{+w}{ }jimb\PYG{+w}{     }\PYG{l+m}{68}\PYG{+w}{ }Sep\PYG{+w}{ }\PYG{l+m}{22}\PYG{+w}{ }\PYG{l+m}{21}:37\PYG{+w}{ }incremental
+\PYGZdl{}\PYG{+w}{ }../target/debug/hello
+Hello,\PYG{+w}{ }world!
+\end{Verbatim}
+
+完工之后，Cargo 还可以帮我们清理生成的文件。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }clean
+\PYGZdl{}\PYG{+w}{ }../target/debug/hello
+bash:\PYG{+w}{ }../target/debug/hello:\PYG{+w}{ }No\PYG{+w}{ }such\PYG{+w}{ }file\PYG{+w}{ }or\PYG{+w}{ }directory
+\end{Verbatim}
+
+\section{Rust 函数}
+
+Rust 在语法设计上刻意减少了原创性。如果你熟悉 C、C++、Java 或 JavaScript，那么就能通过 Rust 程序的一般性构造找到自己的快速学习之道。这是一个使用欧几里得算法计算两个整数的最大公约数的函数。可以将这些代码添加到 src/main.rs 的末尾：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{gcd}\PYG{p}{(}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{p}{,}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{m}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{n}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZam{}}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{while}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{t}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{m}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{m}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{t}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{n}{m}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{o}{\PYGZpc{}}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{n}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{fn}（发音为 /fʌn/）关键字引入了一个函数。这里我们定义了一个名为 \texttt{gcd} 的函数，它有两个参数（\texttt{n} 和 \texttt{m}），每个参数都是 \texttt{u64} 类型，即一个无符号的 64 位整数。\texttt{->} 标记后面紧跟着返回类型，表示此函数返回一个 \texttt{u64} 值。4 空格缩进是 Rust 的标准风格。
+
+Rust 的“机器整数类型名”揭示了它们的大小和符号：\texttt{i32} 是一个带符号的 32 位整数，\texttt{u8} 是一个无符号的 8 位整数（“字节”值），以此类推。\texttt{isize} 类型和 \texttt{usize} 类型保存着恰好等于“指针大小”的有符号整数和无符号整数，在 32 位平台上是 32 位长，在 64 位平台上则是 64 位长。Rust 还有 \texttt{f32} 和 \texttt{f64} 这两种浮点类型，它们分别是 IEEE 单精度浮点类型和 IEEE 双精度浮点类型，就像 C 和 C++ 中的 \texttt{float} 和 \texttt{double}。
+
+默认情况下，一经初始化，变量的值就不能再改变了，但是在参数 \texttt{n} 和 \texttt{m} 之前放置 \texttt{mut}（发音为 /mjuːt/，是 mutable 的缩写）关键字将会准许我们在函数体中赋值给它们。实际上，大多数变量是不需要被赋值的，而对于那些确实需要被赋值的变量，\texttt{mut} 关键字相当于用一个醒目的提示来帮我们阅读代码。
+
+函数的主体始于一次 \texttt{assert!} 宏调用，以验证这两个参数都不为 0。这里的 \texttt{!} 字符标明此句为宏调用，而不是函数调用。就像 C 和 C++ 中的 \texttt{assert} 宏一样，Rust 的 \texttt{assert!} 会检查其参数是否为真，如果非真，则终止本程序并提供一条有帮助的信息，其中包括导致本次检查失败的源代码位置。这种突然的终止在 Rust 中称为 panic。与可以跳过断言的 C 和 C++ 不同，Rust 总是会检查这些断言，而不管程序是如何编译的。还有一个 \texttt{debug\_assert!} 宏，在编译发布版程序时会跳过其断言以提高速度。
+
+这个函数的核心是一个包含 \texttt{if} 语句和赋值语句的 \texttt{while} 循环。与 C 和 C++ 不同，Rust 不需要在条件表达式周围使用圆括号，但必须在受其控制的语句周围使用花括号。
+
+\texttt{let} 语句会声明一个局部变量，比如本函数中的 \texttt{t}。只要 Rust 能从变量的使用方式中推断出 \texttt{t} 的类型，就不需要标注其类型。在此函数中，通过匹配 \texttt{m} 和 \texttt{n}，可以推断出唯一适用于 \texttt{t} 的类型是 \texttt{u64}。Rust 只会推断函数体内部的类型，因此必须像之前那样写出函数参数的类型和返回值的类型。如果想明确写出 \texttt{t} 的类型，那么可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{t}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{m}\PYG{p}{;}
+\end{Verbatim}
+
+Rust 有 \texttt{return} 语句，但这里的 \texttt{gcd} 函数并不需要。如果一个函数体以\textbf{没有}尾随着分号的表达式结尾，那么这个表达式就是函数的返回值。事实上，花括号包起来的任意代码块都可以用作表达式。例如，下面是一个打印了一条信息然后以 \texttt{x.cos()} 作为其值的表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{evaluating cos x}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{x}\PYG{p}{.}\PYG{n}{cos}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在 Rust 中，当控制流“正常离开函数的末尾”时，通常会以上述形式创建函数的返回值，\texttt{return} 语句只会用在从函数中间显式地提前返回的场景中。
+
+\section{编写与运行单元测试}
+
+Rust 语言内置了对测试的简单支持。为了测试 \texttt{gcd} 函数，可以在 src/main.rs 的末尾添加下面这段代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{test\PYGZus{}gcd}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{gcd}\PYG{p}{(}\PYG{l+m+mi}{14}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{15}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{gcd}\PYG{p}{(}\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{3}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{11}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{17}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{l+m+mi}{3}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{7}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{11}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{13}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{19}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{               }\PYG{l+m+mi}{3}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{l+m+mi}{11}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里我们定义了一个名为 \texttt{test\_gcd} 的函数，该函数会调用 \texttt{gcd} 并检查它是否返回了正确的值。此定义顶部的 \texttt{\#[test]} 将 \texttt{test\_gcd} 标记为“测试函数”，在正常编译时会跳过它，但如果用 \texttt{cargo test} 命令运行我们的程序，则会自动包含并调用它。可以让测试函数分散在源代码树中，紧挨着它们所测试的代码，\texttt{cargo test} 会自动收集并运行它们。
+
+\texttt{\#[test]} 标记是\textbf{属性}（attribute）的示例之一。属性是一个开放式体系，可以用附加信息给函数和其他声明做标记，就像 C++ 和 C\# 中的属性或 Java 中的注解（annotation）一样。属性可用于控制编译器警告和代码风格检查、有条件地包含代码（就像 C 和 C++ 中的 \texttt{\#ifdef} 一样）、告诉 Rust 如何与其他语言编写的代码互动，等等。后面还会介绍更多的属性示例。
+
+将 \texttt{gcd} 和 \texttt{test\_gcd} 的定义添加到本章开头创建的 hello 包中，如果当前目录位于此包子树中的任意位置，可以用如下方式运行测试。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }\PYG{n+nb}{test}
+\PYG{+w}{   }Compiling\PYG{+w}{ }hello\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/home/jimb/rust/hello\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }\PYG{n+nb}{test}\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.35s
+\PYG{+w}{     }Running\PYG{+w}{ }unittests\PYG{+w}{ }\PYG{o}{(}/home/jimb/rust/hello/target/debug/deps/hello\PYGZhy{}2375...\PYG{o}{)}
+
+running\PYG{+w}{ }\PYG{l+m}{1}\PYG{+w}{ }\PYG{n+nb}{test}
+\PYG{n+nb}{test}\PYG{+w}{ }test\PYGZus{}gcd\PYG{+w}{ }...\PYG{+w}{ }ok
+
+\PYG{n+nb}{test}\PYG{+w}{ }result:\PYG{+w}{ }ok.\PYG{+w}{ }\PYG{l+m}{1}\PYG{+w}{ }passed\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }failed\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }ignored\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }measured\PYG{p}{;}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }filtered\PYG{+w}{ }out
+\end{Verbatim}
+
+\section{处理命令行参数}
+
+为了让我们的程序接收一系列数值作为命令行参数并打印出它们的最大公约数，可以将 src/main.rs 中的 \texttt{main} 函数替换为以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{FromStr}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{numbers}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{arg}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{skip}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{numbers}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{k+kt}{u64}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{arg}\PYG{p}{)}
+\PYG{+w}{                     }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error parsing argument}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{numbers}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Usage: gcd NUMBER ...}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{d}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{numbers}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{numbers}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{d}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{gcd}\PYG{p}{(}\PYG{n}{d}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{m}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The greatest common divisor of \PYGZob{}:?\PYGZcb{} is \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{             }\PYG{n}{numbers}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{d}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+我们来逐段分析一下：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{FromStr}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{;}
+\end{Verbatim}
+
+第一个 \texttt{use} 声明将标准库中的 \texttt{FromStr} \textbf{特型}引入了当前作用域。特型是可以由类型实现的方法集合。任何实现了 \texttt{FromStr} 特型的类型都有一个 \texttt{from\_str} 方法，该方法会尝试从字符串中解析这个类型的值。\texttt{u64} 类型实现了 \texttt{FromStr}，所以我们将调用 \texttt{u64::from\_str} 来解析程序中的命令行参数。尽管我们从未在程序的其他地方用到 \texttt{FromStr} 这个名字，但仍然要 \texttt{use}（使用）它，因为要想使用某个特型的方法，该特型就必须在作用域内。第 11 章会详细介绍特型。
+
+第二个 \texttt{use} 声明引入了 \texttt{std::env} 模块，该模块提供了与执行环境交互时会用到的几个函数和类型，包括 \texttt{args} 函数，该函数能让我们访问程序中的命令行参数。
+
+继续看程序中的 \texttt{main} 函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\end{Verbatim}
+
+\texttt{main} 函数没有返回值，所以可以简单地省略 \texttt{->} 和通常会跟在参数表后面的返回类型。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{numbers}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+我们声明了一个可变的局部变量 \texttt{numbers} 并将其初始化为空向量。\texttt{Vec} 是 Rust 的可增长向量类型，类似于 C++ 的 \texttt{std::vector}、Python 的列表或 JavaScript 的数组。虽然从设计上说向量可以动态扩充或收缩，但仍然要标记为 \texttt{mut}，这样 Rust 才能把新值压入末尾。
+
+\texttt{numbers} 的类型是 \texttt{Vec<u64>}，这是一个可以容纳 \texttt{u64} 类型的值的向量，但和以前一样，不需要把类型写出来。Rust 会推断它，一部分原因是我们将 \texttt{u64} 类型的值压入了此向量，另一部分原因是我们将此向量的元素传给了 \texttt{gcd}，后者只接受 \texttt{u64} 类型的值。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{arg}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{skip}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\end{Verbatim}
+
+这里使用了 \texttt{for} 循环来处理命令行参数，依次将变量 \texttt{arg} 指向每个参数并运行循环体。
+
+\texttt{std::env} 模块的 \texttt{args} 函数会返回一个\textbf{迭代器}，此迭代器会按需生成\footnote{“生成”只是沿袭普遍译法，事实上，这里并不会创建任何新条目，只是把已有条目提供给消费者。——译者注}每个参数，并在完成时给出提示。各种迭代器在 Rust 中无处不在，标准库中也包括一些迭代器，这些迭代器可以生成向量的元素、文件每一行的内容、通信信道上接收到的信息，以及几乎任何有意义的循环变量。Rust 的迭代器非常高效，编译器通常能将它们翻译成与手写循环相同的代码。第 15 章会展示迭代器的工作原理并给出相关示例。
+
+除了与 \texttt{for} 循环一起使用，迭代器还包含大量可以直接使用的方法。例如，\texttt{args} 返回的迭代器生成的第一个值永远是正在运行的程序的名称。如果想跳过它，就要调用迭代器的 \texttt{skip} 方法来生成一个新的迭代器，新迭代器会略去第一个值。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{numbers}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{k+kt}{u64}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{arg}\PYG{p}{)}
+\PYG{+w}{             }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error parsing argument}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这里我们调用了 \texttt{u64::from\_str} 来试图将命令行参数 \texttt{arg} 解析为一个无符号的 64 位整数。\texttt{u64::from\_str} 并不是 \texttt{u64} 值上的某个方法，而是与 \texttt{u64} 类型相关联的函数，类似于 C++ 或 Java 中的静态方法。\texttt{from\_str} 函数不会直接返回 \texttt{u64}，而是返回一个指明本次解析已成功或失败的 \texttt{Result} 值。\texttt{Result} 值是以下两种变体之一：
+
+\begin{itemize}
+\item 形如 \texttt{Ok(v)} 的值，表示解析成功了，\texttt{v} 是所生成的值；
+\item 形如 \texttt{Err(e)} 的值，表示解析失败了，\texttt{e} 是解释原因的错误值。
+\end{itemize}
+
+执行任何可能会失败的操作（例如执行输入或输出或者以其他方式与操作系统交互）的函数都会返回一个 \texttt{Result} 类型，其 \texttt{Ok} 变体会携带成功结果（传输的字节数、打开的文件等），而其 \texttt{Err} 变体会携带错误码，以指明出了什么问题。与大多数现代语言不同，Rust 没有异常（exception）：所有错误都使用 \texttt{Result} 或 \texttt{panic} 进行处理，详见第 7 章。
+
+我们用 \texttt{Result} 的 \texttt{expect} 方法来检查本次解析是否成功。如果结果是 \texttt{Err(e)}，那么 \texttt{expect} 就会打印出一条包含 \texttt{e} 的消息并直接退出程序。但如果结果是 \texttt{Ok(v)}，则 \texttt{expect} 会简单地返回 \texttt{v} 本身，最终我们会将其压入这个数值向量的末尾。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{if}\PYG{+w}{ }\PYG{n}{numbers}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Usage: gcd NUMBER ...}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+空数组没有最大公约数，因此要检查此向量是否至少包含一个元素，如果没有则退出程序并报错。这里我们用 \texttt{eprintln!} 宏将错误消息写入标准错误流。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{d}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{numbers}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{m}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{numbers}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{d}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{gcd}\PYG{p}{(}\PYG{n}{d}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{m}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+该循环使用 \texttt{d} 作为其运行期间的值，不断地把它更新为已处理的所有数值的最大公约数。和以前一样，必须将 \texttt{d} 标记为可变，以便在循环中给它赋值。
+
+这个 \texttt{for} 循环有两个值得注意的地方。首先，我们写了 \texttt{for m in \&numbers[1..]}，那么这里的 \texttt{\&} 运算符有什么用呢？其次，我们写了 \texttt{gcd(d, *m)}，那么 \texttt{*m} 中的 \texttt{*} 又有什么用呢？这两个细节是紧密相关的。
+
+迄今为止，我们的代码只是在对简单的值（例如适合固定大小内存块的整数）进行操作。但现在我们要迭代一个向量，它可以是任意大小，而且可能会非常大。Rust 在处理这类值时非常慎重：它想让程序员控制内存消耗，明确每个值的生存时间，同时还要确保当不再需要这些值时能及时释放内存。
+
+所以在进行迭代时，需要告诉 Rust，该向量的\textbf{所有权}应该留在 \texttt{numbers} 上，我们只是为了本次循环而\textbf{借用}它的元素。\texttt{\&numbers[1..]} 中的 \texttt{\&} 运算符会从向量中借用从第二个元素开始的\textbf{引用}。\texttt{for} 循环会遍历这些被引用的元素，让 \texttt{m} 依次借出每个元素。\texttt{*m} 中的 \texttt{*} 运算符会将 \texttt{m}\textbf{解引用}，产生它所引用的值，这就是要传给 \texttt{gcd} 的下一个 \texttt{u64}。最后，由于 \texttt{numbers} 拥有着此向量，因此当 \texttt{main} 末尾的 \texttt{numbers} 超出作用域时，Rust 会自动释放它。
+
+Rust 的所有权规则和引用规则是 Rust 内存管理和并发安全的关键所在，第 4 章和第 5 章会对此进行详细讨论。只有熟悉了这些规则，才算熟练掌握了 Rust。但是对于这个介绍性的导览，你只需要知道 \texttt{\&x} 借用了对 \texttt{x} 的引用，而 \texttt{*r} 访问的是 \texttt{r} 所引用的值就足够了。
+
+继续我们的程序：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The greatest common divisor of \PYGZob{}:?\PYGZcb{} is \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{         }\PYG{n}{numbers}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{d}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+遍历 \texttt{numbers} 的元素后，程序会将结果打印到标准输出流。\texttt{println!} 宏会接受一个模板字符串，在模板字符串中以 \texttt{\{...\}} 形式标出的位置按要求格式化并插入剩余的参数，最后将结果写入标准输出流。
+
+C 和 C++ 要求 \texttt{main} 在程序成功完成时返回 0，在出现问题时返回非零的退出状态，而 Rust 假设只要 \texttt{main} 完全返回，程序就算成功完成。只有显式地调用像 \texttt{expect} 或 \texttt{std::process::exit} 这样的函数，才能让程序以表示错误的状态码终止。
+
+\texttt{cargo run} 命令可以将参数传给程序，因此可以试试下面这些命令行处理：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYG{l+m}{42}\PYG{+w}{ }\PYG{l+m}{56}
+\PYG{+w}{   }Compiling\PYG{+w}{ }hello\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/home/jimb/rust/hello\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.22s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}/home/jimb/rust/hello/target/debug/hello\PYG{+w}{ }\PYG{l+m}{42}\PYG{+w}{ }\PYG{l+m}{56}\PYG{l+s+sb}{`}
+The\PYG{+w}{ }greatest\PYG{+w}{ }common\PYG{+w}{ }divisor\PYG{+w}{ }of\PYG{+w}{ }\PYG{o}{[}\PYG{l+m}{42},\PYG{+w}{ }\PYG{l+m}{56}\PYG{o}{]}\PYG{+w}{ }is\PYG{+w}{ }\PYG{l+m}{14}
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYG{l+m}{799459}\PYG{+w}{ }\PYG{l+m}{28823}\PYG{+w}{ }\PYG{l+m}{27347}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.02s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}/home/jimb/rust/hello/target/debug/hello\PYG{+w}{ }\PYG{l+m}{799459}\PYG{+w}{ }\PYG{l+m}{28823}\PYG{+w}{ }\PYG{l+m}{27347}\PYG{l+s+sb}{`}
+The\PYG{+w}{ }greatest\PYG{+w}{ }common\PYG{+w}{ }divisor\PYG{+w}{ }of\PYG{+w}{ }\PYG{o}{[}\PYG{l+m}{799459},\PYG{+w}{ }\PYG{l+m}{28823},\PYG{+w}{ }\PYG{l+m}{27347}\PYG{o}{]}\PYG{+w}{ }is\PYG{+w}{ }\PYG{l+m}{41}
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYG{l+m}{83}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.02s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}/home/jimb/rust/hello/target/debug/hello\PYG{+w}{ }\PYG{l+m}{83}\PYG{l+s+sb}{`}
+The\PYG{+w}{ }greatest\PYG{+w}{ }common\PYG{+w}{ }divisor\PYG{+w}{ }of\PYG{+w}{ }\PYG{o}{[}\PYG{l+m}{83}\PYG{o}{]}\PYG{+w}{ }is\PYG{+w}{ }\PYG{l+m}{83}
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.02s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}/home/jimb/rust/hello/target/debug/hello\PYG{l+s+sb}{`}
+Usage:\PYG{+w}{ }gcd\PYG{+w}{ }NUMBER\PYG{+w}{ }...
+\end{Verbatim}
+
+本节使用了 Rust 标准库中的一些特性。如果你好奇还有哪些别的特性，强烈建议看看 Rust 的在线文档。它具有实时搜索功能，能让你的探索更容易，其中还包括指向源代码的链接。安装 Rust 时，\texttt{rustup} 命令会自动在你的计算机上安装一份文档副本。你既可以在 Rust 网站上查看标准库文档，也可以使用以下命令打开浏览器查看。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }rustup\PYG{+w}{ }doc\PYG{+w}{ }\PYGZhy{}\PYGZhy{}std
+\end{Verbatim}
+
+\section{搭建 Web 服务器}
+
+Rust 的优势之一是在 crates.io 网站上发布的大量免费的可用包。\texttt{cargo} 命令可以让你的代码轻松使用 crates.io 上的包：它将下载包的正确版本，然后会构建包，并根据用户的要求更新包。一个 Rust 包，无论是库还是可执行文件，都叫作 crate（发音为 /kreɪt/，意思是“板条箱”）\footnote{相对于包，crate 更强调自己的硬边界，也暗示着更高的安全性。助记：马车（Cargo）上装着一些板条箱。——译者注}。Cargo 和 crates.io 的名字都来源于这个术语。
+
+为了展示这种工作过程，我们将使用 \texttt{actix-web}（Web 框架 crate）、\texttt{serde}（序列化 crate）以及它们所依赖的各种其他 crate 来组装出一个简单的 Web 服务器。如图 2-1 所示，该网站会提示用户输入两个数值并计算它们的最大公约数。
+
+\myFigure{images/ch02/fig-2-1.jpeg}{图 2-1：计算最大公约数的网页}
+
+首先，让 Cargo 创建一个新包，命名为 \texttt{actix-gcd}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }new\PYG{+w}{ }actix\PYGZhy{}gcd
+\PYG{+w}{     }Created\PYG{+w}{ }binary\PYG{+w}{ }\PYG{o}{(}application\PYG{o}{)}\PYG{+w}{ }\PYG{l+s+sb}{`}actix\PYGZhy{}gcd\PYG{l+s+sb}{`}\PYG{+w}{ }package
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{cd}\PYG{+w}{ }actix\PYGZhy{}gcd
+\end{Verbatim}
+
+然后，编辑新项目的 Cargo.toml 文件以列出所要使用的包，其内容应该是这样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{package}\PYG{p}{]}
+\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{actix\PYGZhy{}gcd}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.1.0}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2021}\PYG{l+s}{\PYGZdq{}}
+
+\PYG{p}{\PYGZsh{}}\PYG{+w}{ }\PYG{err}{请}\PYG{err}{到}\PYG{err}{“}\PYG{n}{The}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{+w}{ }\PYG{n}{Book}\PYG{err}{”}\PYG{err}{查}\PYG{err}{看}\PYG{err}{更}\PYG{err}{多}\PYG{err}{的}\PYG{err}{键}\PYG{err}{及}\PYG{err}{其}\PYG{err}{定}\PYG{err}{义}
+
+\PYG{p}{[}\PYG{n}{dependencies}\PYG{p}{]}
+\PYG{n}{actix}\PYG{o}{\PYGZhy{}}\PYG{n}{web}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.0.8}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{serde}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.0}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{features}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{derive}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+Cargo.toml 中 \texttt{[dependencies]} 部分的每一行都给出了 crates.io 上的 crate 名称，以及我们想要使用的那个 crate 的版本。在本例中，我们需要 \texttt{1.0.8} 版的 \texttt{actix-web} crate 和 \texttt{1.0} 版的 \texttt{serde} crate。crates.io 上这些 crate 的版本很可能比此处展示的版本新，但通过指明在测试此代码时所使用的特定版本，可以确保即使发布了新版本的包，这些代码仍然能继续编译。\footnote{理想情况下确实如此，但现实中并不是每个第三方包都能实现这种兼容性。——译者注}第 8 章会更详细地讨论版本管理。
+
+crate 可能具备某些可选特性：一部分接口或实现不是所有用户都需要的，但将其包含在那个 crate 中仍然有意义。例如，\texttt{serde} crate 就提供了一种非常简洁的方式来处理来自 Web 表单的数据，但根据 \texttt{serde} 的文档，只有选择了此 crate 的 \texttt{derive} 特性时它才可用，因此我们在 Cargo.toml 文件中请求了它。
+
+请注意，只需指定要直接用到的那些 crate 即可，\texttt{cargo} 会负责把它们自身依赖的所有其他 crate 带进来。
+
+在第一次迭代中，我们将实现此 Web 服务器的一个简单版本：它只会给出让用户输入要计算的数值的页面。actix-gcd/\allowbreak{}src/\allowbreak{}main.rs 的内容如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{actix\PYGZus{}web}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{web}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{App}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{HttpResponse}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{HttpServer}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{server}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HttpServer}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{App}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{route}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{web}\PYG{p}{::}\PYG{n}{get}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{to}\PYG{p}{(}\PYG{n}{get\PYGZus{}index}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Serving on http://localhost:3000...}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{server}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{bind}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{127.0.0.1:3000}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error binding server to address}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{run}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error running server}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get\PYGZus{}index}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{HttpResponse}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{HttpResponse}\PYG{p}{::}\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{content\PYGZus{}type}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{text/html}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{body}\PYG{p}{(}
+\PYG{+w}{            }\PYG{l+s}{r\PYGZsh{}\PYGZdq{}}
+\PYG{l+s}{                \PYGZlt{}title\PYGZgt{}GCD Calculator\PYGZlt{}/title\PYGZgt{}}
+\PYG{l+s}{                \PYGZlt{}form action=\PYGZdq{}/gcd\PYGZdq{} method=\PYGZdq{}post\PYGZdq{}\PYGZgt{}}
+\PYG{l+s}{                \PYGZlt{}input type=\PYGZdq{}text\PYGZdq{} name=\PYGZdq{}n\PYGZdq{}/\PYGZgt{}}
+\PYG{l+s}{                \PYGZlt{}input type=\PYGZdq{}text\PYGZdq{} name=\PYGZdq{}m\PYGZdq{}/\PYGZgt{}}
+\PYG{l+s}{                \PYGZlt{}button type=\PYGZdq{}submit\PYGZdq{}\PYGZgt{}Compute GCD\PYGZlt{}/button\PYGZgt{}}
+\PYG{l+s}{                \PYGZlt{}/form\PYGZgt{}}
+\PYG{l+s}{            \PYGZdq{}\PYGZsh{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{use} 声明可以让来自 \texttt{actix-web} crate 的定义用起来更容易些。当我们写下 \texttt{use actix\_web::\{...\}} 时，花括号中列出的每个名称都可以直接用在代码中，而不必每次都拼出全名，比如 \texttt{actix\_web::HttpResponse} 可以简写为 \texttt{HttpResponse}。（稍后还会提及 \texttt{serde} crate。）
+
+\texttt{main} 函数很简单：它调用 \texttt{HttpServer::new} 创建了一个响应单个路径 \texttt{"/"} 请求的服务器，打印了一条信息以提醒我们该如何连接它，然后监听本机的 TCP 端口 3000。
+
+我们传给 \texttt{HttpServer::new} 的参数是 Rust \textbf{闭包}表达式 \texttt{|| \{ App::new() ... \}}。闭包是一个可以像函数一样被调用的值。这个闭包没有参数，如果有参数，那么可以将参数名放在两条竖线 \texttt{||} 之间。\texttt{\{ ... \}} 是闭包的主体。当我们启动服务器时，Actix 会启动一个线程池来处理传入的请求。每个线程都会调用这个闭包来获取 \texttt{App} 值的新副本，以告诉此线程该如何路由这些请求并处理它们。
+
+闭包会调用 \texttt{App::new} 来创建一个新的空白 \texttt{App}，然后调用它的 \texttt{route} 方法为路径 \texttt{"/"} 添加一个路由。提供给该路由的处理程序 \texttt{web::get().to(get\_index)} 会通过调用函数 \texttt{get\_index} 来处理 HTTP 的 \texttt{GET} 请求。\texttt{route} 方法的返回值就是调用它的那个 \texttt{App}，不过其现在已经有了新的路由。由于闭包主体的末尾没有分号，因此此 \texttt{App} 就是闭包的返回值，可供 \texttt{HttpServer} 线程使用。
+
+\texttt{get\_index} 函数会构建一个 \texttt{HttpResponse} 值，该值表示对 HTTP \texttt{GET /} 请求的响应。\texttt{HttpResponse::Ok()} 表示 HTTP \texttt{200 OK} 状态，意味着请求成功。我们会调用它的 \texttt{content\_type} 方法和 \texttt{body} 方法来填入该响应的细节，每次调用都会返回在前一次基础上修改过的 \texttt{HttpResponse}。最后会以 \texttt{body} 的返回值作为 \texttt{get\_index} 的返回值。
+
+由于响应文本包含很多双引号，因此我们使用 Rust 的“原始字符串”语法来编写它：首先是字母 \texttt{r}、0 到多个井号（\texttt{\#}）标记、一个双引号，然后是字符串本体，并以另一个双引号结尾，后跟相同数量的 \texttt{\#} 标记。任何字符都可以出现在原始字符串中而不被转义，包括双引号。事实上，Rust 根本不认识像 \texttt{\textbackslash{}"} 这样的转义序列。我们总是可以在引号周围使用比文本内容中出现过的 \texttt{\#} 更多的 \texttt{\#} 标记，以确保字符串能在期望的地方结束。
+
+编写完 main.rs 后，可以使用 \texttt{cargo run} 命令来执行为运行它而要做的一切工作：获取所需的 crate、编译它们、构建我们自己的程序、将所有内容链接在一起，最后启动 main.rs。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run
+\PYG{+w}{    }Updating\PYG{+w}{ }crates.io\PYG{+w}{ }index
+\PYG{+w}{ }Downloading\PYG{+w}{ }crates\PYG{+w}{ }...
+\PYG{+w}{  }Downloaded\PYG{+w}{ }serde\PYG{+w}{ }v1.0.100
+\PYG{+w}{  }Downloaded\PYG{+w}{ }actix\PYGZhy{}web\PYG{+w}{ }v1.0.8
+\PYG{+w}{  }Downloaded\PYG{+w}{ }serde\PYGZus{}derive\PYG{+w}{ }v1.0.100
+...
+\PYG{+w}{   }Compiling\PYG{+w}{ }serde\PYGZus{}json\PYG{+w}{ }v1.0.40
+\PYG{+w}{   }Compiling\PYG{+w}{ }actix\PYGZhy{}router\PYG{+w}{ }v0.1.5
+\PYG{+w}{   }Compiling\PYG{+w}{ }actix\PYGZhy{}http\PYG{+w}{ }v0.2.10
+\PYG{+w}{   }Compiling\PYG{+w}{ }awc\PYG{+w}{ }v0.2.7
+\PYG{+w}{   }Compiling\PYG{+w}{ }actix\PYGZhy{}web\PYG{+w}{ }v1.0.8
+\PYG{+w}{   }Compiling\PYG{+w}{ }gcd\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/home/jimb/rust/actix\PYGZhy{}gcd\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }1m\PYG{+w}{ }24s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}/home/jimb/rust/actix\PYGZhy{}gcd/target/debug/actix\PYGZhy{}gcd\PYG{l+s+sb}{`}
+Serving\PYG{+w}{ }on\PYG{+w}{ }http://localhost:3000...
+\end{Verbatim}
+
+此刻，在浏览器中访问给定的 URL 就会看到图 2-1 所示的页面。
+
+但很遗憾，单击“Compute GCD”除了将浏览器导航到一个空白页面外，没有做任何事。为了继续解决这个问题，可以往 \texttt{App} 中添加另一个路由，以处理来自表单的 \texttt{POST} 请求。
+
+现在终于用到我们曾在 Cargo.toml 文件中列出的 \texttt{serde} crate 了：它提供了一个便捷工具来协助处理表单数据。首先，将以下 \texttt{use} 指令添加到 src/main.rs 的顶部：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{serde}\PYG{p}{::}\PYG{n}{Deserialize}\PYG{p}{;}
+\end{Verbatim}
+
+Rust 程序员通常会将所有的 \texttt{use} 声明集中放在文件的顶部，但这并非绝对必要：Rust 允许这些声明以任意顺序出现，只要它们出现在适当的嵌套级别即可。
+
+接下来，定义一个 Rust 结构体类型，用以表示期望从表单中获得的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Deserialize)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{GcdParameters}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{n}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{m}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+上述代码定义了一个名为 \texttt{GcdParameters} 的新类型，它有两个字段（\texttt{n} 和 \texttt{m}），每个字段都是一个 \texttt{u64}，这是我们的 \texttt{gcd} 函数想要的参数类型。
+
+此 \texttt{struct} 定义上面的注解是一个属性，就像之前用来标记测试函数的 \texttt{\#[test]} 属性一样。在类型定义之上放置一个 \texttt{\#[derive(Deserialize)]} 属性会要求 \texttt{serde} crate 在程序编译时检查此类型并自动生成代码，以便从 HTML 表单 POST 提交过来的格式化数据中解析出此类型的值。事实上，该属性足以让你从几乎任何种类的结构化数据（\texttt{JSON}、\texttt{YAML}、\texttt{TOML} 或许多其他文本格式和二进制格式中的任何一种）中解析 \texttt{GcdParameters} 的值。\texttt{serde} crate 还提供了一个 \texttt{Serialize} 属性，该属性会生成代码来执行相反的操作，获取 Rust 值并以结构化的格式序列化它们。
+
+有了这个定义，就可以很容易地编写处理函数了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{post\PYGZus{}gcd}\PYG{p}{(}\PYG{n}{form}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{web}\PYG{p}{::}\PYG{n}{Form}\PYG{o}{\PYGZlt{}}\PYG{n}{GcdParameters}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{HttpResponse}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{form}\PYG{p}{.}\PYG{n}{n}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{form}\PYG{p}{.}\PYG{n}{m}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{HttpResponse}\PYG{p}{::}\PYG{n}{BadRequest}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{content\PYGZus{}type}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{text/html}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{body}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Computing the GCD with zero is boring.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{response}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{        }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{The greatest common divisor of the numbers \PYGZob{}\PYGZcb{} and \PYGZob{}\PYGZcb{} }\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{                 is \PYGZlt{}b\PYGZgt{}\PYGZob{}\PYGZcb{}\PYGZlt{}/b\PYGZgt{}}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{n}{form}\PYG{p}{.}\PYG{n}{n}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{form}\PYG{p}{.}\PYG{n}{m}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{gcd}\PYG{p}{(}\PYG{n}{form}\PYG{p}{.}\PYG{n}{n}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{form}\PYG{p}{.}\PYG{n}{m}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{HttpResponse}\PYG{p}{::}\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{content\PYGZus{}type}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{text/html}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{body}\PYG{p}{(}\PYG{n}{response}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+对于用作 Actix 请求处理程序的函数，其参数必须全都是 Actix 知道该如何从 HTTP 请求中提取出来的类型。\texttt{post\_gcd} 函数接受一个参数 \texttt{form}，其类型为 \texttt{web::Form<GcdParameters>}。当且仅当 \texttt{T} 可以从 HTML 表单提交过来的数据反序列化时，Actix 才能知道该如何从 HTTP 请求中提取任意类型为 \texttt{web::Form<T>} 的值。由于我们已经将 \texttt{\#[derive(Deserialize)]} 属性放在了 \texttt{GcdParameters} 类型定义上，Actix 可以从表单数据中反序列化它，因此请求处理程序可以要求以 \texttt{web::Form<GcdParameters>} 值作为参数。这些类型和函数之间的关系都是在编译期指定的。如果使用了 Actix 不知道该如何处理的参数类型来编写处理函数，那么 Rust 编译器会直接向你报错。
+
+来看看 \texttt{post\_gcd} 内部，如果任何一个参数为 0，则该函数会先行返回 HTTP \texttt{400 BAD REQUEST} 错误，因为如果它们为 0，我们的 \texttt{gcd} 函数将崩溃。同时，\texttt{post\_gcd} 会使用 \texttt{format!} 宏来为此请求构造出响应体。\texttt{format!} 与 \texttt{println!} 很像，但它不会将文本写入标准输出，而是会将其作为字符串返回。一旦获得响应文本，\texttt{post\_gcd} 就会将其包装在 HTTP \texttt{200 OK} 响应中，设置其内容类型，并将它返回给请求者。
+
+还必须将 \texttt{post\_gcd} 注册为表单处理程序。为此，可以将 \texttt{main} 函数替换成以下这个版本：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{server}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{HttpServer}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{App}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{route}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{web}\PYG{p}{::}\PYG{n}{get}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{to}\PYG{p}{(}\PYG{n}{get\PYGZus{}index}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{route}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/gcd}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{web}\PYG{p}{::}\PYG{n}{post}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{to}\PYG{p}{(}\PYG{n}{post\PYGZus{}gcd}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Serving on http://localhost:3000...}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{server}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{bind}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{127.0.0.1:3000}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error binding server to address}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{run}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error running server}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里唯一的变化是添加了另一个 \texttt{route} 调用，确立 \texttt{web::post().to(post\_gcd)} 作为路径 \texttt{"/gcd"} 的处理程序。
+
+最后剩下的部分是我们之前编写的 \texttt{gcd} 函数，它位于 actix-gcd/\allowbreak{}src/\allowbreak{}main.rs 文件中。有了它，你就可以中断运行中的服务器，重新构建并启动程序了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run
+\PYG{+w}{   }Compiling\PYG{+w}{ }actix\PYGZhy{}gcd\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/home/jimb/rust/actix\PYGZhy{}gcd\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.0\PYG{+w}{ }secs
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}target/debug/actix\PYGZhy{}gcd\PYG{l+s+sb}{`}
+Serving\PYG{+w}{ }on\PYG{+w}{ }http://localhost:3000...
+\end{Verbatim}
+
+这一次，访问 http://localhost:3000，输入一些数值，然后单击“Compute GCD”按钮，应该会看到一些实质性结果，如图 2-2 所示。
+
+\myFigure{images/ch02/fig-2-2.jpeg}{图 2-2：展示计算最大公约数结果的网页}
+
+\section{并发}
+
+Rust 的一大优势是它对并发编程的支持。Rust 中用来确保内存安全的那些规则也同样可以让线程在共享内存的时候避免数据竞争。
+
+\begin{itemize}
+\item 如果使用互斥锁来协调对共享数据结构进行更改的多个线程，那么 Rust 会确保只有持有锁才能访问这些数据，并会在完工后自动释放锁。而在 C 和 C++ 中，互斥锁和它所保护的数据之间的联系只能体现在注释中。
+\item 如果想在多个线程之间共享只读数据，那么 Rust 能确保你不会意外修改数据。而在 C 和 C++ 中，虽然类型系统也可以帮你解决这个问题，但很容易出错。
+\item 如果将数据结构的所有权从一个线程转移给另一个线程，那么 Rust 能确保你真的放弃了对它的所有访问权限。而在 C 和 C++ 中，要由你来检查发送线程上的任何代码是否会再次接触数据。如果你弄错了，那么后果可能取决于处理器缓存中正在发生什么，以及你最近对内存进行过多少次写入。我们或多或少都在这方面吃过一点儿苦头。
+\end{itemize}
+
+本节将引导你写出第二个多线程程序。
+
+你已经写完了第一个程序：用 Actix Web 框架实现的最大公约数服务器，它使用线程池来运行请求处理函数。如果服务器同时收到多个请求，那么它就会在多个线程中同时运行 \texttt{get\_index} 函数和 \texttt{post\_gcd} 函数。这可能有点儿令人震撼，因为我们在编写这些函数时甚至都没有考虑过并发。但 Rust 能确保这样做是安全的，无论你的服务器变得多么复杂：只要程序编译通过了，就一定不会出现数据竞争。所有 Rust 函数都是线程安全的。
+
+本节的程序绘制了曼德博集（一组分形几何图形，包括著名的海龟图等），这是一种对复数反复运行某个简单函数而生成的分形图。人们通常把“绘制曼德博集”称为\textbf{易并行}算法，因为其线程之间的通信模式非常简单，第 19 章会介绍更复杂的模式，但这里的任务已足以演示一些基本要素了。
+
+首先，创建一个新的 Rust 项目：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }new\PYG{+w}{ }mandelbrot
+\PYG{+w}{     }Created\PYG{+w}{ }binary\PYG{+w}{ }\PYG{o}{(}application\PYG{o}{)}\PYG{+w}{ }\PYG{l+s+sb}{`}mandelbrot\PYG{l+s+sb}{`}\PYG{+w}{ }package
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{cd}\PYG{+w}{ }mandelbrot
+\end{Verbatim}
+
+所有代码都将放在 mandelbrot/\allowbreak{}src/\allowbreak{}main.rs 中，我们将向 mandelbrot/\allowbreak{}Cargo.toml 添加一些依赖项。
+
+在进入并发曼德博实现之前，先来讲一下接下来将要执行的计算。
+
+\subsection{什么是曼德博集}
+
+在阅读代码时，具体了解一下它要执行的任务是很有帮助的，所以，我们可以稍微了解一点儿纯数学。先从一个简单的案例开始，然后添加复杂的细节，直到抵达曼德博集最核心的计算领域。
+
+下面是一个使用 Rust 特有语法实现的 \texttt{loop} 语句无限循环：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{square\PYGZus{}loop}\PYG{p}{(}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{x}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在现实世界中，Rust 能看出 \texttt{x} 从未用来做任何事，因此不会计算它的值。但目前，假设代码能按编写的方式运行。那么 \texttt{x} 的值会如何变化呢？对任何小于 1 的数值求平方会使它变得更小，因此它会趋近于 0；1 的平方会得到 1；对大于 1 的数值求平方会使它变大，因此它会趋近于无穷大；对一个负数求平方会先使其变为正数，之后它的变化情况和前面的情况类似，如图 2-3 所示。
+
+\myFigure{images/ch02/fig-2-3.jpeg}{图 2-3：重复对数值求平方的效果}
+
+因此，根据传给 \texttt{square\_loop} 的值，\texttt{x} 的取值为 0 或 1、趋近 0 或趋近无穷大。
+
+现在考虑一个略有不同的循环：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{square\PYGZus{}add\PYGZus{}loop}\PYG{p}{(}\PYG{n}{c}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{0.}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这一次，\texttt{x} 从 0 开始，我们通过对它求平方后再加上 \texttt{c} 来调整它在每次迭代中的进度。这更难看出 \texttt{x} 的变化情况了，但通过一些实验会发现，如果 \texttt{c} 大于 0.25 或小于 -2.0，那么 \texttt{x} 最终会变得无限大，否则，它就会停留在 0 附近的某个地方。
+
+下一个问题：如果不再使用 \texttt{f64} 值而是改用复数做同样的循环会怎样？crates.io 上的 \texttt{num} crate 已经提供了开箱即用的复数类型，因此要在程序的 Cargo.toml 文件的 \texttt{[dependencies]} 部分添加一行 \texttt{num}。这是迄今为止的整个文件（稍后会添加更多）：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{package}\PYG{p}{]}
+\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mandelbrot}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.1.0}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2021}\PYG{l+s}{\PYGZdq{}}
+
+\PYG{p}{\PYGZsh{}}\PYG{+w}{ }\PYG{err}{请}\PYG{err}{到}\PYG{err}{“}\PYG{n}{The}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{+w}{ }\PYG{n}{Book}\PYG{err}{”}\PYG{err}{查}\PYG{err}{看}\PYG{err}{更}\PYG{err}{多}\PYG{err}{的}\PYG{err}{键}\PYG{err}{及}\PYG{err}{其}\PYG{err}{定}\PYG{err}{义}
+
+\PYG{p}{[}\PYG{n}{dependencies}\PYG{p}{]}
+\PYG{n}{num}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.4}\PYG{l+s}{\PYGZdq{}}
+\end{Verbatim}
+
+现在可以编写此循环的倒数第二个版本了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{num}\PYG{p}{::}\PYG{n}{Complex}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{complex\PYGZus{}square\PYGZus{}add\PYGZus{}loop}\PYG{p}{(}\PYG{n}{c}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+传统上会用 \texttt{z} 来代表复数，因此我们重命名了循环变量。表达式 \texttt{Complex \{ re: 0.0, im: 0.0 \}} 是使用 \texttt{num} crate 的 \texttt{Complex} 类型编写复数 0 的方式。\texttt{Complex} 是一种 Rust 结构体类型（或 \texttt{struct}），其定义如下：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+s+sd}{/// 复数的实部}
+\PYG{+w}{    }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+
+\PYG{+w}{    }\PYG{l+s+sd}{/// 复数的虚部}
+\PYG{+w}{    }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+上述代码定义了一个名为 \texttt{Complex} 的结构体，该结构体有两个字段，即 \texttt{re} 和 \texttt{im}。\texttt{Complex} 是一种\textbf{泛型}结构体：可以把在类型名称之后的 \texttt{<T>} 读作“对于任意类型 \texttt{T}”。例如，\texttt{Complex<f64>} 是一个复数，其 \texttt{re} 字段和 \texttt{im} 字段为 \texttt{f64} 值，\texttt{Complex<f32>} 则使用 32 位浮点数，等等。根据此定义，像 \texttt{Complex \{ re: 0.24, im: 0.3 \}} 这样的表达式就会生成一个 \texttt{Complex} 值，其 \texttt{re} 字段已初始化为 0.24，\texttt{im} 字段已初始化为 0.3。
+
+\texttt{num} crate 支持用 \texttt{*}、\texttt{+} 和其他算术运算符来处理 \texttt{Complex} 值，因此该函数的其余部分仍然像之前的版本那样工作，只是它会将数值视作复平面上而不是实数轴上的点进行运算。第 12 章会讲解如何让 Rust 的运算符与自定义类型协同工作。
+
+我们终于抵达了纯数学之旅的终点。曼德博集的定义是：令 \texttt{z} 不会“飞到”无穷远的复数 \texttt{c} 的集合。我们最初的简单平方循环是可以预测的：任何大于 1 或小于 -1 的数值都会“飞”出去。把 \texttt{+ c} 放入每次迭代中会使变化情况更难预测：正如前面所说，大于 0.25 或小于 -2.0 的 \texttt{c} 值会导致 \texttt{z}“飞”出去。但是将此游戏推广到复数就会生成真正奇异而美丽的图案，这就是我们所要绘制的分形图。
+
+由于复数 \texttt{c} 具有实部 \texttt{c.re} 和虚部 \texttt{c.im}，因此可以把它们视为笛卡儿平面上某个点的 \texttt{x} 坐标和 \texttt{y} 坐标，如果 \texttt{c} 在曼德博集中，就在其中用黑色着色，否则就用浅色。因此，对于图像中的每个像素，必须在复平面上的相应点位运行前面的循环，看看它是逃逸到无穷远还是永远绕着原点运行，并相应地将其着色。
+
+无限循环需要一段时间才能完成，但是对缺乏耐心的人来说有两个小技巧。首先，如果不再永远运行循环而只是尝试一些有限次数的迭代，事实证明仍然可以获得该集合的一个不错的近似值。我们需要多少次迭代取决于想要绘制的边界的精度。其次，业已证明，一旦 \texttt{z} 离开了以原点为中心的半径为 2 的圆，它最终就一定会“飞到”无穷远的地方。所以下面是循环的最终版本，也是程序的核心：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{num}\PYG{p}{::}\PYG{n}{Complex}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 尝试测定`c`是否位于曼德博集中，使用最多`limit`次迭代来判定}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// 如果`c`不是集合成员之一，则返回`Some(i)`，其中的`i`是`c`离开以原点}
+\PYG{l+s+sd}{/// 为中心的半径为2的圆时所需的迭代次数。如果`c`似乎是集合成员之一（确}
+\PYG{l+s+sd}{/// 切而言是达到了迭代次数限制但仍然无法证明`c`不是成员），则返回`None`}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{escape\PYGZus{}time}\PYG{p}{(}\PYG{n}{c}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{limit}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{0.0}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{n}{limit}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{z}\PYG{p}{.}\PYG{n}{norm\PYGZus{}sqr}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mf}{4.0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{i}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{z}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n+nb}{None}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此函数会接受两个参数：\texttt{c} 是我们要测试其是否属于曼德博集的复数，\texttt{limit} 是要尝试的迭代次数上限，一旦超出这个次数就放弃并认为 \texttt{c} 可能是成员。
+
+该函数的返回值是一个 \texttt{Option<usize>}。Rust 的标准库中对 \texttt{Option} 类型的定义如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{T}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Option} 是一种\textbf{枚举类型}（通常称为“枚举”，\texttt{enum}），因为它的定义枚举了这个类型的值可能是几种变体之一：对于任意类型 \texttt{T}，\texttt{Option<T>} 类型的值要么是 \texttt{Some(v)}，其中 \texttt{v} 的类型为 \texttt{T}；要么是 \texttt{None}，表示没有可用的 \texttt{T} 值。与之前讨论的 \texttt{Complex} 类型一样，\texttt{Option} 是一种泛型类型：你可以使用 \texttt{Option<T>} 来表示任何一种类型 \texttt{T} 的可选值。
+
+在这个例子中，\texttt{escape\_time} 返回一个 \texttt{Option<usize>} 来指示 \texttt{c} 是否在曼德博集中——如果不在，是迭代了多少次才发现的。如果 \texttt{c} 不在集合中，那么 \texttt{escape\_time} 就会返回 \texttt{Some(i)}，其中 \texttt{i} 是 \texttt{z} 在离开半径为 \texttt{2} 的圆之前的迭代次数。否则，\texttt{c} 显然在集合中，并且 \texttt{escape\_time} 返回 \texttt{None}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{n}{limit}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\end{Verbatim}
+
+前面的示例展示了如何用 \texttt{for} 循环遍历命令行参数和向量元素，这个 \texttt{for} 循环则只是遍历从 \texttt{0} 开始到 \texttt{limit}（不含）的整数范围。
+
+\texttt{z.norm\_sqr()} 方法调用会返回 \texttt{z} 与原点距离的平方。要判断 \texttt{z} 是否已经离开半径为 \texttt{2} 的圆，不必计算平方根，只需将此距离的平方与 4.0 进行比较即可，这样速度更快。
+
+你可能已经注意到我们使用了 \texttt{///} 来标记函数定义上方的注释行，\texttt{Complex} 结构体成员上方的注释同样以 \texttt{///} 开头。这些叫作\textbf{文档型注释}，\texttt{rustdoc} 实用程序知道如何解析它们和它们所描述的代码，并生成在线文档。Rust 的标准库文档就是以这种形式编写的。第 8 章会详细讲解文档型注释。
+
+该程序的其余部分所“关心”的是决定以何种分辨率绘制此集合中的哪个部分，并将此项工作分发给多个线程以加快计算速度。
+
+\subsection{解析并配对命令行参数}
+
+该程序会接受几个命令行参数来控制我们要写入的图像的分辨率以及要绘制曼德博集里哪部分的图像。由于这些命令行参数遵循着一种共同的格式，因此我们写了一个解析它们的函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{k+kt}{str}\PYG{p}{::}\PYG{n}{FromStr}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 把字符串`s`（形如`\PYGZdq{}400x600\PYGZdq{}`或`\PYGZdq{}1.0,0.5\PYGZdq{}`）解析成一个坐标对}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// 具体来说，`s`应该具有\PYGZlt{}left\PYGZgt{}\PYGZlt{}sep\PYGZgt{}\PYGZlt{}right\PYGZgt{}的格式，其中\PYGZlt{}sep\PYGZgt{}是由`separator`}
+\PYG{l+s+sd}{/// 参数给出的字符，而\PYGZlt{}left\PYGZgt{}和\PYGZlt{}right\PYGZgt{}是可以被`T::from\PYGZus{}str`解析的字符串。}
+\PYG{l+s+sd}{/// `separator`必须是ASCII字符}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// 如果`s`具有正确的格式，就返回`Some\PYGZlt{}(x, y)\PYGZgt{}`；如果无法正确解析，就返回`None`}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{parse\PYGZus{}pair}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{FromStr}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{s}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{separator}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{char}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{n}{separator}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{index}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{match}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{T}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{[}\PYG{o}{..}\PYG{n}{index}\PYG{p}{]}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{[}\PYG{n}{index}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{p}{]}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{p}{(}\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{l}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{r}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{n}{l}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{r}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{None}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{test\PYGZus{}parse\PYGZus{}pair}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}pair}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{        }\PYG{l+s+sc}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}pair}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{10,}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{     }\PYG{l+s+sc}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}pair}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{,10}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{     }\PYG{l+s+sc}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}pair}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{10,20}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{   }\PYG{l+s+sc}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{l+m+mi}{10}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}pair}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{10,20xy}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}pair}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.5x}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{    }\PYG{l+s+sc}{\PYGZsq{}x\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}pair}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.5x1.5}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}x\PYGZsq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{l+m+mf}{0.5}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mf}{1.5}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{parse\_pair} 的定义是一个\textbf{泛型函数}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{parse\PYGZus{}pair}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{FromStr}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{s}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{separator}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{char}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\end{Verbatim}
+
+可以把 \texttt{<T: FromStr>} 子句读作“对于实现了 \texttt{FromStr} 特型的任意类型 \texttt{T}……”，这样就能高效地一次定义出整个函数家族：\texttt{parse\_pair::<i32>} 是能解析一对 \texttt{i32} 值的函数、\texttt{parse\_pair::<f64>} 是能解析一对 \texttt{f64} 浮点值的函数，等等。这很像 C++ 中的函数模板。Rust 程序员会将 \texttt{T} 称作 \texttt{parse\_pair} 的\textbf{类型参数}。当使用泛型函数时，Rust 通常能帮我们推断出类型参数，并且我们不必像这里的测试代码那样把它们明确写出来。
+
+我们的返回类型是 \texttt{Option<(T, T)>}：它或者是 \texttt{None}，或者是一个值 \texttt{Some((v1, v2))}，其中 \texttt{(v1, v2)} 是由两个 \texttt{T} 类型的值构成的元组。\texttt{parse\_pair} 函数没有使用显式 \texttt{return} 语句，因此它的返回值是其函数体中最后一个（也是唯一的一个）表达式的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{.}\PYG{n}{find}\PYG{p}{(}\PYG{n}{separator}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{index}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{String} 类型的 \texttt{find} 方法会在字符串中搜索与 \texttt{separator} 相匹配的字符。如果 \texttt{find} 返回 \texttt{None}，那么就意味着字符串中没有出现分隔符，这样整个 \texttt{match} 表达式的计算结果就为 \texttt{None}，表明解析失败。否则，\texttt{index} 值就是此分隔符在字符串中的位置。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{T}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{[}\PYG{o}{..}\PYG{n}{index}\PYG{p}{]}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{[}\PYG{n}{index}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{p}{]}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{p}{(}\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{l}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{r}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{n}{l}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{r}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{None}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里初步展现了 \texttt{match}（匹配）表达式的强大之处。\texttt{match} 的参数是如下元组表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{(}\PYG{n}{T}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{[}\PYG{o}{..}\PYG{n}{index}\PYG{p}{]}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{s}\PYG{p}{[}\PYG{n}{index}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{p}{]}\PYG{p}{)}\PYG{p}{)}
+\end{Verbatim}
+
+表达式 \texttt{\&s[..index]} 和 \texttt{\&s[index + 1..]} 都是字符串的切片，分别位于分隔符之前和之后。类型参数 \texttt{T} 的关联函数 \texttt{from\_str} 会获取其中的每一个元素并尝试将它们解析为类型 \texttt{T} 的值，从而生成结果元组。下面是我们要匹配的目标：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{(}\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{l}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{r}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{n}{l}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{r}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\end{Verbatim}
+
+仅当此元组的两个元素都是 \texttt{Result} 类型的 \texttt{Ok} 变体时，该模式才能匹配上，这表明两个解析都成功了。如果是这样，那么 \texttt{Some((l, r))} 就是匹配表达式的值，也就是函数的返回值。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{None}
+\end{Verbatim}
+
+通配符模式 \texttt{\_} 会匹配任意内容并忽略其值。如果运行到此处，则表明 \texttt{parse\_pair} 已然失败，因此其值为 \texttt{None}，并继而作为本函数的返回值。
+
+现在有了 \texttt{parse\_pair}，就很容易编写一个函数来解析一对浮点坐标并将它们作为 \texttt{Complex<f64>} 值返回：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 把一对用逗号分隔的浮点数解析为复数}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{parse\PYGZus{}complex}\PYG{p}{(}\PYG{n}{s}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}pair}\PYG{p}{(}\PYG{n}{s}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{},\PYGZsq{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{p}{(}\PYG{n}{re}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{None}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{test\PYGZus{}parse\PYGZus{}complex}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}complex}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.25,\PYGZhy{}0.0625}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{               }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{1.25}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.0625}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{parse\PYGZus{}complex}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{,\PYGZhy{}0.0625}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{parse\_complex} 函数调用了 \texttt{parse\_pair}，如果坐标解析成功则构建一个 \texttt{Complex} 值，如果失败则传回给它的调用者。
+
+如果你很细心，可能会注意到我们用了简写形式来构建 \texttt{Complex} 值。用同名变量来初始化结构体中的字段是很常见的写法，所以 Rust 不会强迫你写成 \texttt{Complex \{ re: re, im: im \}}，而会让你简写成 \texttt{Complex \{ re, im \}}。这是从 JavaScript 和 Haskell 中的类似写法借鉴来的。
+
+\subsection{从像素到复数的映射}
+
+我们的程序需要在两个彼此相关的坐标空间中运行：输出图像中的每个像素对应于复平面上的一个点。这两个空间之间的关系取决于要绘制曼德博集的哪一部分以及所请求图像的分辨率，这些都要通过命令行参数指定。以下函数会将\textbf{图像空间}转换为\textbf{复数空间}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 给定输出图像中像素的行和列，返回复平面中对应的坐标}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// `bounds`是一个`pair`，给出了图像的像素宽度和像素高度。`pixel`是表示该}
+\PYG{l+s+sd}{/// 图像中特定像素的(column, row)二元组。`upper\PYGZus{}left`参数和`lower\PYGZus{}right`}
+\PYG{l+s+sd}{/// 参数是在复平面中表示指定图像覆盖范围的点}
+\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{pixel\PYGZus{}to\PYGZus{}point}\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                  }\PYG{n}{pixel}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                  }\PYG{n}{upper\PYGZus{}left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{                  }\PYG{n}{lower\PYGZus{}right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{width}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{height}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{lower\PYGZus{}right}\PYG{p}{.}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{upper\PYGZus{}left}\PYG{p}{.}\PYG{n}{re}\PYG{p}{,}
+\PYG{+w}{                           }\PYG{n}{upper\PYGZus{}left}\PYG{p}{.}\PYG{n}{im}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{p}{.}\PYG{n}{im}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{upper\PYGZus{}left}\PYG{p}{.}\PYG{n}{re}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{pixel}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{width}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{upper\PYGZus{}left}\PYG{p}{.}\PYG{n}{im}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{pixel}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{f64}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{height}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{f64}
+\PYG{+w}{        }\PYG{c+c1}{// 为什么这里要用减法？这是因为在屏幕坐标系中pixel.1是}
+\PYG{+w}{        }\PYG{c+c1}{// 向下递增的，但复数的虚部是向上递增的}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{test\PYGZus{}pixel\PYGZus{}to\PYGZus{}point}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{pixel\PYGZus{}to\PYGZus{}point}\PYG{p}{(}\PYG{p}{(}\PYG{l+m+mi}{100}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{200}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{25}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{175}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                              }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{1.0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{+w}{                              }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{l+m+mf}{1.0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{1.0}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{               }\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.5}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mf}{0.75}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+图 2-4 说明了 \texttt{pixel\_to\_point} 所执行的计算规则。
+
+\myFigure{images/ch02/fig-2-4.jpeg}{图 2-4：复平面与图像像素的对应关系}
+
+\texttt{pixel\_to\_point} 的代码只是简单的计算，就不详细解释了。但是，有几点需要指出一下。下列形式的表达式引用的是元组中的元素：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{pixel}\PYG{p}{.}\PYG{l+m+mi}{0}
+\end{Verbatim}
+
+这里引用的是 \texttt{pixel} 元组的第一个元素。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{pixel}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{f64}
+\end{Verbatim}
+
+这是 Rust 的类型转换语法：这会将 \texttt{pixel.0} 转换为 \texttt{f64} 值。与 C 和 C++ 不同，Rust 通常会拒绝在数值类型之间进行隐式转换，因此你必须写出所需的转换。这可能有些烦琐，但明确说明发生了哪些转换以及发生于何时是非常有帮助的。隐式整数转换看似“人畜无害”，但从历史上看，它们一直是现实世界 C 和 C++ 代码中缺陷和安全漏洞的常见来源。
+
+\subsection{绘制曼德博集}
+
+要绘制出曼德博集，只需对复平面上的每个点调用 \texttt{escape\_time}，并根据其结果为图像中的像素着色：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+s+sd}{/// 将曼德博集对应的矩形渲染到像素缓冲区中}
+\PYG{l+s+sd}{///}
+\PYG{l+s+sd}{/// `bounds`参数会给出缓冲区`pixels`的宽度和高度，此缓冲区的每字节都}
+\PYG{l+s+sd}{/// 包含一个灰度像素。`upper\PYGZus{}left`参数和 `lower\PYGZus{}right`参数分别指定了}
+\PYG{l+s+sd}{/// 复平面中对应于像素缓冲区左上角和右下角的点}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{render}\PYG{p}{(}\PYG{n}{pixels}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{bounds}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{upper\PYGZus{}left}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{lower\PYGZus{}right}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Complex}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{f64}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert!}\PYG{p}{(}\PYG{n}{pixels}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{row}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{column}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{point}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{pixel\PYGZus{}to\PYGZus{}point}\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{column}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{row}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                                       }\PYG{n}{upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{pixels}\PYG{p}{[}\PYG{n}{row}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{column}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{                }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{escape\PYGZus{}time}\PYG{p}{(}\PYG{n}{point}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}
+\PYG{+w}{                    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{count}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{count}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u8}
+\PYG{+w}{                }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此刻，这一切看起来都很熟悉。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{pixels}\PYG{p}{[}\PYG{n}{row}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{column}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{escape\PYGZus{}time}\PYG{p}{(}\PYG{n}{point}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{count}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{count}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u8}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+如果 \texttt{escape\_time} 认为该 \texttt{point} 属于本集合，\texttt{render} 就会将相应像素的颜色渲染为黑色 (\texttt{0})。否则，\texttt{render} 会将需要更长时间才能逃离圆圈的数值渲染为较深的颜色。
+
+\subsection{写入图像文件}
+
+\texttt{image} crate 提供了读取和写入各种图像格式的函数，以及一些基本的图像处理函数。特别是，此 crate 包含一个 PNG 图像文件格式的编码器，该程序使用这个编码器来保存计算的最终结果。为了使用 \texttt{image}，请将下面这行代码添加到 Cargo.toml 的 \texttt{[dependencies]} 部分：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.13.0}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+然后可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{image}\PYG{p}{::}\PYG{n}{ColorType}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{image}\PYG{p}{::}\PYG{n}{png}\PYG{p}{::}\PYG{n}{PNGEncoder}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{::}\PYG{n}{File}\PYG{p}{;}
+
+\PYG{l+s+sd}{/// 把`pixels`缓冲区（其尺寸由`bounds`给出）写入名为`filename`的文件中}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{write\PYGZus{}image}\PYG{p}{(}\PYG{n}{filename}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{pixels}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{:}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{usize}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Error}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{n}{filename}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{encoder}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{PNGEncoder}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{output}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{encoder}\PYG{p}{.}\PYG{n}{encode}\PYG{p}{(}\PYG{n}{pixels}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{n}{ColorType}\PYG{p}{::}\PYG{n}{Gray}\PYG{p}{(}\PYG{l+m+mi}{8}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个函数的操作一目了然：它打开一个文件并尝试将图像写入其中。我们给编码器传入来自 \texttt{pixels} 的实际像素数据、来自 \texttt{bounds} 的宽度和高度，然后是最后一个参数，以说明如何解释 \texttt{pixels} 中的字节：值 \texttt{ColorType::Gray(8)} 表示每字节都是一个 8 位的灰度值。
+
+这些也同样一目了然。该函数值得一看的地方在于当出现问题时它是如何处理的。一旦遇到错误，就要将错误报告给调用者。正如之前提过的，Rust 中的容错函数应该返回一个 \texttt{Result} 值，成功时为 \texttt{Ok(s)}（其中 \texttt{s} 是成功值），失败时为 \texttt{Err(e)}（其中 \texttt{e} 是错误代码）。那么 \texttt{write\_image} 的成功类型和错误类型是什么呢？
+
+当一切顺利时，\texttt{write\_image} 函数只是把所有值得一看的东西都写到了文件中，没有任何有用的返回值。所以它的成功类型就是\textbf{单元}（unit）类型 \texttt{()}，而如此命名是因为这个类型只有一个值 \texttt{()}。单元类型类似于 C 和 C++ 中的 \texttt{void}。
+
+如果发生错误，那么可能是因为 \texttt{File::create} 无法创建文件或 \texttt{encoder.encode} 无法将图像写入其中，此 I/O 操作就会返回错误代码。\texttt{File::create} 的返回类型是 \texttt{Result<std::fs::File, std::io::Error>}，而 \texttt{encoder.encode} 的返回类型是 \texttt{Result<(), std::io::Error>}，所以两者共享着相同的错误类型，即 \texttt{std::io::Error}。\texttt{write\_image} 函数也应该这么做。在任何情况下，失败都应导致立即返回，并传出用以描述错误原因的 \texttt{std::io::Error} 值。
+
+所以，为了正确处理 \texttt{File::create} 的结果，需要 \texttt{match} 它的返回值，如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{n}{filename}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{f}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+成功时，就将 \texttt{output} 赋值为 \texttt{Ok} 值中携带的 \texttt{File}。失败时，就将错误透传给调用者。
+
+这种 \texttt{match} 语句在 Rust 中是一种非常常见的模式，所以该语言提供了 \texttt{?} 运算符作为它的简写形式。因此，与其每次在尝试可能失败的事情时都明确地写出这个逻辑，不如使用以下等效且更易读的语句：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{n}{filename}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+如果 \texttt{File::create} 失败，那么 \texttt{?} 运算符就会从 \texttt{write\_image} 返回，并传出此错误。否则，\texttt{output} 就会持有已成功打开的 \texttt{File}。
+
+\begin{myNote}
+新手常犯的一个错误就是试图在 \texttt{main} 函数中使用 \texttt{?}。但是，由于 \texttt{main} 本身不返回值，因此这样做行不通。应该使用 \texttt{match} 语句，或者像 \texttt{unwrap} 和 \texttt{expect} 这样的简写方法。还可以选择简单地把 \texttt{main} 改成返回一个 \texttt{Result}，稍后会介绍这种方式。
+\end{myNote}
+
+\subsection{并发版曼德博程序}
+
+万事俱备，可以展示一下 \texttt{main} 函数了，我们可以在其中利用并发来完成任务。为简单起见，先来看一个非并发版本：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{5}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Usage: \PYGZob{}\PYGZcb{} FILE PIXELS UPPERLEFT LOWERRIGHT}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                  }\PYG{n}{args}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Example: \PYGZob{}\PYGZcb{} mandel.png 1000x750 \PYGZhy{}1.20,0.35 \PYGZhy{}1,0.20}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                  }\PYG{n}{args}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{bounds}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}pair}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{[}\PYG{l+m+mi}{2}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s+sc}{\PYGZsq{}x\PYGZsq{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error parsing image dimensions}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{upper\PYGZus{}left}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}complex}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{[}\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error parsing upper left corner point}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}complex}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{[}\PYG{l+m+mi}{4}\PYG{p}{]}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error parsing lower right corner point}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{pixels}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{render}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{pixels}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{write\PYGZus{}image}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{pixels}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error writing PNG file}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+将命令行参数收集到一个 \texttt{String} 向量中后，我们会解析每个参数，然后开始计算。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{pixels}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{;}
+\end{Verbatim}
+
+宏调用 \texttt{vec![v; n]} 创建了一个 \texttt{n} 元素长的向量，其元素会被初始化为 \texttt{v}，因此前面的代码创建了一个长度为 \texttt{bounds.0 * bounds.1} 的全零向量，其中 \texttt{bounds} 是从命令行解析得来的图像分辨率。我们将使用此向量作为单字节灰度像素值的矩形数组，如图 2-5 所示。
+
+\myFigure{images/ch02/fig-2-5.jpeg}{图 2-5：使用向量作为矩形像素阵列}
+
+下一行值得关注的代码是：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{render}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{pixels}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这会调用 \texttt{render} 函数来实际计算图像。表达式 \texttt{\&mut pixels} 借用了一个对像素缓冲区的可变引用，以允许 \texttt{render} 用计算出来的灰度值填充它，不过 \texttt{pixels} 仍然是此向量的拥有者。其余的参数传入了图像的尺寸和要绘制的复平面矩形。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{write\PYGZus{}image}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{pixels}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error writing PNG file}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+最后，将这个像素缓冲区作为 PNG 文件写入磁盘。在这个例子中，我们向缓冲区传入了一个共享（不可变）引用，因为 \texttt{write\_image} 不需要修改缓冲区的内容。
+
+此时，可以在发布模式下构建和运行程序，它启用了许多强力的编译器优化，几秒后会在文件 mandel.png 中写入一个漂亮的图像：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }build\PYG{+w}{ }\PYGZhy{}\PYGZhy{}release
+\PYG{+w}{    }Updating\PYG{+w}{ }crates.io\PYG{+w}{ }index
+\PYG{+w}{   }Compiling\PYG{+w}{ }autocfg\PYG{+w}{ }v1.0.1
+\PYG{+w}{   }...
+\PYG{+w}{   }Compiling\PYG{+w}{ }image\PYG{+w}{ }v0.13.0
+\PYG{+w}{   }Compiling\PYG{+w}{ }mandelbrot\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}\PYG{n+nv}{\PYGZdl{}RUSTBOOK}/mandelbrot\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }release\PYG{+w}{ }\PYG{o}{[}optimized\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{25}.36s
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{time}\PYG{+w}{ }target/release/mandelbrot\PYG{+w}{ }mandel.png\PYG{+w}{ }4000x3000\PYG{+w}{ }\PYGZhy{}1.20,0.35\PYG{+w}{ }\PYGZhy{}1,0.20
+real\PYG{+w}{    }0m4.678s
+user\PYG{+w}{    }0m4.661s
+sys\PYG{+w}{     }0m0.008s
+\end{Verbatim}
+
+此命令会创建一个名为 mandel.png 的文件，你可以使用系统的图像查看器或在 Web 浏览器中查看该文件。如果一切顺利，它应该如图 2-6 所示。
+
+\myFigure{images/ch02/fig-2-6.jpeg}{图 2-6：并行曼德博程序的结果}
+
+在之前的记录中，我们使用过 Unix 的 \texttt{time} 程序来分析程序的运行时间——对图像的每个像素运行曼德博计算总共需要大约 \texttt{5} 秒。但是几乎所有的现代机器都有多个处理器核心，而这个程序只使用了一个。如果可以将此工作分派给机器提供的所有计算资源，则应该能更快地画完图像。
+
+为此，可以将图像分成多个部分（每个处理器一个），并让每个处理器为分派给它的像素着色。为简单起见，可以将其分成一些水平条带，如图 2-7 所示。当所有处理器都完成后，可以将像素写入磁盘中。
+
+\myFigure{images/ch02/fig-2-7.jpeg}{图 2-7：将像素缓冲区划分为一些条带以进行并行渲染}
+
+\texttt{crossbeam} crate 提供了许多有价值的并发设施，包括这里正需要的一个\textbf{作用域线程}设施。要使用此设施，必须将下面这行代码添加到 Cargo.toml 文件中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{crossbeam}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{0.8}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+然后要找出调用 \texttt{render} 的代码行并将其替换为以下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{threads}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{rows\PYGZus{}per\PYGZus{}band}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{n}{threads}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{;}
+
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{bands}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{        }\PYG{n}{pixels}\PYG{p}{.}\PYG{n}{chunks\PYGZus{}mut}\PYG{p}{(}\PYG{n}{rows\PYGZus{}per\PYGZus{}band}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{crossbeam}\PYG{p}{::}\PYG{n}{scope}\PYG{p}{(}\PYG{o}{|}\PYG{n}{spawner}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{i}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{bands}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{enumerate}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{top}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{rows\PYGZus{}per\PYGZus{}band}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{;}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{height}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{band}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{band\PYGZus{}bounds}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{height}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{band\PYGZus{}upper\PYGZus{}left}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{                }\PYG{n}{pixel\PYGZus{}to\PYGZus{}point}\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{top}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{band\PYGZus{}lower\PYGZus{}right}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{                }\PYG{n}{pixel\PYGZus{}to\PYGZus{}point}\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{top}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{height}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                               }\PYG{n}{upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{            }\PYG{n}{spawner}\PYG{p}{.}\PYG{n}{spawn}\PYG{p}{(}\PYG{k}{move}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{\PYGZus{}}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{n}{render}\PYG{p}{(}\PYG{n}{band}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band\PYGZus{}bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band\PYGZus{}upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band\PYGZus{}lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+仍以刚才的方式分步进行讲解：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{threads}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{8}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{rows\PYGZus{}per\PYGZus{}band}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{n}{threads}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{;}
+\end{Verbatim}
+
+这里我们决定使用 8 个线程。\footnote{\texttt{num\_cpus} crate 提供了一个返回当前系统可用 CPU 数量的函数。}然后会计算每个条带应该有多少行像素。我们向上舍入行数以确保条带覆盖整个图像，即使其高度并不是 \texttt{threads} 的整数倍。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{bands}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{p}{[}\PYG{k+kt}{u8}\PYG{p}{]}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{pixels}\PYG{p}{.}\PYG{n}{chunks\PYGZus{}mut}\PYG{p}{(}\PYG{n}{rows\PYGZus{}per\PYGZus{}band}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这里我们将像素缓冲区划分为几个条带。缓冲区的 \texttt{chunks\_mut} 方法会返回一个迭代器，该迭代器会生成此缓冲区的可变且不重叠的切片，每个切片都包含 \texttt{rows\_per\_band * bounds.0} 个像素，换句话说，\texttt{rows\_per\_band} 包含整行的像素。\texttt{chunks\_mut} 生成的最后一个切片包含的行数可能少一些，但每一行都包含同样数量的像素。最后，此迭代器的 \texttt{collect} 方法会构建一个向量来保存这些可变且不重叠的切片。
+
+现在可以使用 \texttt{crossbeam} 库了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{crossbeam}\PYG{p}{::}\PYG{n}{scope}\PYG{p}{(}\PYG{o}{|}\PYG{n}{spawner}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+参数 \texttt{|spawner| \{ ... \}} 是 Rust 闭包，它需要一个参数 \texttt{spawner}。请注意，与使用 \texttt{fn} 声明的函数不同，无须声明闭包参数的类型，Rust 将推断它们及其返回类型。在这里，\texttt{crossbeam::scope} 调用了此闭包，并将一个值作为 \texttt{spawner} 参数传给闭包，以便闭包使用 \texttt{spawner} 来创建新线程。\texttt{crossbeam::scope} 函数会等待所有线程执行完毕后返回。这种机制能让 Rust 确保这些线程不会在 \texttt{pixels} 超出作用域后再访问分配给自己的那部分，并能让我们确保当 \texttt{crossbeam::scope} 返回时，图像的计算已然完成。如果一切顺利，那么 \texttt{crossbeam::scope} 就会返回 \texttt{Ok(())}，但如果我们启动的任何线程发生了 panic，则它会返回一个 \texttt{Err}。我们会对该 \texttt{Result} 调用 \texttt{unwrap}，这样一来，在那种情况下我们也会发生 panic，并且用户会收到报告。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{i}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{bands}\PYG{p}{.}\PYG{n}{into\PYGZus{}iter}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{enumerate}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\end{Verbatim}
+
+在这里，我们遍历了像素缓冲区的各个条带。\texttt{into\_iter()} 迭代器会为循环体的每次迭代赋予独占一个条带的所有权，确保一次只有一个线程可以写入它（第 5 章会详细解释 \texttt{into\_iter()} 迭代器的工作原理）。然后，枚举适配器生成了一些元组，将向量中的元素与其索引配对。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{top}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{rows\PYGZus{}per\PYGZus{}band}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{height}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{band}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{band\PYGZus{}bounds}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{height}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{band\PYGZus{}upper\PYGZus{}left}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{pixel\PYGZus{}to\PYGZus{}point}\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{top}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{band\PYGZus{}lower\PYGZus{}right}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{n}{pixel\PYGZus{}to\PYGZus{}point}\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{top}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{height}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                   }\PYG{n}{upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+给定索引和条带的实际大小（回想一下，最后一个条带可能比其他条带矮），可以生成 \texttt{render} 需要的一个边界框，但它只会引用缓冲区的这个条带，而不是整个图像。同样，我们会重新调整渲染器的 \texttt{pixel\_to\_point} 函数的用途，以找出条带的左上角和右下角落在复平面上的位置。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{spawner}\PYG{p}{.}\PYG{n}{spawn}\PYG{p}{(}\PYG{k}{move}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{\PYGZus{}}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{render}\PYG{p}{(}\PYG{n}{band}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band\PYGZus{}bounds}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band\PYGZus{}upper\PYGZus{}left}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{band\PYGZus{}lower\PYGZus{}right}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+最后，创建一个线程，运行 \texttt{move |\_| \{ ... \}} 闭包。前面的 \texttt{move} 关键字表示这个闭包会接手它所用变量的所有权，特别是，只有此闭包才能使用可变切片 \texttt{band}。参数列表 \texttt{|\_|} 意味着闭包会接受一个参数，但不使用它（另一个用以启动嵌套线程的启动器）。
+
+如前所述，\texttt{crossbeam::scope} 调用会确保所有线程在它返回之前都已完成，这意味着将图像保存到文件中是安全的，这就是我们下一步要做的。
+
+\subsection{运行曼德博绘图器}
+
+我们在这个程序中使用了几个外部 crate：\texttt{num} 用于复数运算，\texttt{image} 用于写入 PNG 文件，\texttt{crossbeam} 用于提供“作用域线程创建”原语。下面是包含所有这些依赖项的最终 Cargo.toml 文件：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{package}\PYG{p}{]}
+\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{mandelbrot}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.1.0}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2021}\PYG{l+s}{\PYGZdq{}}
+
+\PYG{p}{[}\PYG{n}{dependencies}\PYG{p}{]}
+\PYG{n}{num}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.4}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{image}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.13}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{crossbeam}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.8}\PYG{l+s}{\PYGZdq{}}
+\end{Verbatim}
+
+接下来就可以构建并运行程序了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }build\PYG{+w}{ }\PYGZhy{}\PYGZhy{}release
+\PYG{+w}{    }Updating\PYG{+w}{ }crates.io\PYG{+w}{ }index
+\PYG{+w}{   }Compiling\PYG{+w}{ }crossbeam\PYGZhy{}queue\PYG{+w}{ }v0.3.2
+\PYG{+w}{   }Compiling\PYG{+w}{ }crossbeam\PYG{+w}{ }v0.8.1
+\PYG{+w}{   }Compiling\PYG{+w}{ }mandelbrot\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}\PYG{n+nv}{\PYGZdl{}RUSTBOOK}/mandelbrot\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }release\PYG{+w}{ }\PYG{o}{[}optimized\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{c+c1}{\PYGZsh{}.\PYGZsh{}\PYGZsh{} secs}
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{time}\PYG{+w}{ }target/release/mandelbrot\PYG{+w}{ }mandel.png\PYG{+w}{ }4000x3000\PYG{+w}{ }\PYGZhy{}1.20,0.35\PYG{+w}{ }\PYGZhy{}1,0.20
+real\PYG{+w}{    }0m1.436s
+user\PYG{+w}{    }0m4.922s
+sys\PYG{+w}{     }0m0.011s
+\end{Verbatim}
+
+这里我们再次使用 \texttt{time} 来查看程序运行所需的时间，请注意，尽管我们仍然花费了将近 5 秒的处理器时间，但实际运行时间仅为 1.5 秒左右。你可以通过注释掉执行此操作的代码并再次进行测量来验证这部分时间是否花在了写入图像文件上。在测试此代码的笔记本计算机上，并发版本将曼德博计算时间缩短了近 3/4。第 19 章会展示如何对此做实质性改进。
+
+和以前一样，该程序会创建一个名为 mandel.png 的文件。有了这个更快的版本，你就可以根据自己的喜好更改命令行参数，更轻松地探索曼德博集了。
+
+\subsection{大“安”无形}
+
+这个并行程序与用任何其他语言写出来的程序并没有本质区别：我们将像素缓冲区的片段分给不同的处理器，由每个处理器单独处理，并在它们都完工时展示结果。那么 Rust 的并发支持有什么独到之处呢？
+
+这里并没有展示那些被编译器一票否决的 Rust 程序。本章中展示的代码能正确地在线程之间对缓冲区进行分区，但是这些代码的许多小型变体将无法正确进行分区（因此会导致数据竞争），不过这些变体里没有一个能逃过 Rust 编译器的静态检查。C 编译器或 C++ 编译器将乐于帮助你探索具有微妙数据竞争的广阔程序空间，而 Rust 会预先告诉你什么时候可能出错。
+
+第 4 章和第 5 章会讲解 Rust 的内存安全规则。第 19 章会讲解这些规则如何确保适当的安全并发环境。
+
+\section{文件系统与命令行工具}
+
+Rust 在命令行工具领域构筑了重要的基本应用场景。作为一种现代、安全、快速的系统编程语言，它为程序员提供了一个工具箱，他们可以用这个工具箱组装出灵活的命令行界面，从而复现或扩展现有工具的功能。例如，\texttt{bat} 命令\footnote{这是一个跨平台的命令行工具，可以用来浏览和交互式地查看文件内容。——译者注}就提供了一个支持语法高亮的替代方案 \texttt{cat}，并内置了对分页工具的支持，而 \texttt{hyperfine} 可以自动对任何通过命令或管道运行的程序执行基准测试。
+
+虽然如此复杂的内容已经超出了本书的范畴，但 Rust 可以让你轻松步入符合工效学的命令行领域。本节将向你展示如何构建自己的搜索与替换工具，并内置丰富多彩的输出和友好的错误消息。
+
+首先，创建一个新的 Rust 项目：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }new\PYG{+w}{ }quickreplace
+\PYG{+w}{     }Created\PYG{+w}{ }binary\PYG{+w}{ }\PYG{o}{(}application\PYG{o}{)}\PYG{+w}{ }\PYG{l+s+sb}{`}quickreplace\PYG{l+s+sb}{`}\PYG{+w}{ }package
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{cd}\PYG{+w}{ }quickreplace
+\end{Verbatim}
+
+我们的程序要用到另外两个 crate：用于在终端中创建彩色输出的 \texttt{text-colorizer} 以及执行实际搜索和替换的 \texttt{regex}。和以前一样，将这些 crate 放在 Cargo.toml 中，告诉 \texttt{cargo} 我们需要它们：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{package}\PYG{p}{]}
+\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{quickreplace}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.1.0}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2021}\PYG{l+s}{\PYGZdq{}}
+
+\PYG{p}{\PYGZsh{}}\PYG{+w}{ }\PYG{err}{请}\PYG{err}{到}\PYG{err}{“}\PYG{n}{The}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{+w}{ }\PYG{n}{Book}\PYG{err}{”}\PYG{err}{查}\PYG{err}{看}\PYG{err}{更}\PYG{err}{多}\PYG{err}{的}\PYG{err}{键}\PYG{err}{及}\PYG{err}{其}\PYG{err}{定}\PYG{err}{义}
+
+\PYG{p}{[}\PYG{n}{dependencies}\PYG{p}{]}
+\PYG{n}{text}\PYG{o}{\PYGZhy{}}\PYG{n}{colorizer}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{regex}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1}\PYG{l+s}{\PYGZdq{}}
+\end{Verbatim}
+
+凡是达到 1.0 版的 Rust crate 都会遵循“语义化版本控制”规则：在主版本号 1 发生变化之前，所有更新都应当在兼容前序版本的基础上扩展。因此，如果针对某个 crate 的 1.2 版测试过我们的程序，那它应该仍然适用于 1.3、1.4 等版本，但 2.0 版可能会引入不兼容的变更。如果在 Cargo.toml 文件中只是请求版本 \texttt{"1"} 的 crate，那么 Cargo 就会使用 2.0 之前的 crate 里最新的可用版本。
+
+\subsection{命令行界面}
+
+这个程序的界面非常简单。它有 4 个参数：要搜索的字符串（或正则表达式）、要替换成的字符串（或正则表达式）、输入文件的名称和输出文件的名称。我们将从包含这些参数的结构体开始写 main.rs 文件：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Debug)}\PYG{c+cp}{]}
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Arguments}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{target}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{replacement}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{filename}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{output}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{\#[derive(Debug)]} 属性会让编译器生成一些额外的代码，这能让我们在 \texttt{println!} 中使用 \texttt{\{:?\}} 来格式化 \texttt{Arguments} 结构体。
+
+如果用户输入的参数个数不对，那么通常会打印出一份关于如何使用本程序的简单说明。我们会使用一个名为 \texttt{print\_usage} 的简单函数来完成此操作，并从 \texttt{text-colorizer} 导入所有内容，以便为这些输出添加一些颜色：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{text\PYGZus{}colorizer}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{print\PYGZus{}usage}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} \PYGZhy{} change occurrences of one string into another}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{              }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{quickreplace}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{green}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Usage: quickreplace \PYGZlt{}target\PYGZgt{} \PYGZlt{}replacement\PYGZgt{} \PYGZlt{}INPUT\PYGZgt{} \PYGZlt{}OUTPUT\PYGZgt{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+只要将 \texttt{.green()} 添加到字符串字面量的末尾，就可以生成包裹在适当 ANSI 转义码中的字符串，从而在终端模拟器中显示为绿色。然后，在打印之前将生成的字符串插到信息中的其他部分。
+
+现在可以开始收集并处理程序的参数了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{parse\PYGZus{}args}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Arguments}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{skip}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{4}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{print\PYGZus{}usage}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} wrong number of arguments: expected 4, got \PYGZob{}\PYGZcb{}.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{            }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Error:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{red}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{bold}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n}{Arguments}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{target}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{args}\PYG{p}{[}\PYG{l+m+mi}{0}\PYG{p}{]}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{replacement}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{args}\PYG{p}{[}\PYG{l+m+mi}{1}\PYG{p}{]}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{filename}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{args}\PYG{p}{[}\PYG{l+m+mi}{2}\PYG{p}{]}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{output}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{args}\PYG{p}{[}\PYG{l+m+mi}{3}\PYG{p}{]}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+为了获取用户输入的参数，我们会使用与前面例子中相同的 \texttt{args} 迭代器。\texttt{.skip(1)} 会跳过迭代器的第一个值（正在运行的程序的名称），让结果中只含命令行参数。
+
+首先 \texttt{collect()} 方法会生成一个 \texttt{Vec} 参数。然后我们会检查它的参数个数是否正确，如果不正确，则打印一条信息并以返回一个错误代码的形式退出。接下来我们再次对部分信息进行着色，并用 \texttt{.bold()} 把这段文本加粗。如果参数个数正确，就把它们放入一个 \texttt{Arguments} 结构体中，并返回该结构体。
+
+下面添加一个只会调用 \texttt{parse\_args} 并打印输出的 \texttt{main} 函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+现在，运行本程序，可以看到它正常输出了错误消息：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run
+\PYG{+w}{ }Updating\PYG{+w}{ }crates.io\PYG{+w}{ }index
+Compiling\PYG{+w}{ }libc\PYG{+w}{ }v0.2.82
+Compiling\PYG{+w}{ }lazy\PYGZus{}static\PYG{+w}{ }v1.4.0
+Compiling\PYG{+w}{ }memchr\PYG{+w}{ }v2.3.4
+Compiling\PYG{+w}{ }regex\PYGZhy{}syntax\PYG{+w}{ }v0.6.22
+Compiling\PYG{+w}{ }thread\PYGZus{}local\PYG{+w}{ }v1.1.0
+Compiling\PYG{+w}{ }aho\PYGZhy{}corasick\PYG{+w}{ }v0.7.15
+Compiling\PYG{+w}{ }atty\PYG{+w}{ }v0.2.14
+Compiling\PYG{+w}{ }text\PYGZhy{}colorizer\PYG{+w}{ }v1.0.0
+Compiling\PYG{+w}{ }regex\PYG{+w}{ }v1.4.3
+Compiling\PYG{+w}{ }quickreplace\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/home/jimb/quickreplace\PYG{o}{)}
+Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{6}.98s
+Running\PYG{+w}{ }\PYG{l+s+sb}{`}target/debug/quickreplace\PYG{l+s+sb}{`}
+quickreplace\PYG{+w}{ }\PYGZhy{}\PYG{+w}{ }change\PYG{+w}{ }occurrences\PYG{+w}{ }of\PYG{+w}{ }one\PYG{+w}{ }string\PYG{+w}{ }into\PYG{+w}{ }another
+Usage:\PYG{+w}{ }quickreplace\PYG{+w}{ }\PYGZlt{}target\PYGZgt{}\PYG{+w}{ }\PYGZlt{}replacement\PYGZgt{}\PYG{+w}{ }\PYGZlt{}INPUT\PYGZgt{}\PYG{+w}{ }\PYGZlt{}OUTPUT\PYGZgt{}
+Error:\PYG{+w}{ }wrong\PYG{+w}{ }number\PYG{+w}{ }of\PYG{+w}{ }arguments:\PYG{+w}{ }expected\PYG{+w}{ }\PYG{l+m}{4},\PYG{+w}{ }got\PYG{+w}{ }\PYG{l+m}{0}
+\end{Verbatim}
+
+如果传给程序的参数个数正确，那么它就会打印出 \texttt{Arguments} 结构体的文本表示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}find\PYGZdq{}}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}replace\PYGZdq{}}\PYG{+w}{ }file\PYG{+w}{ }output
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.01s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}target/debug/quickreplace\PYG{+w}{ }find\PYG{+w}{ }replace\PYG{+w}{ }file\PYG{+w}{ }output\PYG{l+s+sb}{`}
+Arguments\PYG{+w}{ }\PYG{o}{\PYGZob{}}\PYG{+w}{ }target:\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}find\PYGZdq{}},\PYG{+w}{ }replacement:\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}replace\PYGZdq{}},\PYG{+w}{ }filename:\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}file\PYGZdq{}},\PYG{+w}{ }output:
+\PYG{l+s+s2}{\PYGZdq{}output\PYGZdq{}}\PYG{+w}{ }\PYG{o}{\PYGZcb{}}
+\end{Verbatim}
+
+这是一个很好的开端。这些参数都已被正确提取并放置在 \texttt{Arguments} 结构体的正确部分中。
+
+\subsection{读写文件}
+
+接下来，我们需要用某种方法从文件系统中实际获取数据，以便进行处理，并在完工后将数据写回去。Rust 有一套健壮的输入 / 输出工具，但标准库的设计者知道读写文件是很常用的操作，所以刻意简化了它。我们所要做的是导入模块 \texttt{std::fs}，然后就可以访问 \texttt{read\_to\_string} 函数和 \texttt{write} 函数了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{fs}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{std::fs::read\_to\_string} 会返回一个 \texttt{Result<String, std::io::Error>}。如果此函数成功，就会生成一个 \texttt{String}；如果失败，就会生成一个 \texttt{std::io::Error}，这是标准库中用来表示 I/O 问题的类型。类似地，\texttt{std::fs::write} 会返回一个 \texttt{Result<(), std::io::Error>}：在成功的时候不返回任何内容，一旦出现问题就返回错误详情。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{data}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{fs}\PYG{p}{::}\PYG{n}{read\PYGZus{}to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{.}\PYG{n}{filename}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{v}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} failed to read from file \PYGZsq{}\PYGZob{}\PYGZcb{}\PYGZsq{}: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                      }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Error:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{red}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{bold}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{filename}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{e}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{fs}\PYG{p}{::}\PYG{n}{write}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{.}\PYG{n}{output}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{data}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{\PYGZus{}}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} failed to write to file \PYGZsq{}\PYGZob{}\PYGZcb{}\PYGZsq{}: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Error:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{red}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{bold}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{output}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{e}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在这里，我们使用前面写好的 \texttt{parse\_args()} 函数并将生成的文件名传给 \texttt{read\_to\_string} 和 \texttt{write}。对这些函数的输出使用 \texttt{match} 语句可以优雅地处理错误，打印出文件名、错误原因，并用一点儿醒目的颜色引起用户的注意。
+
+有了这个改写后的 \texttt{main} 函数，运行程序时就可以看到下面这些了，当然，新旧文件的内容是完全相同的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}find\PYGZdq{}}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}replace\PYGZdq{}}\PYG{+w}{ }Cargo.toml\PYG{+w}{ }Copy.toml
+\PYG{+w}{   }Compiling\PYG{+w}{ }quickreplace\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/home/jimb/rust/quickreplace\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.01s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}target/debug/quickreplace\PYG{+w}{ }find\PYG{+w}{ }replace\PYG{+w}{ }Cargo.toml\PYG{+w}{ }Copy.toml\PYG{l+s+sb}{`}
+\end{Verbatim}
+
+该程序\textbf{确实}读取了输入文件 Cargo.toml，也\textbf{确实}写入了输出文件 Copy.toml，但是由于我们尚未编写任何代码来实际进行查找和替换，因此输出中没有任何变化。通过运行 \texttt{diff} 命令轻松进行查验，该命令确实没有检测到任何差异。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }diff\PYG{+w}{ }Cargo.toml\PYG{+w}{ }Copy.toml
+\end{Verbatim}
+
+\subsection{查找并替换}
+
+这个程序的最后一步是实现它的实际功能：查找并替换。为此，我们将使用 \texttt{regex} crate，它会编译并执行正则表达式。它提供了一个名为 \texttt{Regex} 的结构体，表示已编译的正则表达式。\texttt{Regex} 有一个 \texttt{replace\_all} 方法，该方法名副其实：在一个字符串中搜索此正则表达式的所有匹配项，并用给定的替代字符串替换每个匹配项。可以将这段逻辑提取到一个函数中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{regex}\PYG{p}{::}\PYG{n}{Regex}\PYG{p}{;}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{replace}\PYG{p}{(}\PYG{n}{target}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{replacement}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{text}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{regex}\PYG{p}{::}\PYG{n}{Error}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{regex}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Regex}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{target}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{regex}\PYG{p}{.}\PYG{n}{replace\PYGZus{}all}\PYG{p}{(}\PYG{n}{text}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{replacement}\PYG{p}{)}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+注意看这个函数的返回类型。就像之前使用过的标准库函数一样，\texttt{replace} 也会返回一个 \texttt{Result}，但这次它携带着 \texttt{regex} crate 提供的错误类型。
+
+\texttt{Regex::new} 会编译用户提供的正则表达式，如果给定的字符串无效，那么它就会失败。与曼德博程序中一样，我们使用 \texttt{?} 符号在 \texttt{Regex::new} 失败的情况下短路它，但该函数将返回 \texttt{regex} crate 特有的错误类型。一旦正则表达式编译完成，它的 \texttt{replace\_all} 方法就能用给定的替代字符串替换 \texttt{text} 中的任何匹配项。
+
+如果 \texttt{replace\_all} 找到了匹配项，那么它就会返回一个新的 \texttt{String}，而这些匹配项会被替换成我们给它的文本。否则，\texttt{replace\_all} 就会返回指向原始文本的指针，以回避不必要的内存分配和复制。然而，在这个例子中，我们想要一个独立的副本，因此无论是哪种情况，都要使用 \texttt{to\_string} 方法来获取 \texttt{String} 并返回包裹在 \texttt{Result::Ok} 中的字符串，就像其他函数中的做法一样。
+
+现在，是时候将这个新函数合并到 \texttt{main} 代码中了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{args}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{data}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{fs}\PYG{p}{::}\PYG{n}{read\PYGZus{}to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{.}\PYG{n}{filename}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{v}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{           }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} failed to read from file \PYGZsq{}\PYGZob{}\PYGZcb{}\PYGZsq{}: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{               }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Error:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{red}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{bold}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{filename}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{e}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{           }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{replaced\PYGZus{}data}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{replace}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{.}\PYG{n}{target}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{.}\PYG{n}{replacement}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{data}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{v}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} failed to replace text: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Error:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{red}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{bold}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{e}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{fs}\PYG{p}{::}\PYG{n}{write}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{args}\PYG{p}{.}\PYG{n}{output}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{replaced\PYGZus{}data}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{v}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{v}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{e}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} failed to write to file \PYGZsq{}\PYGZob{}\PYGZcb{}\PYGZsq{}: \PYGZob{}:?\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{                }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Error:}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{red}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{bold}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{args}\PYG{p}{.}\PYG{n}{filename}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{e}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{std}\PYG{p}{::}\PYG{n}{process}\PYG{p}{::}\PYG{n}{exit}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+完成了最后一步，程序已经就绪，你可以测试它了：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }\PYG{n+nb}{echo}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}Hello, world\PYGZdq{}}\PYG{+w}{ }\PYGZgt{}\PYG{+w}{ }test.txt
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}world\PYGZdq{}}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}Rust\PYGZdq{}}\PYG{+w}{ }test.txt\PYG{+w}{ }test\PYGZhy{}modified.txt
+\PYG{+w}{   }Compiling\PYG{+w}{ }quickreplace\PYG{+w}{ }v0.1.0\PYG{+w}{ }\PYG{o}{(}/home/jimb/rust/quickreplace\PYG{o}{)}
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.88s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}target/debug/quickreplace\PYG{+w}{ }world\PYG{+w}{ }Rust\PYG{+w}{ }test.txt\PYG{+w}{ }test\PYGZhy{}modified.txt\PYG{l+s+sb}{`}
+
+\PYGZdl{}\PYG{+w}{ }cat\PYG{+w}{ }test\PYGZhy{}modified.txt
+Hello,\PYG{+w}{ }Rust
+\end{Verbatim}
+
+错误处理做得也很到位，它优雅地向用户报告错误：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}[[a\PYGZhy{}z]\PYGZdq{}}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}0\PYGZdq{}}\PYG{+w}{ }test.txt\PYG{+w}{ }test\PYGZhy{}modified.txt
+\PYG{+w}{    }Finished\PYG{+w}{ }dev\PYG{+w}{ }\PYG{o}{[}unoptimized\PYG{+w}{ }+\PYG{+w}{ }debuginfo\PYG{o}{]}\PYG{+w}{ }target\PYG{o}{(}s\PYG{o}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m}{0}.01s
+\PYG{+w}{     }Running\PYG{+w}{ }\PYG{l+s+sb}{`}target/debug/quickreplace\PYG{+w}{ }\PYG{l+s+s1}{\PYGZsq{}[[a\PYGZhy{}z]\PYGZsq{}}\PYG{+w}{ }\PYG{l+m}{0}\PYG{+w}{ }test.txt\PYG{+w}{ }test\PYGZhy{}modified.txt\PYG{l+s+sb}{`}
+Error:\PYG{+w}{ }failed\PYG{+w}{ }to\PYG{+w}{ }replace\PYG{+w}{ }text:\PYG{+w}{ }Syntax\PYG{o}{(}
+\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}
+regex\PYG{+w}{ }parse\PYG{+w}{ }error:
+\PYG{+w}{    }\PYG{o}{[}\PYG{o}{[}a\PYGZhy{}z\PYG{o}{]}
+\PYG{+w}{    }\PYGZca{}
+error:\PYG{+w}{ }unclosed\PYG{+w}{ }character\PYG{+w}{ }class
+\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}\PYGZti{}
+\PYG{o}{)}
+\end{Verbatim}
+
+当然，这个简单的演示中还缺少许多特性，但已经“五脏俱全”。至此，你已经了解了如何读取和写入文件、传播和显示错误，以及为输出着色以提升终端程序里的用户体验。
+
+在未来的章节中，我们将探讨应用程序开发中的高级技术，从数据的集合以及使用迭代器进行函数式编程到可实现高效并发的异步编程技术，但首先，你得在第 3 章的 Rust 基本数据类型方面打下坚实的基础。
+

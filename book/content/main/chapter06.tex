@@ -1,0 +1,924 @@
+% chapter06 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_052.html, part0000_split_053.html, part0000_split_054.html, part0000_split_055.html, part0000_split_056.html, part0000_split_057.html, part0000_split_058.html, part0000_split_059.html, part0000_split_060.html, part0000_split_061.html, part0000_split_062.html, part0000_split_063.html, part0000_split_064.html, part0000_split_065.html, part0000_split_066.html, part0000_split_067.html, part0000_split_068.html
+
+\begin{myEpigraph}{——Alan Perlis，警句 \#55}
+LISP 程序员知道一切的价值（value），但不了解其代价。
+\end{myEpigraph}
+
+本章将介绍 Rust \textbf{表达式}，它是函数体的组成部分，因而也是大部分 Rust 代码的组成部分。Rust 中的大多数内容是表达式。本章将探索表达式的强大功能以及如何克服它的局限性。我们将介绍在 Rust 中完全面向表达式的控制流，以及 Rust 的基础运算符如何独立工作和组合工作。
+
+某些概念（比如闭包和迭代器）严格来说也属于这一类，但略显深奥，我们稍后将用单独的一章来介绍它们。目前，我们的目标是在这“区区几页”中涵盖尽可能多的语法。
+
+\section{表达式语言}
+
+Rust 乍看起来和 C 家族的语言相似，但这只是假象。在 C 语言中，\textbf{表达式}和语句之间有明显的区别，表达式看起来是这样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{l+m+mi}{5}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{fahr}\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{32}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{/}\PYG{+w}{ }\PYG{l+m+mi}{9}
+\end{Verbatim}
+
+而\textbf{语句}看起来更像这样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{begin}\PYG{+w}{ }\PYG{o}{!}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{end}\PYG{p}{;}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{+}\PYG{n}{begin}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{p}{(}\PYG{o}{*}\PYG{n}{begin}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{target}\PYG{p}{)}
+\PYG{+w}{        }\PYG{k}{break}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+表达式有值，而语句没有。
+
+Rust 是所谓的\textbf{表达式语言}。这意味着它遵循更古老的传统，可以追溯到 Lisp，在 Lisp 中，表达式能完成所有工作。
+
+在 C 中，\texttt{if} 和 \texttt{switch} 是语句，它们不生成值，也不能在表达式中间使用。而在 Rust 中，\texttt{if} 和 \texttt{match} \textbf{可以}生成值。第 2 章介绍过一个生成数值的 \texttt{match} 表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{pixels}\PYG{p}{[}\PYG{n}{r}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{bounds}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n}{c}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{escapes}\PYG{p}{(}\PYG{n}{Complex}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{re}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{point}\PYG{p}{.}\PYG{l+m+mi}{0}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{im}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{point}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{count}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{255}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{count}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{u8}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{if} 表达式可用于初始化变量：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{status}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{cpu}\PYG{p}{.}\PYG{n}{temperature}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{MAX\PYGZus{}TEMP}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{HttpStatus}\PYG{p}{::}\PYG{n+nb}{Ok}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{HttpStatus}\PYG{p}{::}\PYG{n}{ServerError}\PYG{+w}{  }\PYG{c+c1}{// 服务程序出错了}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{match} 表达式可以作为参数传给函数或宏：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Inside the vat, you see \PYGZob{}\PYGZcb{}.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{vat}\PYG{p}{.}\PYG{n}{contents}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{brain}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{brain}\PYG{p}{.}\PYG{n}{desc}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{nothing of interest}\PYG{l+s}{\PYGZdq{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+这解释了为什么 Rust 没有 C 那样的三元运算符（\texttt{\emph{expr1} ? \emph{expr2} : \emph{expr3}}）。在 C 语言中，三元运算符是一个表达式级别的类似 \texttt{if} 语句的东西。这在 Rust 中是多余的：\texttt{if} 表达式足以处理这两种情况。
+
+C 中的大多数控制流工具是语句。而在 Rust 中，它们都是表达式。
+
+\section{优先级与结合性}
+
+表 6-1 总结了 Rust 的表达式语法。本章将讨论所有这些类型的表达式。这里的运算符已按优先级顺序列出，从最高到最低。（与大多数编程语言一样，当一个表达式包含多个相邻的运算符时，Rust 会根据\textbf{运算符优先级}来确定运算顺序。例如，在 \texttt{limit < 2 * broom.size + 1} 中，\texttt{.} 运算符具有最高优先级，因此会最先访问字段。）
+
+\myCaption{表 6-1：表达式}
+
+\myTableBegin
+\begin{xltabular}{\textwidth}{@{}>{\hsize=0.371\hsize\raggedright\arraybackslash}X>{\hsize=1.315\hsize\raggedright\arraybackslash}X>{\hsize=1.315\hsize\raggedright\arraybackslash}X@{}}
+\rowcolor{tabhead}\textcolor{white}{表达式类型} & \textcolor{white}{示例} & \textcolor{white}{相关特型} \\
+\endfirsthead
+\rowcolor{tabhead}\textcolor{white}{表达式类型} & \textcolor{white}{示例} & \textcolor{white}{相关特型} \\
+\endhead
+数组字面量 & \texttt{[1, 2, 3]} &  \\
+数组重复表达式 & \texttt{[0; 50]} &  \\
+元组 & \texttt{(6, "crullers")} &  \\
+分组 & \texttt{(2 + 2)} &  \\
+块 & \texttt{\{ f(); g() \}} &  \\
+控制流表达式 & \texttt{if ok \{ f() \}}\newline{}\texttt{if ok \{ 1 \} else \{ 0 \}}\newline{}\texttt{if let Some(x) = f() \{ x \} else \{ 0 \}}\newline{}\texttt{match x \{ None => 0, \_ => 1 \}}\newline{}\texttt{for v in e \{ f(v); \}}\newline{}\texttt{while ok \{ ok = f(); \}}\newline{}\texttt{while let Some(x) = it.next() \{ f(x); \}}\newline{}\texttt{loop \{ next\_event(); \}}\newline{}\texttt{break}\newline{}\texttt{continue}\newline{}\texttt{return 0} & \texttt{std::iter::IntoIterator} \\
+宏调用 & \texttt{println!("ok")} &  \\
+路径 & \texttt{std::f64::consts::PI} &  \\
+结构体字面量 & \texttt{Point \{x: 0, y: 0\}} &  \\
+元组字段访问 & \texttt{pair.0} & \texttt{Deref}、\texttt{DerefMut} \\
+结构体字段访问 & \texttt{point.x} & \texttt{Deref}、\texttt{DerefMut} \\
+方法调用 & \texttt{point.translate(50, 50)} & \texttt{Deref}、\texttt{DerefMut} \\
+函数调用 & \texttt{stdin()} & \texttt{Fn(Arg0, ...) -> T}、\texttt{FnMut(Arg0, ...) -> T}、\texttt{FnOnce(Arg0, ...) -> T} \\
+索引 & \texttt{arr[0]} & \texttt{Index}、\texttt{IndexMutDeref}、\texttt{DerefMut} \\
+错误检查 & \texttt{create\_dir("tmp")?} &  \\
+逻辑非 / 按位非 & \texttt{!ok} & \texttt{Not} \\
+取负 & \texttt{-num} & \texttt{Neg} \\
+解引用 & \texttt{*ptr} & \texttt{Deref}、\texttt{DerefMut} \\
+借用 & \texttt{\&val} &  \\
+类型转换 & \texttt{x as u32} &  \\
+乘 & \texttt{n * 2} & \texttt{Mul} \\
+除 & \texttt{n / 2} & \texttt{Div} \\
+取余（取模） & \texttt{n \% 2} & \texttt{Rem} \\
+加 & \texttt{n + 1} & \texttt{Add} \\
+减 & \texttt{n - 1} & \texttt{Sub} \\
+左移 & \texttt{n << 1} & \texttt{Shl} \\
+右移 & \texttt{n >> 1} & \texttt{Shr} \\
+按位与 & \texttt{n \& 1} & \texttt{BitAnd} \\
+按位异或 & \texttt{n \textasciicircum{} 1} & \texttt{BitXor} \\
+按位或 & \texttt{n | 1} & \texttt{BitOr} \\
+小于 & \texttt{n < 1} & \texttt{std::cmp::PartialOrd} \\
+小于等于 & \texttt{n <= 1} & \texttt{std::cmp::PartialOrd} \\
+大于 & \texttt{n > 1} & \texttt{std::cmp::PartialOrd} \\
+大于等于 & \texttt{n >= 1} & \texttt{std::cmp::PartialOrd} \\
+等于 & \texttt{n == 1} & \texttt{std::cmp::PartialEq} \\
+不等于 & \texttt{n != 1} & \texttt{std::cmp::PartialEq} \\
+逻辑与 & \texttt{x.ok \&\& y.ok} &  \\
+逻辑或 & \texttt{x.ok || backup.ok} &  \\
+右开区间范围 & \texttt{start .. stop} &  \\
+右闭区间范围 & \texttt{start ..= stop} &  \\
+赋值 & \texttt{x = val} &  \\
+复合赋值 & \texttt{x *= 1}\newline{}\texttt{x /= 1}\newline{}\texttt{x \%= 1}\newline{}\texttt{x += 1}\newline{}\texttt{x -= 1}\newline{}\texttt{x <<= 1}\newline{}\texttt{x >>= 1}\newline{}\texttt{x \&= 1}\newline{}\texttt{x \textasciicircum{}= 1}\newline{}\texttt{x |= 1} & \texttt{DivAssign}\newline{}\texttt{RemAssign}\newline{}\texttt{AddAssign}\newline{}\texttt{SubAssign}\newline{}\texttt{ShlAssign}\newline{}\texttt{ShrAssign}\newline{}\texttt{BitAndAssign}\newline{}\texttt{BitXorAssign}\newline{}\texttt{BitOrAssign}\newline{}\texttt{MulAssign} \\
+闭包 & \texttt{|x, y| x + y} &  \\
+\end{xltabular}
+\myTableEnd
+
+所有可以链式书写的运算符都是左结合的。也就是说，诸如 \texttt{a - b - c} 之类的操作链会分组为 \texttt{(a - b) - c}，而不是 \texttt{a - (b - c)}。所有可以这样链式书写的运算符都遵循左结合规则：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{o}{*}\PYG{+w}{   }\PYG{o}{/}\PYG{+w}{   }\PYG{o}{\PYGZpc{}}\PYG{+w}{   }\PYG{o}{+}\PYG{+w}{   }\PYG{o}{\PYGZhy{}}\PYG{+w}{   }\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZlt{}}\PYG{+w}{   }\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{   }\PYG{o}{\PYGZam{}}\PYG{+w}{   }\PYG{o}{\PYGZca{}}\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{   }\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZam{}}\PYG{+w}{   }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{   }\PYG{k}{as}
+\end{Verbatim}
+
+比较运算符、赋值运算符和范围运算符（\texttt{..} 和 \texttt{..=}）则根本无法链式书写。
+
+\section{块与分号}
+
+块是一种最通用的表达式。一个块生成一个值，并且可以在任何需要值的地方使用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{display\PYGZus{}name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{post}\PYG{p}{.}\PYG{n}{author}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{author}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{author}\PYG{p}{.}\PYG{n}{name}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{network\PYGZus{}info}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{post}\PYG{p}{.}\PYG{n}{get\PYGZus{}network\PYGZus{}metadata}\PYG{p}{(}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{ip}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{network\PYGZus{}info}\PYG{p}{.}\PYG{n}{client\PYGZus{}address}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{ip}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{Some(author) =>} 之后的代码是简单表达式 \texttt{author.name()}，\texttt{None =>} 之后的代码是一个块表达式，它们对 Rust 来说没什么不同。块表达式的值是最后一个表达式 \texttt{ip.to\_string()} 的值。
+
+请注意，\texttt{ip.to\_string()} 方法调用后面没有分号。大多数 Rust 代码行以分号或花括号结尾，就像 C 或 Java 一样。如果一个块看起来很像 C 代码，在你熟悉的每个地方都有分号，那么它就会像 C 的块一样运行，并且其值为 \texttt{()}。正如第 2 章提到的，当块的最后一行不带分号时，就以最后这个表达式的值而不是通常的 \texttt{()} 作为块的值。
+
+在某些语言，尤其是 JavaScript 中，可以省略分号，并且该语言会简单地替你填充分号——这是一个小小的便捷特性。但 Rust 不一样。在 Rust 中，分号是有实际意义的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{msg}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// let声明：分号总是必需的}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{dandelion\PYGZus{}control}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{puffball}\PYG{p}{.}\PYG{n}{open}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// 带分号的表达式：调用方法，丢弃返回值}
+\PYG{+w}{    }\PYG{n}{dandelion\PYGZus{}control}\PYG{p}{.}\PYG{n}{release\PYGZus{}all\PYGZus{}seeds}\PYG{p}{(}\PYG{n}{launch\PYGZus{}codes}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// 无分号的表达式：调用方法，返回值将存入`msg`}
+\PYG{+w}{    }\PYG{n}{dandelion\PYGZus{}control}\PYG{p}{.}\PYG{n}{get\PYGZus{}status}\PYG{p}{(}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+块可以包含多个声明并在末尾生成值，这是一个很好的特性，你很快就会适应它。但它的一个缺点是，如果你不小心遗漏了分号，则会导致奇怪的错误消息：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{o}{..}\PYG{p}{.}
+\PYG{k}{if}\PYG{+w}{ }\PYG{n}{preferences}\PYG{p}{.}\PYG{n}{changed}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{page}\PYG{p}{.}\PYG{n}{compute\PYGZus{}size}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 糟糕，丢了分号}
+\PYG{p}{\PYGZcb{}}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+如果在 C 或 Java 程序中犯了同样的错误，那么编译器会直接指出你漏了一个分号。但 Rust 会这么说：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{mismatched}\PYG{+w}{ }\PYG{n}{types}
+\PYG{l+m+mi}{22}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{         }\PYG{n}{page}\PYG{p}{.}\PYG{n}{compute\PYGZus{}size}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 糟糕，丢了分号}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{         }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{help}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{try}\PYG{+w}{ }\PYG{n}{adding}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{n}{semicolon}\PYG{p}{:}\PYG{+w}{ }\PYG{err}{`}\PYG{p}{;}\PYG{err}{`}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{         }\PYG{o}{|}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{         }\PYG{n}{expected}\PYG{+w}{ }\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{found}\PYG{+w}{ }\PYG{n}{tuple}
+\PYG{+w}{   }\PYG{o}{|}
+\PYG{+w}{   }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{note}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{expected}\PYG{+w}{ }\PYG{n}{unit}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{err}{`}\PYG{p}{(}\PYG{p}{)}\PYG{err}{`}
+\PYG{+w}{              }\PYG{n}{found}\PYG{+w}{ }\PYG{n}{tuple}\PYG{+w}{ }\PYG{err}{`}\PYG{p}{(}\PYG{k+kt}{u32}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{u32}\PYG{p}{)}\PYG{err}{`}
+\end{Verbatim}
+
+由于缺少分号，块的值将是 \texttt{page.compute\_size()} 返回的任何值，但是没有 \texttt{else} 的 \texttt{if} 必定返回 \texttt{()}。幸好，Rust 已经针对这类错误做出改进，并会建议添加分号。
+
+\section{声明}
+
+除了表达式和分号，块还可以包含任意数量的声明。最常见的是 \texttt{let} 声明，它会声明局部变量：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{type}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{expr}\PYG{p}{;}
+\end{Verbatim}
+
+类型和初始化代码是可选的，分号则是必需的。与 Rust 中的所有标识符一样，变量名必须以字母或下划线开头，并且只能在第一个字符之后包含数字。Rust 中的“字母”是广义的，包括希腊字母、带重音的拉丁字符和更多符号——符合 Unicode 标准中附件 \#31 要求的一切字符（也包括中文）。不允许使用表情符号。
+
+\texttt{let} 声明可以在不初始化变量的情况下声明变量，然后再用赋值语句来初始化变量。这在某些情况下很有用，因为有时确实应该在某种控制流结构的中间初始化变量：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{;}
+\PYG{k}{if}\PYG{+w}{ }\PYG{n}{user}\PYG{p}{.}\PYG{n}{has\PYGZus{}nickname}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{user}\PYG{p}{.}\PYG{n}{nickname}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{generate\PYGZus{}unique\PYGZus{}name}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{user}\PYG{p}{.}\PYG{n}{register}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{name}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里有两种初始化局部变量 \texttt{name} 的方式，但无论采用哪种方式，都只会初始化一次，所以 \texttt{name} 不需要声明为 \texttt{mut}。
+
+在初始化之前就使用变量是错误的。（这与“移动后又使用值”的错误紧密相关。Rust 确实非常希望你只使用存在的值。）
+
+你可能偶尔会看到似乎在重新声明现有变量的代码，如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{file}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{line}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个 \texttt{let} 声明会创建一个不同类型的、新的（第二个）变量。第一个 \texttt{line} 变量的类型是 \texttt{Result<String, io::Error>}。第二个 \texttt{line} 变量则是 \texttt{String}。第二个定义会在所处代码块的其余部分代替第一个定义。这叫作\textbf{遮蔽}（shadowing），在 Rust 程序中很常见。该代码等效于如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{file}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+本书会坚持在这种情况下使用 \texttt{\_result} 后缀，以便让不同变量具有不同的名称。
+
+块还可以包含\textbf{语法项声明}（item declaration）。语法项是指可以在程序或模块中的任意地方出现的声明，比如 \texttt{fn}、\texttt{struct} 或 \texttt{use}。
+
+后面的章节会详细介绍这些语法项。现阶段，用 \texttt{fn} 这个例子就足够了。任何块都可能包含一个 \texttt{fn}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{cmp}\PYG{p}{::}\PYG{n}{Ordering}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{show\PYGZus{}files}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{v}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cmp\PYGZus{}by\PYGZus{}timestamp\PYGZus{}then\PYGZus{}name}\PYG{p}{(}\PYG{n}{a}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{FileInfo}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{b}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{FileInfo}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Ordering}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{a}\PYG{p}{.}\PYG{n}{timestamp}\PYG{p}{.}\PYG{n}{cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{b}\PYG{p}{.}\PYG{n}{timestamp}\PYG{p}{)}\PYG{+w}{   }\PYG{c+c1}{// 首先，比较时间戳}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{reverse}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{                  }\PYG{c+c1}{// 最新的文件优先}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{then}\PYG{p}{(}\PYG{n}{a}\PYG{p}{.}\PYG{n}{path}\PYG{p}{.}\PYG{n}{cmp}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{b}\PYG{p}{.}\PYG{n}{path}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{  }\PYG{c+c1}{// 通过路径做二级比较}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n}{v}\PYG{p}{.}\PYG{n}{sort\PYGZus{}by}\PYG{p}{(}\PYG{n}{cmp\PYGZus{}by\PYGZus{}timestamp\PYGZus{}then\PYGZus{}name}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当在块内声明一个 \texttt{fn} 时，它的作用域是整个块，也就是说，它可以在整个封闭块内部\textbf{使用}。但是嵌套的 \texttt{fn} 无法访问恰好在同一作用域内的局部变量或参数。例如，函数 \texttt{cmp\_by\_timestamp\_then\_name} 不能直接使用 \texttt{v}。（封闭块与闭包不同。Rust 也有闭包，闭包可以看到封闭块作用域内的变量。请参阅第 14 章。）
+
+块甚至可以包含完整的模块。这可能看起来有点儿过分（真的需要把语言的\textbf{每一}部分都嵌进任何其他部分吗？），但是程序员（特别是使用宏的程序员）总是有办法为语言提供的每一种独立语法找到用武之地。
+
+\section{\texttt{if} 与 \texttt{match}}
+
+\texttt{if} 表达式的形式我们很眼熟：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{if}\PYG{+w}{ }\PYG{n}{condition1}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block1}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{condition2}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block2}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block\PYGZus{}n}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+每个 \emph{\texttt{condition}} 都必须是 \texttt{bool} 类型的表达式，依照 Rust 的风格，不会隐式地将数值或指针转换为布尔值。
+
+与 C 不同，条件周围不需要圆括号。事实上，如果出现了不必要的圆括号，那么 \texttt{rustc} 会给出警告。但花括号是必需的。
+
+\texttt{else if} 块以及最后的 \texttt{else} 是可选的。没有 \texttt{else} 块的 \texttt{if} 表达式的行为与具有空的 \texttt{else} 块完全相同。
+
+\texttt{match} 表达式类似于 C 语言中的 \texttt{switch} 语句，但更灵活。下面是一个简单的例子：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{code}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{OK}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Wires Tangled}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{User Asleep}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Unrecognized Error \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{code}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这类似于 \texttt{switch} 语句的用途。它将执行此 \texttt{match} 表达式的四个分支之一，具体执行哪个分支取决于 \texttt{code} 的值。通配符模式 \texttt{\_} 会匹配所有内容。这类似于 \texttt{switch} 语句中的 \texttt{default:} 语句，不过它必须排在最后。将 \texttt{\_} 模式放在其他模式之前意味着它会优先于其他模式。这样一来，其他模式将永远没机会匹配到（编译器会发出警告）。
+
+编译器可以使用跳转表来优化这种 \texttt{match}，就像 C++ 中的 \texttt{switch} 语句一样。当 \texttt{match} 的每个分支都生成一个常量值时，也会应用与 C++ 类似的优化。在这种情况下，编译器会构建出这些值的数组，并将各个 \texttt{match} 项编译为数组访问。除了边界检查，编译后的代码中根本不存在任何分支。
+
+\texttt{match} 的多功能性源于每个分支 \texttt{=>} 左侧支持的多种\textbf{模式}（pattern）。在上面的例子中，每个模式只是一个常量整数。我们还展示了用以区分两种 \texttt{Option} 值的 \texttt{match} 表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{params}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{name}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{name}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Hello, \PYGZob{}\PYGZcb{}!}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Greetings, stranger.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+对模式的强大能力来说，这还只是“冰山一角”。模式可以匹配一系列值，它可以解构元组、可以匹配结构体的各个字段、可以追踪引用、可以借用部分值，等等。甚至可以说，Rust 的模式定义了自己的迷你语言。第 10 章会用一些篇幅来介绍模式。
+
+\texttt{match} 表达式的一般形式如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{value}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{pattern}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{expr}\PYG{p}{,}
+\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果 \emph{\texttt{expr}} 是一个块，则可以省略此分支之后的逗号。
+
+Rust 会从第一项开始依次根据每个模式检查给定的 \emph{\texttt{value}}。当模式能够匹配时，对应的 \emph{\texttt{expr}} 会被求值，而当这个 \texttt{match} 表达式结束时，不会再检查别的模式。至少要有一个模式能够匹配。Rust 禁止执行未覆盖所有可能值的 \texttt{match} 表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{score}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{card}\PYG{p}{.}\PYG{n}{rank}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Jack}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Queen}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{10}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Ace}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{l+m+mi}{11}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：未穷举所有模式}
+\end{Verbatim}
+
+\texttt{if} 表达式的所有块都必须生成相同类型的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{suggested\PYGZus{}pet}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{with\PYGZus{}wings}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{Pet}\PYG{p}{::}\PYG{n}{Buzzard}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{Pet}\PYG{p}{::}\PYG{n}{Hyena}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{favorite\PYGZus{}number}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{user}\PYG{p}{.}\PYG{n}{is\PYGZus{}hobbit}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{eleventy\PYGZhy{}one}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{l+m+mi}{9}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{best\PYGZus{}sports\PYGZus{}team}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{is\PYGZus{}hockey\PYGZus{}season}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Predators}\PYG{l+s}{\PYGZdq{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误}
+\end{Verbatim}
+
+（最后一个示例之所以是错的，是因为在 7 月份结果将是 \texttt{()}。）\footnote{因为 7 月份不是冰球赛季 \texttt{hockey\_season}，所以会“走”入隐藏的 \texttt{else} 分支，返回 \texttt{()}。——译者注}
+
+类似地，\texttt{match} 表达式的所有分支都必须具有相同的类型。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{suggested\PYGZus{}pet}\PYG{+w}{ }\PYG{o}{=}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{favorites}\PYG{p}{.}\PYG{n}{element}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Fire}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Pet}\PYG{p}{::}\PYG{n}{RedPanda}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Air}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Pet}\PYG{p}{::}\PYG{n}{Buffalo}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Water}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Pet}\PYG{p}{::}\PYG{n}{Orca}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{+w}{  }\PYG{c+c1}{// 错误：不兼容的类型}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{\texttt{if let}}
+
+还有一种 \texttt{if} 形式，即 \texttt{if let} 表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{pattern}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{expr}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block1}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block2}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+给定的 \emph{\texttt{expr}} 要么匹配 \emph{\texttt{pattern}}，这时会运行 \emph{\texttt{block1}}；要么无法匹配，这时会运行 \emph{\texttt{block2}}。有时这是从 \texttt{Option} 或 \texttt{Result} 中获取数据的好办法：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{cookie}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{request}\PYG{p}{.}\PYG{n}{session\PYGZus{}cookie}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{restore\PYGZus{}session}\PYG{p}{(}\PYG{n}{cookie}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{show\PYGZus{}cheesy\PYGZus{}anti\PYGZus{}robot\PYGZus{}task}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{log\PYGZus{}robot\PYGZus{}attempt}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{politely\PYGZus{}accuse\PYGZus{}user\PYGZus{}of\PYGZus{}being\PYGZus{}a\PYGZus{}robot}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{session}\PYG{p}{.}\PYG{n}{mark\PYGZus{}as\PYGZus{}human}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{if let} 不是\textbf{必需}的，因为凡是 \texttt{if let} 可以做到的，\texttt{match} 同样可以做到。\texttt{if let} 表达式其实是只有一个模式的 \texttt{match} 表达式的简写形式。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{match}\PYG{+w}{ }\PYG{n}{expr}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{pattern}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{block1}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{n}{\PYGZus{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{block2}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\subsection{循环}
+
+有 4 种循环表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{while}\PYG{+w}{ }\PYG{n}{condition}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{pattern}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{expr}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{pattern}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{iterable}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{block}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+各种循环都是 Rust 中的表达式，但 \texttt{while} 循环或 \texttt{for} 循环的值总是 \texttt{()}，因此它们的值通常没什么用。如果指定了一个值，那么 \texttt{loop} 表达式就能生成一个值。
+
+\texttt{while} 循环的行为与 C 中的等效循环完全一样，只不过其 \emph{\texttt{condition}} 必须是 \texttt{bool} 类型。
+
+\texttt{while let} 循环类似于 \texttt{if let}。在每次循环迭代开始时，\emph{\texttt{expr}} 的值要么匹配给定的 \emph{\texttt{pattern}}，这时会运行循环体（\texttt{block}）；要么不匹配，这时会退出循环。
+
+可以用 \texttt{loop} 来编写无限循环。它会永远重复执行循环体（直到遇上 \texttt{break} 或 \texttt{return}，或者直到线程崩溃）。
+
+\texttt{for} 循环会对可迭代（\texttt{iterable}）表达式求值，然后为结果迭代器中的每个值运行一次循环体。许多类型可以迭代，包括所有标准库集合，比如 \texttt{Vec} 和 \texttt{HashMap}。标准的 C 语言的 \texttt{for} 循环如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{int}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{i}\PYG{o}{+}\PYG{o}{+}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{printf}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZpc{}d}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在 Rust 中则是这样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{o}{..}\PYG{l+m+mi}{20}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+与 C 一样，最后打印出的数值是 \texttt{19}。
+
+\texttt{..} 运算符会生成一个\textbf{范围}（range），即具有两个字段（\texttt{start} 和 \texttt{end}）的简单结构体。\texttt{0..20} 与 \texttt{std::ops::Range \{ start: 0, end: 20 \}} 相同。各种范围都可以与 \texttt{for} 循环一起使用，因为 \texttt{Range} 是一种可迭代类型，它实现了 \texttt{std::iter::IntoIterator} 特型（参见第 15 章）。标准集合都是可迭代的，数组和切片也是如此。
+
+为了与 Rust 的移动语义保持一致，把值用于 \texttt{for} 循环会消耗该值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{strings}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{error\PYGZus{}messages}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{strings}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{                  }\PYG{c+c1}{// 在这里，每个String都会转移给s……}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{s}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{                                   }\PYG{c+c1}{// ……并在此丢弃}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{} error(s)}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{strings}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// 错误：使用了已移动出去的值}
+\end{Verbatim}
+
+这可能很不方便。简单的补救措施是在循环中访问此集合的引用。然后，循环变量也会变成对集合中每个条目的引用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{rs}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{strings}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{String \PYGZob{}:?\PYGZcb{} is at address \PYGZob{}:p\PYGZcb{}.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{rs}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{rs}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里 \texttt{\&strings} 的类型是 \texttt{\&Vec<String>}，\texttt{rs} 的类型是 \texttt{\&String}。
+
+遍历（可迭代对象的）可变引用会为每个元素提供一个可变引用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{rs}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{strings}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{  }\PYG{c+c1}{// rs的类型是\PYGZam{}mut String}
+\PYG{+w}{    }\PYG{n}{rs}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}n\PYGZsq{}}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 为每个字符串添加一个换行}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+第 15 章会更详细地介绍 \texttt{for} 循环，并展示使用迭代器的许多其他方式。
+
+\section{循环中的控制流}
+
+\texttt{break} 表达式会退出所在循环。（在 Rust 中，\texttt{break} 只能用在循环中，不能用在 \texttt{match} 表达式中，这与 \texttt{switch} 语句不同。）
+
+在 \texttt{loop} 的循环体中，可以在 \texttt{break} 后面跟一个表达式，该表达式的值会成为此 \texttt{loop} 的值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 对`next\PYGZus{}line`的每一次调用，或者返回一个`Some(line)`（这里的`line`是}
+\PYG{c+c1}{// 输入中的一行），或者当输入已结束时返回`None`。最终会返回以\PYGZdq{}answer: \PYGZdq{}}
+\PYG{c+c1}{// 开头的第1行，如果没找到，就返回\PYGZdq{}answer: nothing\PYGZdq{}}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{answer}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{line}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{next\PYGZus{}line}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{.}\PYG{n}{starts\PYGZus{}with}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{answer: }\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{break}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{k}{else}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{break}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{answer: nothing}\PYG{l+s}{\PYGZdq{}}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+自然，\texttt{loop} 中的所有 \texttt{break} 表达式也必须生成具有相同类型的值，这样该类型就会成为这个 \texttt{loop} 本身的类型。
+
+\texttt{continue} 表达式会跳转到循环的下一次迭代：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 读取某些数据，每次一行}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{input\PYGZus{}lines}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{trimmed}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{trim\PYGZus{}comments\PYGZus{}and\PYGZus{}whitespace}\PYG{p}{(}\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{trimmed}\PYG{p}{.}\PYG{n}{is\PYGZus{}empty}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{c+c1}{// 跳转回循环的顶部，并移到输入中的下一行}
+\PYG{+w}{        }\PYG{k}{continue}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在 \texttt{for} 循环中，\texttt{continue} 会前进到集合中的下一个值，如果没有更多值，则退出循环。同样，在 \texttt{while} 循环中，\texttt{continue} 会重新检查循环条件，如果当前条件为假，就退出循环。
+
+循环可以带有生命周期\textbf{标签}。在以下示例中，\texttt{'search:} 是外部 \texttt{for} 循环的标签。因此，\texttt{break 'search} 会退出这层循环，而不是退出内部循环：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{o}{\PYGZsq{}}\PYG{n+na}{search}\PYG{p}{:}
+\PYG{n+nc}{for}\PYG{+w}{ }\PYG{n}{room}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{apartment}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{spot}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{room}\PYG{p}{.}\PYG{n}{hiding\PYGZus{}spots}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{spot}\PYG{p}{.}\PYG{n}{contains}\PYG{p}{(}\PYG{n}{keys}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Your keys are \PYGZob{}\PYGZcb{} in the \PYGZob{}\PYGZcb{}.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{spot}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{room}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{k}{break}\PYG{+w}{ }\PYG{n+nl}{\PYGZsq{}search}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{break} 可以同时具有标签和值表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 找到此系列中第一个完全平方数的平方根}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{sqrt}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{outer}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{next\PYGZus{}number}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{o}{..}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{square}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{i}\PYG{+w}{ }\PYG{o}{*}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{square}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{c+c1}{// 找到了一个平方根}
+\PYG{+w}{            }\PYG{k}{break}\PYG{+w}{ }\PYG{n+nl}{\PYGZsq{}outer}\PYG{+w}{ }\PYG{n}{i}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{square}\PYG{+w}{ }\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{n}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{c+c1}{// `n`不是完全平方数，尝试下一个}
+\PYG{+w}{            }\PYG{k}{break}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+标签也可以与 \texttt{continue} 一起使用。
+
+\section{\texttt{return} 表达式}
+
+\texttt{return} 表达式会退出当前函数，并向调用者返回一个值。
+
+不带值的 \texttt{return} 是 \texttt{return ()} 的简写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{f}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{     }\PYG{c+c1}{// 省略了返回类型：默认为()}
+\PYG{+w}{    }\PYG{k}{return}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 省略了返回值：默认为()}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+函数不必有明确的 \texttt{return} 表达式。函数体的工作方式类似于块表达式：如果最后一个表达式后没有分号，则它的值就是函数的返回值。事实上，这是在 Rust 中提供函数返回值的首选方式。
+
+但这并不意味着 \texttt{return} 是无用的，或者仅仅是对不熟悉表达式语言的用户做出的让步。与 \texttt{break} 表达式一样，\texttt{return} 可以放弃进行中的工作。例如，第 2 章就使用过 \texttt{?} 运算符在调用可能失败的函数后检查错误：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{n}{filename}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+我们曾解释说这是 \texttt{match} 表达式的简写形式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{File}\PYG{p}{::}\PYG{n}{create}\PYG{p}{(}\PYG{n}{filename}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{f}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{f}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+上述代码会首先调用 \texttt{File::create(filename)}。如果返回 \texttt{Ok(f)}，则整个 \texttt{match} 表达式的计算结果为 \texttt{f}，因此可以把 \texttt{f} 存储在 \texttt{output} 中，继续执行 \texttt{match} 后的下一行代码。
+
+否则，我们将匹配 \texttt{Err(err)} 并抵达 \texttt{return} 表达式。这时候，对 \texttt{match} 表达式求值的具体结果会决定 \texttt{output} 变量的值。我们会放弃所有这些并退出所在函数，返回从 \texttt{File::create()} 中得到的任何错误。
+
+7.2.4 节会完整讲解 \texttt{?} 运算符。
+
+\section{为什么 Rust 中会有 \texttt{loop}}
+
+Rust 编译器中有几个部分会分析程序中的控制流。
+
+\begin{itemize}
+\item Rust 会检查通过函数的每条路径是否返回了预期返回类型的值。为了正确地做到这一点，它需要知道是否有可能抵达函数的末尾。
+\item Rust 会检查局部变量有没有在未初始化的情况下使用过。这就要检查通过函数的每一条路径，以确保只要不经过初始化此变量的代码，就无法抵达使用它的地方。
+\item Rust 会对不可达代码发出警告。如果\textbf{无法}通过函数抵达某段代码，则这段代码不可达。
+\end{itemize}
+
+以上这些称为\textbf{流敏感}（flow-sensitive）分析。这不是什么新事物，多年来，Java 一直在采用与 Rust 相似的“显式赋值”分析。
+
+要执行这种规则，语言就必须在简单性和智能性之间取得平衡。简单性使得程序员更容易弄清楚编译器到底在说什么，而智能性有助于消除假警报和编译器拒绝一份完美而安全的程序的情况。Rust 更倾向于简单性，它的流敏感分析根本不会检查循环条件，而会简单地假设程序中的任何条件都可以为真或为假。
+
+这会导致 Rust 可能拒绝某些安全程序：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{wait\PYGZus{}for\PYGZus{}process}\PYG{p}{(}\PYG{n}{process}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Process}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{while}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{process}\PYG{p}{.}\PYG{n}{wait}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{process}\PYG{p}{.}\PYG{n}{exit\PYGZus{}code}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}\PYG{+w}{  }\PYG{c+c1}{// 错误：类型不匹配：期待i32，实际找到了()}
+\end{Verbatim}
+
+这里的错误是假警报。此函数只会通过 \texttt{return} 语句退出，因此 \texttt{while} 循环无法生成 \texttt{i32} 这个事实无关紧要。
+
+\texttt{loop} 表达式就是这个问题的“有话直说”式解决方案。
+
+Rust 的类型系统也会受到控制流的影响。前面说过，\texttt{if} 表达式的所有分支都必须具有相同的类型。但是，在可能以 \texttt{break} 或 \texttt{return} 表达式、无限 \texttt{loop}，或者调用 \texttt{panic!()} 或 \texttt{std::process::exit()} 等多种方式结束的块上强制执行此规则是不现实的。这些表达式的共同点是它们永远都不会以通常的方式结束并生成一个值。\texttt{break} 或 \texttt{return} 会突然退出当前块、无限 \texttt{loop} 则根本不会结束，等等。
+
+所以，在 Rust 中，这些表达式没有正常类型。不能正常结束的表达式属于一个特殊类型 \texttt{!}，并且它们不受“类型必须匹配”这条规则的约束。可以在 \texttt{std::process::exit()} 的函数签名中看到 \texttt{!}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{exit}\PYG{p}{(}\PYG{n}{code}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{i32}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{o}{!}
+\end{Verbatim}
+
+此处的 \texttt{!} 表示 \texttt{exit()} 永远不会返回，它是一个\textbf{发散函数}（divergent function）。
+
+你可以用相同的语法编写自己的发散函数，这在某些情况下是很自然的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{serve\PYGZus{}forever}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{ServerSocket}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{handler}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{ServerHandler}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{o}{!}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{listen}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{accept}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{handler}\PYG{p}{.}\PYG{n}{handle}\PYG{p}{(}\PYG{n}{s}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当然，如果此函数正常返回了，那么 Rust 就会认为它能正常返回反而是一个错误。
+
+有了这些大规模控制流的构建块，就可以继续处理该流中常用的、更细粒度的表达式（比如函数调用和算术运算符）了。
+
+\section{函数与方法调用}
+
+Rust 中调用函数和方法的语法与许多其他语言中的语法相同：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{gcd}\PYG{p}{(}\PYG{l+m+mi}{1302}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{462}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 函数调用}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{room}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{player}\PYG{p}{.}\PYG{n}{location}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 方法调用}
+\end{Verbatim}
+
+在此处的第二个示例中，\texttt{player} 是虚构类型 \texttt{Player} 的变量，它具有虚构的 \texttt{.location()} 方法。（第 9 章在讨论用户定义类型时会展示如何定义我们自己的方法。）
+
+Rust 通常会在引用和它们所引用的值之间做出明确的区分。如果将 \texttt{\&i32} 传给需要 \texttt{i32} 的函数，则会出现类型错误。你会注意到 \texttt{.} 运算符稍微放宽了这些规则。在调用 \texttt{player. location()} 的方法中，\texttt{player} 可能是一个 \texttt{Player}、一个 \texttt{\&Player} 类型的引用，也可能是一个 \texttt{Box<Player>} 或 \texttt{Rc<Player>} 类型的智能指针。\texttt{.location()} 方法可以通过值或引用获取 \texttt{player}。同一个 \texttt{.location()} 语法适用于所有情况，因为 Rust 的 \texttt{.} 运算符会根据需要自动对 \texttt{player} 解引用或借入一个对它的引用。
+
+第三种语法用于调用类型关联函数，比如 \texttt{Vec::new()}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{numbers}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 类型关联函数调用}
+\end{Verbatim}
+
+这些语法类似于面向对象语言中的静态方法：普通方法会在值上调用（如 \texttt{my\_vec.len()}），类型关联函数会在类型上调用（如 \texttt{Vec::new()}）。
+
+自然，也支持链式方法调用：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 来自第2章的基于Actix的Web服务器}
+\PYG{n}{server}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{bind}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{127.0.0.1:3000}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error binding server to address}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{.}\PYG{n}{run}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error running server}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+Rust 语法的怪癖之一就是，在函数调用或方法调用中，泛型类型的常用语法 \texttt{Vec<T>} 是不起作用的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{with\PYGZus{}capacity}\PYG{p}{(}\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：是某种关于“链式比较”的错误消息}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{ramp}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 同样的错误}
+\end{Verbatim}
+
+这里的问题在于，在表达式中 \texttt{<} 是小于运算符。Rust 编译器建议用 \texttt{::<T>} 代替 \texttt{<T>}。这样就解决了问题：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{p}{::}\PYG{n}{with\PYGZus{}capacity}\PYG{p}{(}\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确，改用::\PYGZlt{}}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{ramp}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确，改用::\PYGZlt{}}
+\end{Verbatim}
+
+符号 \texttt{::<...>} 在 Rust 社区中被亲切地称为\textbf{比目鱼}（turbofish）。
+
+或者，通常可以删掉类型参数，让 Rust 来推断它们：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{return}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{p}{::}\PYG{n}{with\PYGZus{}capacity}\PYG{p}{(}\PYG{l+m+mi}{10}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确，只要fn的返回类型是Vec\PYGZlt{}i32\PYGZgt{}}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{ramp}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{)}\PYG{p}{.}\PYG{n}{collect}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确，前面已给定变量的类型}
+\end{Verbatim}
+
+只要类型可以被推断，就省略类型，这是一种很好的代码风格。
+
+\section{字段与元素}
+
+你可以使用早已熟悉的语法访问结构体的字段。元组也一样，不过它们的字段是数值而不是名称：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{game}\PYG{p}{.}\PYG{n}{black\PYGZus{}pawns}\PYG{+w}{   }\PYG{c+c1}{// 结构体字段}
+\PYG{n}{coords}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{           }\PYG{c+c1}{// 元组元素}
+\end{Verbatim}
+
+如果 \texttt{.} 左边的值是引用或智能指针类型，那么它就会像方法调用一样自动解引用。
+
+方括号会访问数组、切片或向量的元素：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{pieces}\PYG{p}{[}\PYG{n}{i}\PYG{p}{]}\PYG{+w}{          }\PYG{c+c1}{// 数组元素}
+\end{Verbatim}
+
+方括号左侧的值也会自动解引用。
+
+像下面这样的 3 个表达式叫作\textbf{左值}，因为赋值时它们可以出现在左侧：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{game}\PYG{p}{.}\PYG{n}{black\PYGZus{}pawns}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mh}{0x00ff0000\PYGZus{}00000000\PYGZus{}}\PYG{k}{u64}\PYG{p}{;}
+\PYG{n}{coords}\PYG{p}{.}\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+\PYG{n}{pieces}\PYG{p}{[}\PYG{l+m+mi}{2}\PYG{p}{]}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{Piece}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{Black}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Knight}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{coords}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+当然，只有当 \texttt{game}、\texttt{coords} 和 \texttt{pieces} 声明为 \texttt{mut} 变量时才允许这样做。
+
+从数组或向量中提取切片的写法很直观：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{second\PYGZus{}half}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{game\PYGZus{}moves}\PYG{p}{[}\PYG{n}{midpoint}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{end}\PYG{p}{]}\PYG{p}{;}
+\end{Verbatim}
+
+这里的 \texttt{game\_moves} 可以是数组、切片或向量，无论哪种方式，结果都是已被借出的长度为 \texttt{end - midpoint} 的切片。在 \texttt{second\_half} 的生命周期内，\texttt{game\_moves} 要被视为已借出的引用。
+
+\texttt{..} 运算符允许省略任何一个操作数，它会根据存在的操作数最多生成 4 种类型的对象：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{o}{..}\PYG{+w}{      }\PYG{c+c1}{// RangeFull}
+\PYG{n}{a}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{    }\PYG{c+c1}{// RangeFrom \PYGZob{} start: a \PYGZcb{}}
+\PYG{o}{..}\PYG{+w}{ }\PYG{n}{b}\PYG{+w}{    }\PYG{c+c1}{// RangeTo \PYGZob{} end: b \PYGZcb{}}
+\PYG{n}{a}\PYG{+w}{ }\PYG{o}{..}\PYG{+w}{ }\PYG{n}{b}\PYG{+w}{  }\PYG{c+c1}{// Range \PYGZob{} start: a, end: b \PYGZcb{}}
+\end{Verbatim}
+
+后两种形式是\textbf{排除结束值}（或\textbf{半开放}）的：结束值不包含在所表示的范围内。例如，范围 \texttt{0 .. 3} 包括数值 \texttt{0}、\texttt{1} 和 \texttt{2}，但不包括 \texttt{3}。
+
+\texttt{..=} 运算符会生成\textbf{包含结束值}（或\textbf{封闭}）的范围，其中包括结束值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{o}{..=}\PYG{+w}{ }\PYG{n}{b}\PYG{+w}{    }\PYG{c+c1}{// RangeToInclusive \PYGZob{} end: b \PYGZcb{}}
+\PYG{n}{a}\PYG{+w}{ }\PYG{o}{..=}\PYG{+w}{ }\PYG{n}{b}\PYG{+w}{  }\PYG{c+c1}{// RangeInclusive::new(a, b)}
+\end{Verbatim}
+
+例如，范围 \texttt{0 ..= 3} 包括数值 \texttt{0}、\texttt{1}、\texttt{2} 和 \texttt{3}。
+
+只有包含起始值的范围才是可迭代的，因为循环必须从某处开始。但是在数组切片中，这 6 种形式都可以使用。如果省略了范围的起点或末尾，则默认为被切片数据的起点或末尾。
+
+因此，经典的分治算法快速排序 \texttt{quicksort} 的实现部分看起来可能像下面这样。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{quicksort}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Ord}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{slice}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{p}{[}\PYG{n}{T}\PYG{p}{]}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{slice}\PYG{p}{.}\PYG{n}{len}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{return}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 无可排序}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{c+c1}{// 把slice分成两部分：前半片和后半片}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{pivot\PYGZus{}index}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{partition}\PYG{p}{(}\PYG{n}{slice}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// 对slice的前半片递归排序}
+\PYG{+w}{    }\PYG{n}{quicksort}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{slice}\PYG{p}{[}\PYG{o}{..}\PYG{+w}{ }\PYG{n}{pivot\PYGZus{}index}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// 对slice的后半片递归排序}
+\PYG{+w}{    }\PYG{n}{quicksort}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{slice}\PYG{p}{[}\PYG{n}{pivot\PYGZus{}index}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{]}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\section{引用运算符}
+
+地址运算符 \texttt{\&} 和 \texttt{\&mut} 已在第 5 章中介绍过。
+
+一元 \texttt{*} 运算符用于访问引用所指向的值。如你所见，当使用 \texttt{.} 运算符访问字段或方法时，Rust 会自动追踪引用，因此只有想要读取或写入引用所指的整个值时才需要用 \texttt{*} 运算符。
+
+例如，有时迭代器会生成引用，但程序需要访问底层值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{padovan}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{u64}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{compute\PYGZus{}padovan\PYGZus{}sequence}\PYG{p}{(}\PYG{n}{n}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{elem}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{padovan}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{draw\PYGZus{}triangle}\PYG{p}{(}\PYG{n}{turtle}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{elem}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在此示例中，\texttt{elem} 的类型为 \texttt{\&u64}，因此 \texttt{*elem} 为 \texttt{u64}。
+
+\section{算术运算符、按位运算符、比较运算符和逻辑运算符}
+
+Rust 的二元运算符与许多其他语言中的二元运算符类似。为了节省时间，这里假设你熟悉其中某一种语言，并专注于 Rust 与传统语言不同的几个点。
+
+Rust 有一些常用的算术运算符：\texttt{+}、\texttt{-}、\texttt{*}、\texttt{/} 和 \texttt{\%}。如第 3 章所述，在调试构建中会检测到整数溢出并引发 panic。标准库为此提供了一些非检查（\texttt{unchecked}）的算术方法，比如 \texttt{a.wrapping\_add(b)}。
+
+整数除法会向 0 取整，而整数除以 0 会触发 panic，即使在发布构建中也是如此。标准库为整数提供了一个 \texttt{a.checked\_div(b)} 方法，它将返回一个 \texttt{Option}（如果 \texttt{b} 为 0 则返回 \texttt{None}），并且不会引发 panic。
+
+一元 \texttt{-} 运算符会对一个数取负。它支持除无符号整数之外的所有数值类型。没有一元 \texttt{+} 运算符。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{100}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{     }\PYG{c+c1}{// \PYGZhy{}100}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZhy{}}\PYG{l+m+mi}{100}\PYG{k}{u32}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误：不能在类型`u32`上使用一元`\PYGZhy{}`运算符}
+\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{+}\PYG{l+m+mi}{100}\PYG{p}{)}\PYG{p}{;}\PYG{+w}{     }\PYG{c+c1}{// 错误：期待表达式，但发现了`+`}
+\end{Verbatim}
+
+与在 C 中一样，\texttt{a \% b} 会计算向 0 四舍五入的有符号余数或模数。其结果与左操作数的符号相同。注意，\texttt{\%} 既能用于整数，也能用于浮点数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mf}{1234.567}\PYG{+w}{ }\PYG{o}{\PYGZpc{}}\PYG{+w}{ }\PYG{l+m+mf}{10.0}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 约等于4.567}
+\end{Verbatim}
+
+Rust 还继承了 C 的按位整数运算符 \texttt{\&}、\texttt{|}、\texttt{\textasciicircum{}}、\texttt{<<} 和 \texttt{>>}。但是，Rust 会使用 \texttt{!} 而不是 \texttt{\textasciitilde{}} 表示按位非：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{hi}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u8}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mh}{0xe0}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{lo}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{!}\PYG{n}{hi}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 0x1f}
+\end{Verbatim}
+
+这意味着对于整数 \texttt{n}，不能用 \texttt{!n} 来表示“\texttt{n} 为 0”，而是应该写成 \texttt{n == 0}。
+
+移位总是对有符号整数类型进行符号扩展，对无符号整数类型进行零扩展。由于 Rust 具有无符号整数，因此它不需要诸如 Java 的 \texttt{>>>} 运算符之类的无符号移位运算符。
+
+与 C 不同，Rust 中按位运算的优先级高于比较运算，因此如果编写 \texttt{x \& BIT != 0}，那么就意味着 \texttt{(x \& BIT) != 0}，正如预期的那样。这比在 C 中解释成的 \texttt{x \& (BIT != 0)} 有用得多，后者会测试错误的位。
+
+Rust 的比较运算符是 \texttt{==}、\texttt{!=}、\texttt{<}、\texttt{<=}、\texttt{>} 和 \texttt{>=}，参与比较的两个值必须具有相同的类型。
+
+Rust 还有两个短路逻辑运算符 \texttt{\&\&} 和 \texttt{||}，它们的操作数都必须具有确切的 \texttt{bool} 类型。
+
+\section{赋值}
+
+\texttt{=} 运算符用于给 \texttt{mut} 变量及其字段或元素赋值。但是赋值在 Rust 中不像在其他语言中那么常见，因为默认情况下变量是不可变的。
+
+如第 4 章所述，如果值是非 \texttt{Copy} 类型的，则赋值会将其\textbf{移动}到目标位置。值的所有权会从源转移给目标。目标的先前值（如果有的话）将被丢弃。
+
+Rust 支持复合赋值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{total}\PYG{+w}{ }\PYG{o}{+}\PYG{o}{=}\PYG{+w}{ }\PYG{n}{item}\PYG{p}{.}\PYG{n}{price}\PYG{p}{;}
+\end{Verbatim}
+
+这等效于 \texttt{total = total + item.price;}。Rust 也支持其他运算符：\texttt{-=}、\texttt{*=} 等。完整列表参见表 6-1。
+
+与 C 不同，Rust 不支持链式赋值：不能编写 \texttt{a = b = 3} 来将值 \texttt{3} 同时赋给 \texttt{a} 和 \texttt{b}。赋值在 Rust 中非常罕见，你是不会想念这种简写形式的。
+
+Rust 没有 C 的自增运算符 \texttt{++} 和自减运算符 \texttt{--}。
+
+\section{类型转换}
+
+在 Rust 中，将值从一种类型转换为另一种类型通常需要进行显式转换。这种转换要使用 \texttt{as} 关键字：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{17}\PYG{p}{;}\PYG{+w}{              }\PYG{c+c1}{// x是i32类型的}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{index}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{k+kt}{usize}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 转换成usize}
+\end{Verbatim}
+
+Rust 允许进行好几种类型的转换。
+
+\begin{itemize}
+\item 数值可以从任意内置数值类型转换为其他内置数值类型。
+
+将一种整数类型转换为另一种整数类型始终是明确定义的。转换为更窄的类型会导致截断。转换为更宽类型的有符号整数会进行符号扩展，转换为无符号整数会进行零扩展，等等。简而言之，没有意外。
+
+从浮点类型转换为整数类型会向 0 舍入，比如 \texttt{-1.99 as i32} 就是 \texttt{-1}。如果值太大而无法容纳整数类型，则转换会生成整数类型可以表示的最接近的值，比如 \texttt{1e6 as u8} 就是 \texttt{255}。
+\item \texttt{bool} 类型或 \texttt{char} 类型的值或者类似 C 的 \texttt{enum} 类型的值可以转换为任何整数类型。（第 10 章会介绍枚举。）
+
+不允许向相反方向转换，因为 \texttt{bool} 类型、\texttt{char} 类型和 \texttt{enum} 类型都对其值有限制，必须通过运行期检查强制执行。例如，禁止将 \texttt{u16} 转换为 \texttt{char} 类型，因为某些 \texttt{u16} 值（如 \texttt{0xd800}）对应于 Unicode 的半代用区码点，因此无法生成有效的 \texttt{char} 值。有一个标准方法 \texttt{std::char::from\_u32()}，它会执行运行期检查并返回一个 \texttt{Option<char>}，但更重要的是，这种转变的需求已经越来越少了。我们通常会一次转换整个字符串或流，Unicode 文本的算法通常比较复杂，最好留给库去实现。
+
+作为例外，\texttt{u8} 可以转换为 \texttt{char} 类型，因为从 0 到 255 的所有整数都是 \texttt{char} 能持有的有效 Unicode 码点。
+\item 一些涉及不安全指针类型的转换也是允许的。参见 22.8 节。
+\end{itemize}
+
+我们说过\textbf{通常}需要进行强制转换。但一些涉及引用类型的转换非常直观，Rust 甚至无须强制转换就能执行它们。一个简单的例子是将可变引用转换为不可变引用。
+
+不过，还可能会发生几个更重要的自动转换。
+
+\begin{itemize}
+\item \texttt{\&String} 类型的值会自动转换为 \texttt{\&str} 类型，无须强制转换。
+\item \texttt{\&Vec<i32>} 类型的值会自动转换为 \texttt{\&[i32]}。
+\item \texttt{\&Box<Chessboard>} 类型的值会自动转换为 \texttt{\&Chessboard}。
+\end{itemize}
+
+这些称为\textbf{隐式解引用}，因为它们适用于所有实现了内置特型 \texttt{Deref} 的类型。\texttt{Deref} 隐式转换的目的是使智能指针类型（如 \texttt{Box}）的行为尽可能像其底层值。多亏了 \texttt{Deref}，\texttt{Box<Chessboard>} 的用法基本上和普通 \texttt{Chessboard} 的用法一样。
+
+用户定义类型也可以实现 \texttt{Deref} 特型。当你需要编写自己的智能指针类型时，请参阅 13.5 节。
+
+\section{闭包}
+
+Rust 也有\textbf{闭包}，即轻量级的类似函数的值。闭包通常由一个参数列表组成，在两条竖线之间列出，后跟一个表达式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{is\PYGZus{}even}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{x}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{\PYGZpc{}}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}
+\end{Verbatim}
+
+Rust 会推断其参数类型和返回类型。你也可以像写函数一样显式地写出它们。如果确实指定了返回类型，那么为了语法的完整性，闭包的主体必须是一个块：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{is\PYGZus{}even}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{n+nc}{x}\PYG{+w}{ }\PYG{o}{\PYGZpc{}}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 错误}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{is\PYGZus{}even}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{|}\PYG{n}{x}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u64}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{k+kt}{bool}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{x}\PYG{+w}{ }\PYG{o}{\PYGZpc{}}\PYG{+w}{ }\PYG{l+m+mi}{2}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{;}\PYG{+w}{  }\PYG{c+c1}{// 正确}
+\end{Verbatim}
+
+调用闭包和调用函数的语法是一样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{is\PYGZus{}even}\PYG{p}{(}\PYG{l+m+mi}{14}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kc}{true}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+闭包是 Rust 最令人愉悦的特性之一，关于它们还有很多内容可以讲，第 14 章会详细介绍。
+
+\section{前路展望}
+
+表达式就是我们心目中的“可执行代码”，它们是 Rust 程序中编译成机器指令的那部分。然而，表达式也只是整个语言的一小部分。
+
+大多数编程语言也是如此。程序的首要任务是执行，但这不是它唯一的任务。程序必须进行通信，必须是可测试的，必须保持组织性和灵活性，这样它们才能持续演进。程序还需要与其他团队构建的代码和服务进行互操作。就算只是为了执行，像 Rust 这样的静态类型语言的程序也需要更多的工具来组织数据，而不能仅仅使用元组和数组。
+
+接下来，本书会用几章内容来讨论这些特性：首先是模块与 crate，它们会帮你对程序进行组织；然后是结构体与枚举，它们会帮你对数据进行组织。
+
+不过，在此之前我们先来简单讨论一下“错误处理”这个重要主题。
+

@@ -1,0 +1,1853 @@
+% chapter20 —— 由 tools/convert.py 自动生成，勿手改
+% 源文件：part0000_split_164.html, part0000_split_165.html, part0000_split_166.html, part0000_split_167.html, part0000_split_168.html, part0000_split_169.html
+
+假设你要编写一个聊天服务器。对于每个网络连接，都会有一些要解析的传入数据包、要组装的传出数据包、要管理的安全参数、要跟踪的聊天组订阅等。要想同时管理这么多连接，就得进行一定的组织工作。
+
+理论上，可以为传入的每个连接启动一个单独的线程：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{net}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{thread}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{listener}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpListener}\PYG{p}{::}\PYG{n}{bind}\PYG{p}{(}\PYG{n}{address}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{socket\PYGZus{}result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{listener}\PYG{p}{.}\PYG{n}{incoming}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{socket}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{socket\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{groups}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{chat\PYGZus{}group\PYGZus{}table}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{thread}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{log\PYGZus{}error}\PYG{p}{(}\PYG{n}{serve}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{groups}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+对于每个新连接，这都会启动一个运行 \texttt{serve} 函数的新线程，此线程专注于管理单个连接所需的一切。
+
+这确实很好，好得远远超出了预期，直到有一天突然涌入了数万个用户。每个线程都拥有 100 KiB 以上的栈，这很常见，但这可不是你花费数 GB 服务器内存的理由。如果要在多个处理器之间分配工作，那么线程固然好用，而且确有必要。但现在它们的内存需求已经太大了，所以通常在使用线程的同时，还要用一些补充手段来完成这些工作。
+
+可以使用 Rust \textbf{异步任务}在单个线程或工作线程池中交替执行许多彼此独立的活动。异步任务类似于线程，但其创建速度更快，在它们之间可以更有效地传递控制权，并且其内存开销比线程少一个数量级。在单个程序中同时运行数十万个异步任务是完全可行的。当然，你的应用程序可能仍会受到其他因素的制约，比如网络带宽、数据库速度、算力，或此工作的固有内存需求，但与线程的开销相比，这些异步任务的固有内存开销只是九牛一毛。
+
+一般来说，异步 Rust 代码看上去很像普通的多线程代码，但实际上那些可能导致阻塞的操作（如 I/O 或获取互斥锁）会以略有不同的方式处理。通过对这些操作进行特殊处理，Rust 能够获得关于这段代码行为的更多信息以辅助优化，这就是它能提高性能的原因。前面代码的异步版本如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{net}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{task}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{listener}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpListener}\PYG{p}{::}\PYG{n}{bind}\PYG{p}{(}\PYG{n}{address}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{new\PYGZus{}connections}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{listener}\PYG{p}{.}\PYG{n}{incoming}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{socket\PYGZus{}result}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{new\PYGZus{}connections}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{socket}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{socket\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{groups}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{chat\PYGZus{}group\PYGZus{}table}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{log\PYGZus{}error}\PYG{p}{(}\PYG{n}{serve}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{groups}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这里用的是 \texttt{async\_std} 这个 crate 的网络模块和任务模块，并在可能发生阻塞的调用之后添加了 \texttt{.await}。但这段代码的整体结构与基于线程的版本无异。
+
+本章的目标不仅是帮你编写异步代码，还要尽可能详细地展示它的工作原理，以便你可以预知如何在应用程序中执行异步代码以及把它用在哪里最能发挥出其价值。
+
+\begin{itemize}
+\item 为了展示异步编程的机制，我们会列举一组涵盖所有核心概念的最小语言特性集：\texttt{Future}（未来值）、异步函数、\texttt{await} 表达式、任务以及 \texttt{block\_on} 执行器和 \texttt{spawn\_local} 执行器。
+\item 然后，我们会介绍异步块和 \texttt{spawn} 执行器。这些在实际工作中非常重要，但从概念上讲，它们只是刚才提过的那些特性的变体。在此过程中，我们会指出你可能会遇到的一些异步编程特有的问题，并解释该如何处理这些问题。
+\item 为了展示所有这些“零件”是如何协同工作的，我们还会浏览一遍聊天服务器和客户端的完整代码，前面的代码片段只是其中的一部分。
+\item 为了说明原生 \texttt{Future} 和执行器的工作原理，我们会展示 \texttt{spawn\_blocking} 和 \texttt{block\_on} 的简单而实用的实现。
+\item 最后，我们会解释 \texttt{Pin} 类型，该类型在异步接口中会不时出现，以保证异步函数和异步式 \texttt{Future} 的安全使用。
+\end{itemize}
+
+\section{从同步到异步}
+
+考虑调用以下（非异步，而是完全传统的）函数时会发生什么：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{net}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{n}{host}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u16}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}
+\PYG{+w}{                      }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{socket}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpStream}\PYG{p}{::}\PYG{n}{connect}\PYG{p}{(}\PYG{p}{(}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{request}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{GET \PYGZob{}\PYGZcb{} HTTP/1.1}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{Host: \PYGZob{}\PYGZcb{}}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{host}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{n}{request}\PYG{p}{.}\PYG{n}{as\PYGZus{}bytes}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{shutdown}\PYG{p}{(}\PYG{n}{net}\PYG{p}{::}\PYG{n}{Shutdown}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{response}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{read\PYGZus{}to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{response}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{response}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这段代码会打开到 Web 服务器的 TCP 连接，以过时的协议向其发送一个极简的 HTTP 请求\footnote{如果确实需要 HTTP 客户端，请考虑使用像 \texttt{surf} 或 \texttt{request} 这样的众多优秀的 crate 中的任何一个，它们可以正确且异步地完成工作。这里的客户端最多只能得到 HTTPS 重定向的返回。}，然后读取其响应。图 20-1 展示了随着时间推移这个函数的执行情况。
+
+\myFigure{images/ch20/fig-20-1.jpeg}{图 20-1：同步 HTTP 请求的进度（深灰色区域表示正在等待操作系统）}
+
+图 20-1 展示了当时间从左到右流逝时，函数的调用栈的情况。每个函数调用都是一个方框，叠放在其调用者上方。显然，\texttt{cheapo\_request} 函数贯穿了整个执行过程。它会调用 Rust 标准库中的函数（如 \texttt{TcpStream::connect}）以及由 \texttt{TcpStream} 实现的 \texttt{write\_all} 和 \texttt{read\_to\_string} 这两个特型方法。它们又会依次调用其他函数，但此程序最终会进行一些\textbf{系统调用}，请求操作系统实际完成某些操作，比如打开 TCP 连接，读取或写入一些数据。
+
+深灰色背景表示程序正在等待操作系统完成系统调用的时间。我们没有按比例绘制这些时间。如果按比例绘制，则整张图都会变成深灰色：事实上，这个函数在几乎所有时间里都在等待操作系统。而前面代码的执行时间是系统调用之间的小窄条。
+
+当这个函数正在等待系统调用返回时，它的单个线程是阻塞的，也就是说，在系统调用完成之前，它不能做任何其他事情。一个线程的栈大小有数十或数百 KB 的情况并不罕见，因此如果这是某个更大系统中的一小部分，那么就会有许多线程在同时做类似的事情，如果仅仅为了等待而锁定这些线程资源则可能会让开销变得相当高。
+
+为了解决这个问题，就要允许线程在等待系统调用完成期间进行其他工作。但要做到这一点并非易事。例如，我们用来从套接字读取响应的函数签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{read\PYGZus{}to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+它直接在类型签名里表明，这个函数在完成工作或出现问题之前不会返回。因此这个函数是\textbf{同步}的：调用者在操作完成后才会继续。如果想在操作系统工作时将此线程用于其他任务，就需要一个新的 I/O 库来提供这个函数的异步版本。
+
+\subsection{\texttt{Future}}
+
+Rust 支持异步操作的方法是引入特型 \texttt{std::future::Future}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Future}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{p}{;}
+\PYG{+w}{    }\PYG{c+c1}{// 现在，暂时把`Pin\PYGZlt{}\PYGZam{}mut Self\PYGZgt{}`当作`\PYGZam{}mut Self`}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{poll}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Pin}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{cx}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Context}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Poll}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Output}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{Poll}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Ready}\PYG{p}{(}\PYG{n}{T}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Pending}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Future} 代表一个你可以测试其完成情况的操作。\texttt{Future} 的 \texttt{poll}（轮询）方法从来不会等待操作完成，它总是立即返回。如果操作已完成，则 \texttt{poll} 会返回 \texttt{Poll::Ready(output)}，其中 \texttt{output} 是它的最终结果。否则，它会返回 \texttt{Pending}。如果 \texttt{Future} 值得再次轮询，它承诺会通过调用 \texttt{Context} 中提供的回调函数 \texttt{waker} 来通知我们。我们将这种实现方式称为异步编程的“皮纳塔\footnote{皮纳塔（piñata，西班牙语）是一种纸糊的容器，其中装满玩具与糖果，于节庆或生日宴会上悬挂起来，让人用棍棒敲打，一旦打破，玩具和糖果就会掉落下来。——译者注}模型”：对于 \texttt{Future}，你唯一能做的就是通过轮询来“敲打”它，直到某个值“掉”出来。
+
+所有现代操作系统都包含其系统调用的一些变体，我们可以使用它们来实现这种轮询接口。例如，在 Unix 和 Windows 上，如果将网络套接字设置为非阻塞模式，那么一旦这些读写发生阻塞，就会返回某种错误。你必须稍后再试。
+
+因此，异步版本的 \texttt{read\_to\_string} 的签名大致如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{read\PYGZus{}to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n}{Future}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+除了返回类型，这与我们之前展示过的签名基本相同：异步版本会返回携带 \texttt{Result<usize>} 的 \texttt{Future}。你需要轮询这个 \texttt{Future}，直到从中获得 \texttt{Ready(result)}。每次轮询时，都会尽可能读取更多的内容。最终 \texttt{result} 会为你提供成功值或错误值，就像普通的 I/O 操作一样。这是一种通用模式：任何函数的异步版本都会接受与其同步版本完全相同的参数，但返回类型包裹在 \texttt{Future} 中。
+
+调用这个版本的 \texttt{read\_to\_string} 并没有实际读取任何内容，它唯一的职责是构建并返回一个 \texttt{Future}，该 \texttt{Future} 会在轮询时完成其真正的工作。这个 \texttt{Future} 必须包含执行调用请求所需的全部信息。例如，此 \texttt{read\_to\_string} 返回的 \texttt{Future} 必须记住调用它的输入流，以及附加了传入数据的 \texttt{String}。事实上，由于 \texttt{Future} 包含 \texttt{self} 和 \texttt{buf} 的引用，因此 \texttt{read\_to\_string} 的正确签名必然是如下形式：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{read\PYGZus{}to\PYGZus{}string}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n}{Future}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{usize}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{p}{;}
+\end{Verbatim}
+
+这增加了生命周期以表明返回的 \texttt{Future} 的生存期只能与 \texttt{self} 和 \texttt{buf} 借用的值一样长。
+
+\texttt{async-std} crate 提供了所有 \texttt{std} 中 I/O 设施的异步版本，包括带有 \texttt{read\_to\_string} 方法的异步 \texttt{Read} 特型。\texttt{async-std} 选择紧紧跟随 \texttt{std} 的设计，尽可能在它自己的接口中重用 \texttt{std} 的类型，因此 \texttt{Error}、\texttt{Result}、网络地址和大多数其他相关数据在“两个世界”之间是兼容的。熟悉 \texttt{std} 有助于使用 \texttt{async-std}，反之亦然。
+
+\texttt{Future} 特型的一个规则是，一旦 \texttt{Future} 返回了 \texttt{Poll::Ready}，它就会假定自己永远不会再被轮询（\texttt{poll}）。当某些 \texttt{Future} 被过度轮询时，它们只会永远返回 \texttt{Poll::Pending}，而其他 \texttt{Future} 则可能会 panic 或被挂起。（但是，它们绝不会违反内存安全或线程安全规则，或以其他方式导致未定义行为。）\texttt{Future} 特型上的 \texttt{fuse} 适配器方法能把任何 \texttt{Future} 变成被过度轮询时总会返回 \texttt{Poll::Pending} 的 \texttt{Future}。但所有常用的 \texttt{Future} 消耗方式都会遵守这一规则，因此通常不必动用 \texttt{fuse}。
+
+完全没必要一听到轮询就觉得效率低下。Rust 的异步架构是经过精心设计的，只要你正确实现了基本的 I/O 函数（如 \texttt{read\_to\_string}），就只会在值得尝试时才轮询 \texttt{Future}。每当调用 \texttt{poll} 时，必然有某个地方的某些代码返回了 \texttt{Ready}，或者至少朝着那个目标前进了一步。20.3 节会对此工作原理进行解释。
+
+但使用 \texttt{Future} 似乎很具挑战性：当轮询时，如果得到了 \texttt{Poll::Pending}，应该做些什么呢？你必须四处寻找这个线程暂时可以做的其他工作，还不能忘记稍后回到这个 \texttt{Future} 并再次轮询它。整个程序将充斥着辅助性代码，以跟踪谁在等待处理以及一旦就绪应该做些什么之类的事情。\texttt{cheapo\_request} 函数的简单性被破坏了。
+
+好消息是，你大可不必这样做。
+
+\subsection{异步函数与 \texttt{await} 表达式}
+
+下面是一个写成\textbf{异步函数}的 \texttt{cheapo\_request} 版本：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{net}\PYG{p}{;}
+
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{n}{host}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u16}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}
+\PYG{+w}{                            }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{socket}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpStream}\PYG{p}{::}\PYG{n}{connect}\PYG{p}{(}\PYG{p}{(}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{request}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{GET \PYGZob{}\PYGZcb{} HTTP/1.1}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{Host: \PYGZob{}\PYGZcb{}}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s+se}{\PYGZbs{}r}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{host}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{n}{request}\PYG{p}{.}\PYG{n}{as\PYGZus{}bytes}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{shutdown}\PYG{p}{(}\PYG{n}{net}\PYG{p}{::}\PYG{n}{Shutdown}\PYG{p}{::}\PYG{n}{Write}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{response}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{read\PYGZus{}to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{response}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{response}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+除了以下几点，这段程序跟我们的原始版本几乎是每个字母都一样。
+
+\begin{itemize}
+\item 函数以 \texttt{async fn} 而不是 \texttt{fn} 开头。
+\item 使用 \texttt{async\_std} crate 的异步版本的 \texttt{TcpStream::connect}、\texttt{write\_all} 和 \texttt{read\_to\_string}。这些都会返回其结果的 \texttt{Future}。（本节中的示例使用了 \texttt{async\_std} 的 \texttt{1.7} 版。）
+\item 每次返回 \texttt{Future} 的调用之后，代码都会 \texttt{.await}。虽然这看起来像是在引用结构体中名为 \texttt{await} 的字段，但它实际上是语言中内置的特殊语法，用于等待 \texttt{Future} 就绪。\texttt{await} 表达式的计算结果为 \texttt{Future} 的最终值。这就是函数从 \texttt{connect}、\texttt{write\_all} 和 \texttt{read\_to\_string} 获取结果的方式。
+\end{itemize}
+
+与普通函数不同，当你调用异步函数时，它会在函数体开始执行之前立即返回。显然，调用的最终返回值还没有计算出来，你得到的只是承载它最终值的 \texttt{Future}。所以如果执行下面这段代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{response}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+那么 \texttt{response} 将是 \texttt{std::io::Result<String>} 型的 \texttt{Future}，而 \texttt{cheapo\_request} 的函数体尚未开始执行。你不需要调整异步函数的返回类型，Rust 会自动把 \texttt{async fn f(...) -> T} 函数的返回值视为承载 \texttt{T} 的 \texttt{Future}，而非直接的 \texttt{T} 值。
+
+异步函数返回的 \texttt{Future} 中包含函数体运行时所需的一切信息：函数的参数、局部变量的内存空间等。（就像是把要调用的栈帧捕获成了一个普通的 Rust 值。）所以 \texttt{response} 必须保存传给 \texttt{host}、\texttt{port} 和 \texttt{path} 的值，因为 \texttt{cheapo\_request} 的函数体将需要这些值来运行。
+
+\texttt{Future} 的特化类型是由编译器根据函数的主体和参数自动生成的。这种类型没有名字，你只知道它实现了 \texttt{Future<Output=R>}，其中 \texttt{R} 是异步函数的返回类型。从这个意义上说，异步函数的 \texttt{Future} 就像闭包：闭包也有由编译器生成的匿名类型，该类型实现了 \texttt{FnOnce} 特型、\texttt{Fn} 特型和 \texttt{FnMut} 特型。
+
+当你首次轮询 \texttt{cheapo\_request} 返回的 \texttt{Future} 时，会从函数体的顶部开始执行，一直运行到 \texttt{TcpStream::connect} 返回的 \texttt{Future} 的第一个 \texttt{await}。\texttt{await} 表达式会轮询 \texttt{connect} 返回的 \texttt{Future}，如果它尚未就绪，则向调用者返回 \texttt{Poll::Pending}：程序不能从这个 \texttt{await} 继续向前运行了，直到对这个 \texttt{Future} 的某次轮询返回了 \texttt{Poll::Ready}。因此，表达式 \texttt{TcpStream::connect(...).await} 大致等价于如下内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// 注意：这是伪代码，不是有效的Rust}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{connect\PYGZus{}future}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{TcpStream}\PYG{p}{::}\PYG{n}{connect}\PYG{p}{(}\PYG{o}{..}\PYG{p}{.}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{\PYGZsq{}}\PYG{n+na}{retry\PYGZus{}point}\PYG{p}{:}
+\PYG{+w}{    }\PYG{n+nc}{match}\PYG{+w}{ }\PYG{n}{connect\PYGZus{}future}\PYG{p}{.}\PYG{n}{poll}\PYG{p}{(}\PYG{n}{cx}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Ready}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Pending}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{c+c1}{// 安排对`cheapo\PYGZus{}request`返回的Future进行}
+\PYG{+w}{            }\PYG{c+c1}{// 下一次`poll`，以便在\PYGZsq{}retry\PYGZus{}point处恢复执行}
+\PYG{+w}{            }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{            }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Pending}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{await} 表达式会获取 \texttt{Future} 的所有权，然后轮询它。如果已就绪，那么 \texttt{Future} 的最终值就是 \texttt{await} 表达式的值，然后继续执行。否则，此 \texttt{Future} 返回 \texttt{Poll::Pending}。
+
+但至关重要的是，下一次对 \texttt{cheapo\_request} 返回的 \texttt{Future} 进行轮询时不会再从函数的顶部开始，而是会在即将轮询 \texttt{connect\_future} 的中途时间点\textbf{恢复}执行函数。直到 \texttt{Future} 就绪之前，我们都不会继续处理异步函数的其余部分。
+
+随着对其返回的 \texttt{Future} 继续进行轮询，\texttt{cheapo\_request} 将通过函数体从一个 \texttt{await} 走到下一个，仅当它等待的子 \texttt{Future} 就绪时才会继续。因此，要对 \texttt{cheapo\_request} 返回的 \texttt{Future} 进行多少次轮询，既取决于子 \texttt{Future} 的行为，也取决于该函数自己的控制流。\texttt{cheapo\_request} 返回的 \texttt{Future} 会跟踪下一次 \texttt{poll} 应该恢复的点，以及恢复该点所需的所有本地状态，比如变量、参数和临时变量。
+
+在函数中间暂停执行稍后再恢复，这种能力是异步函数所独有的。当一个普通函数返回时，它的栈帧就永远消失了。由于 \texttt{await} 表达式依赖于这种恢复能力，因此只能在异步函数中使用它们。
+
+在撰写本章时，Rust 还不允许特型具有异步方法。只有自由函数以及从属于具体类型的函数才能是异步的。要解除此限制就要对语言进行一些更改。同时，如果确实需要定义包含异步函数的特型，请考虑使用 \texttt{async-trait} crate，它提供了基于宏的解决方案。
+
+\subsection{从同步代码调用异步函数：\texttt{block\_on}}
+
+从某种意义上说，异步函数就是在转移责任。的确，在异步函数中很容易获得 \texttt{Future} 的值：只要使用 \texttt{await} 就可以。但是异步函数\textbf{本身}也会返回 \texttt{Future}，所以现在调用者的工作是以某种方式进行轮询。但最终还是得有人实际等待一个值。
+
+可以使用 \texttt{async\_std} 的 \texttt{task::block\_on} 函数从普通的同步函数（如 \texttt{main}）调用 \texttt{cheapo\_request}，这会接受一个 \texttt{Future} 并轮询，直到它生成一个值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{response}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{task}\PYG{p}{::}\PYG{n}{block\PYGZus{}on}\PYG{p}{(}\PYG{n}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{example.com}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{80}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{response}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+由于 \texttt{block\_on} 是一个会生成异步函数最终值的同步函数，因此可以将其视为从异步世界到同步世界的适配器。但 \texttt{block\_on} 的阻塞式特征意味着我们不应该在异步函数中使用它，因为在值被准备好之前它会一直阻塞整个线程。异步函数中请改用 \texttt{await}。
+
+图 20-2 展示了 \texttt{main} 的一种可能的执行方式。
+
+\myFigure{images/ch20/fig-20-2.jpeg}{图 20-2：阻塞异步函数}
+
+上方的时间线（“简化过的视图”）部分展示了程序异步调用的抽象视图：\texttt{cheapo\_request} 会首先调用 \texttt{TcpStream::connect} 以获得套接字，然后在该套接字上调用 \texttt{write\_all} 和 \texttt{read\_to\_string}。接下来会返回。这与本章前面的 \texttt{cheapo\_request} 同步版本的时间线非常相似。
+
+但是其中的每一个异步调用都是一个多步骤的过程：创建一个 \texttt{Future}，然后轮询直到它就绪，也许在这个过程中创建并轮询了其他子 \texttt{Future}。下方的时间线（“实现”）部分展示了实现此异步行为的实际同步调用。这是了解普通异步执行中究竟发生了什么的一个好机会。
+
+\begin{itemize}
+\item 首先，\texttt{main} 会调用 \texttt{cheapo\_request}，返回其最终结果的 \texttt{Future A}。然后 \texttt{main} 会将此 \texttt{Future} 传给 \texttt{async\_std::block\_on}，由后者对其进行轮询。
+\item 轮询 \texttt{Future A} 让 \texttt{cheapo\_request} 的主体开始执行。它会调用 \texttt{TcpStream::connect} 来获取套接字的 \texttt{Future B}，然后对其进行等待。更准确地说，由于 \texttt{TcpStream::connect} 可能会遇到错误，因此 \texttt{B} 其实是 \texttt{Result<TcpStream, std::io::Error>} 型的 \texttt{Future}。
+\item \texttt{Future B} 会被 \texttt{await} 轮询。由于尚未建立网络连接，因此 \texttt{B.poll} 会返回 \texttt{Poll::Pending}，但会安排在套接字就绪后唤醒此调用任务。
+\item 由于 \texttt{Future B} 还没有就绪，因此 \texttt{A.poll} 会将 \texttt{Poll::Pending} 返回给自己的调用者 \texttt{block\_on}。
+\item 由于 \texttt{block\_on} 没有更好的事情可做，因此它进入了休眠状态。现在整个线程都被阻塞了。
+\item 如果 \texttt{Future B} 的连接就绪，就会唤醒轮询它的任务。这会激发 \texttt{block\_on} 的行动，并再次尝试轮询 \texttt{Future A}。
+\item 轮询 \texttt{Future A} 会导致 \texttt{cheapo\_request} 在其第一个 \texttt{await} 中恢复，并再次轮询 \texttt{Future B}。
+\item 这一次，\texttt{Future B} 就绪了：套接字创建完成，因此它将 \texttt{Poll::Ready(Ok(socket))} 返回给了 \texttt{A.poll}。
+\item 对 \texttt{TcpStream::connect} 的异步调用现已完成。因此 \texttt{TcpStream::connect(...).await} 表达式的值成了 \texttt{Ok(socket)}。
+\item \texttt{cheapo\_request} 函数体正常执行，使用 \texttt{format!} 宏构建请求字符串，并将其传给 \texttt{socket.write\_all}。
+\item 由于 \texttt{socket.write\_all} 是一个异步函数，因此它会返回其结果的 \texttt{Future C}，而 \texttt{cheapo\_request} 会等待这个 \texttt{Future}。
+\end{itemize}
+
+剩下的部分也类似。在图 20-2 所示的执行中，\texttt{socket.read\_to\_string} 返回的 \texttt{Future} 在就绪之前被轮询了 4 次，这些唤醒中的每一个都从套接字中读取了\textbf{一些}数据，但是 \texttt{read\_to\_string} 要求一直读到输入的末尾，这需要做一些操作。
+
+编写一遍又一遍调用 \texttt{poll} 的循环听起来并不难。但是 \texttt{async\_std::task::block\_on} 的价值在于，它知道如何进入休眠直到 \texttt{Future} 真正值得再次轮询时再启动轮询，而不是浪费处理器时间和电池寿命进行数十亿次无结果的 \texttt{poll} 调用。像 \texttt{connect} 和 \texttt{read\_to\_string} 这样的基本 I/O 函数返回的 \texttt{Future} 保留了由传给 \texttt{poll} 的 \texttt{Context} 提供的唤醒器。到了应该唤醒 \texttt{block\_on} 并再次尝试轮询时，就会调用此唤醒器。我们将在 20.3 节通过实现一个简单版本的 \texttt{block\_on} 来准确地揭示它的工作原理。
+
+与前面介绍的原始同步版本一样，为了等待操作完成，这个异步版本的 \texttt{cheapo\_request} 花费了几乎所有时间。如果时间轴是按真实比例绘制的，那么图 20-2 将几乎完全是深灰色的，当程序偶尔唤醒时才会出现微小的碎片级计算时间。
+
+这里有大量细节。幸运的是，通常可以只考虑简化过的上层时间线：一些函数调用是同步的，另一些函数调用是异步的且需要 \texttt{await}，但它们都只是函数调用。Rust 异步支持的成功之处在于能帮程序员在实践中使用简化过的视图，而不会反复被其具体实现分心。
+
+\subsection{启动异步任务}
+
+在 \texttt{Future} 的值就绪之前，\texttt{async\_std::task::block\_on} 函数会一直阻塞。但是把线程完全阻塞在单个 \texttt{Future} 上并不比同步调用好：本章的目标是让线程在等待的同时\textbf{做其他工作}。
+
+为此，可以使用 \texttt{async\_std::task::spawn\_local}。该函数会接受一个 \texttt{Future} 并将其添加到任务池中，只要正阻塞着 \texttt{block\_on} 的 \texttt{Future} 还未就绪，就会尝试轮询。因此，如果你将一堆 \texttt{Future} 传给 \texttt{spawn\_local}，然后将 \texttt{block\_on} 应用于最终结果的 \texttt{Future}，那么 \texttt{block\_on} 就会在可以向前推进时轮询每个启动（\texttt{spawn}）后的 \texttt{Future}，并行执行整个任务池，直到你想要的结果就绪。
+
+在撰写本章时，要想在 \texttt{async-std} 中使用 \texttt{spawn\_local}，就必须启用该 crate 的 \texttt{unstable} 特性。为此，需要在 Cargo.toml 中使用下面这行代码去引用 \texttt{async-std}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{async\PYGZhy{}std}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{version}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{features}\PYG{+w}{ }\PYG{p}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{unstable}\PYG{l+s+s2}{\PYGZdq{}}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{spawn\_local} 函数是标准库的 \texttt{std::thread::spawn} 函数的异步模拟，用于启动线程。
+
+\texttt{std::thread::spawn(c)} 会接受闭包 \texttt{c} 并启动线程来运行它，然后返回 \texttt{std::thread::JoinHandle}，其中 \texttt{std::thread::JoinHandle} 的 \texttt{join} 方法会等待线程完成并返回 \texttt{c} 中返回的任何内容。
+
+\texttt{async\_std::task::spawn\_local(f)} 会接受 \texttt{Future f} 并将其添加到当前线程在调用 \texttt{block\_on} 时要轮询的池中。\texttt{spawn\_local} 会返回自己的 \texttt{async\_std::task::JoinHandle} 类型，它本身就是一个 \texttt{Future}，你可以等待（\texttt{await}）它以获取 \texttt{f} 的最终值。
+
+假设我们想同时发出一整套 HTTP 请求。下面是第一次尝试：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{many\PYGZus{}requests}\PYG{p}{(}\PYG{n}{requests}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{u16}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{+w}{                           }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{handles}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{requests}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{handles}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn\PYGZus{}local}\PYG{p}{(}\PYG{n}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{path}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{results}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{handle}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{handles}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{results}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{handle}\PYG{p}{.}\PYG{k}{await}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n}{results}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+该函数会在 \texttt{requests} 的每个元素上调用 \texttt{cheapo\_request}，并将每个调用返回的 \texttt{Future} 传给 \texttt{spawn\_local}。该函数还会将生成的 \texttt{JoinHandle} 收集到一个向量中，然后等待每一个 \texttt{JoinHandle}。可以用任意顺序等待这些 \texttt{JoinHandle}：由于请求已经发出，因此只要此线程调用了 \texttt{block\_on} 并且没有更有价值的事情可做，请求的 \texttt{Future} 就会根据需要进行轮询。所有请求都将并行执行。一旦完成操作，\texttt{many\_requests} 就会把结果返回给它的调用者。
+
+前面的代码几乎是正确的，但 Rust 的借用检查器报错说它很担心 \texttt{cheapo\_request} 返回的 \texttt{Future} 的生命周期：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{host}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{does}\PYG{+w}{ }\PYG{n}{not}\PYG{+w}{ }\PYG{n}{live}\PYG{+w}{ }\PYG{n}{long}\PYG{+w}{ }\PYG{n}{enough}
+
+\PYG{+w}{    }\PYG{n}{handles}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn\PYGZus{}local}\PYG{p}{(}\PYG{n}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{path}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{                                   }\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}
+\PYG{+w}{                                   }\PYG{o}{|}\PYG{+w}{              }\PYG{o}{|}
+\PYG{+w}{                                   }\PYG{o}{|}\PYG{+w}{              }\PYG{n}{borrowed}\PYG{+w}{ }\PYG{n}{value}\PYG{+w}{ }\PYG{n}{does}\PYG{+w}{ }\PYG{n}{not}
+\PYG{+w}{                                   }\PYG{o}{|}\PYG{+w}{              }\PYG{n}{live}\PYG{+w}{ }\PYG{n}{long}\PYG{+w}{ }\PYG{n}{enough}
+\PYG{+w}{                     }\PYG{n}{argument}\PYG{+w}{ }\PYG{n}{requires}\PYG{+w}{ }\PYG{n}{that}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{host}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{borrowed}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{err}{`}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{err}{`}
+\PYG{p}{\PYGZcb{}}
+\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{host}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{dropped}\PYG{+w}{ }\PYG{n}{here}\PYG{+w}{ }\PYG{k}{while}\PYG{+w}{ }\PYG{n}{still}\PYG{+w}{ }\PYG{n}{borrowed}
+\end{Verbatim}
+
+\texttt{path} 也会出现类似的错误。
+
+自然，如果将引用传给一个异步函数，那么它返回的 \texttt{Future} 就必须持有这些引用，因此，安全起见，\texttt{Future} 的生命周期不能超出它们借来的值。这和任何包含引用的值所受的限制是一样的。
+
+问题是 \texttt{spawn\_local} 无法确定你会在 \texttt{host} 和 \texttt{path} 被丢弃之前等待任务完成。事实上，\texttt{spawn\_local} 只会接受生命周期为 \texttt{'static} 的 \texttt{Future}，因为你也可以简单地忽略它返回的 \texttt{JoinHandle}，并在程序执行其他部分时让此任务继续运行。这不是异步任务独有的问题：如果尝试使用 \texttt{std::thread::spawn} 启动一个线程，那么该线程的闭包也会捕获对局部变量的引用，并得到类似的错误。
+
+解决此问题的方法是创建另一个接受这些参数的拥有型版本的异步函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cheapo\PYGZus{}owning\PYGZus{}request}\PYG{p}{(}\PYG{n}{host}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u16}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{)}
+\PYG{+w}{                               }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{path}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+此函数会接受 \texttt{String} 引用而不是 \texttt{\&str} 引用，因此它的 \texttt{Future} 拥有 \texttt{host} 字符串和 \texttt{path} 字符串本身，并且其生命周期为 \texttt{'static}。通过借用检查器可以发现它立即开始等待 \texttt{cheapo\_request} 返回的 \texttt{Future}，因此，如果该 \texttt{Future} 被轮询，那么它借用的 \texttt{host} 变量和 \texttt{path} 变量必然仍旧存在。一切顺利。
+
+可以使用 \texttt{cheapo\_owning\_request} 像下面这样分发所有请求：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{requests}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{handles}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn\PYGZus{}local}\PYG{p}{(}\PYG{n}{cheapo\PYGZus{}owning\PYGZus{}request}\PYG{p}{(}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+可以借助 \texttt{block\_on} 从同步 \texttt{main} 函数中调用 \texttt{many\_requests}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{requests}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}
+\PYG{+w}{    }\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{example.com}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{      }\PYG{l+m+mi}{80}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{www.red\PYGZhy{}bean.com}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{80}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{en.wikipedia.org}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{80}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{]}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{results}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{block\PYGZus{}on}\PYG{p}{(}\PYG{n}{many\PYGZus{}requests}\PYG{p}{(}\PYG{n}{requests}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{results}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{response}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{\PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{response}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{err}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+上述代码会在对 \texttt{block\_on} 的调用中同时运行所有 3 个请求。每一个都会在某种时机取得进展，而其他的则会被阻塞，所有这些都发生在调用线程上。图 20-3 展示了对 \texttt{cheapo\_request} 的 3 个调用的一种可能的执行方式。
+
+\myFigure{images/ch20/fig-20-3.jpeg}{图 20-3：在单个线程上运行 3 个异步任务}
+
+（我们鼓励你尝试自己运行此代码，在 \texttt{cheapo\_request} 的顶部和每个 \texttt{await} 表达式之后添加 \texttt{eprintln!} 调用，以便看出这些调用在一次执行与下一次执行之间的交错方式有何不同。）
+
+对 \texttt{many\_requests} 的调用（为简单起见，图 20-3 中未展示）启动了 3 个异步任务，我们将其标记为 \texttt{A}、\texttt{B} 和 \texttt{C}。\texttt{block\_on} 首先轮询 \texttt{A}，这样 \texttt{A} 会连接到 \texttt{example.com}。一旦返回了 \texttt{Poll::Pending}，\texttt{block\_on} 就会将注意力转向下一个异步任务，轮询 \texttt{B}，并最终轮询 \texttt{C}，这样每个任务都会连接到各自的服务器。
+
+当所有可轮询的 \texttt{Future} 都返回了 \texttt{Poll::Pending} 时，\texttt{block\_on} 就会进入休眠状态，直到某个 \texttt{TcpStream::connect} 返回的 \texttt{Future} 表明它的任务值得再次轮询时才唤醒。
+
+在本次执行中，服务器 \texttt{en.wikipedia.org} 比其他服务器响应更快，因此该任务首先完成。当启动的任务完成后，它会将值保存在 \texttt{JoinHandle} 中并标记为就绪，以便正在等候的 \texttt{many\_requests} 可以继续处理。最终，对 \texttt{cheapo\_request} 的其他调用要么成功了，要么返回了错误，而 \texttt{many\_requests} 本身也可以返回了。最后，\texttt{main} 会从 \texttt{block\_on} 接收到结果向量。
+
+上述操作发生在同一个线程上，对 \texttt{cheapo\_request} 的 3 个调用会通过对它们的 \texttt{Future} 的连续轮询交错进行。虽然异步调用看起来是单个函数调用一直运行到完成为止，但这种调用其实是通过对 \texttt{Future} 的 \texttt{poll} 方法的一系列同步调用实现的。每个单独的 \texttt{poll} 调用都会快速返回，让进程空闲，以便轮询另一个异步调用。
+
+我们终于达成了本章开头设定的目标：让线程在等待 I/O 完成时承担其他工作，这样线程的资源就不会在无所事事中浪费掉。更妙的是，此目标是通过与普通 Rust 代码非常相似的代码实现的：一些函数被标记为 \texttt{async}，一些函数调用后面跟着 \texttt{.await}，并且改用来自 \texttt{async\_std} 而不是 \texttt{std} 的函数，除此之外，就和普通的 Rust 代码一模一样。
+
+异步任务与线程的一个重要区别是：从一个异步任务到另一个异步任务的切换只会出现在 \texttt{await} 表达式处，且只有当等待的 \texttt{Future} 返回了 \texttt{Poll::Pending} 时才会发生。这意味着如果在 \texttt{cheapo\_request} 中放置了一个长时间运行的计算，那么传给 \texttt{spawn\_local} 的其他任务在它完成之前全都没有机会运行。使用线程则不会出现这个问题：操作系统可以在任何时候挂起任何线程，并设置定时器以确保没有哪个线程会独占处理器。异步代码要求共享同一个线程的各个 \texttt{Future} 自愿合作。如果想让长时间运行的计算与异步代码共存，可以参考 20.1.9 节讲到的一些选项。
+
+\subsection{异步块}
+
+除了异步函数，Rust 还支持\textbf{异步块}。普通的块语句会返回其最后一个表达式的值，而异步块会返回其最后一个表达式值的 \texttt{Future}。可以在异步块中使用 \texttt{await} 表达式。
+
+异步块看起来就像普通的块语句，但其前面有 \texttt{async} 关键字：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{serve\PYGZus{}one}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{net}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// 监听连接并接受其中一个}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{listener}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpListener}\PYG{p}{::}\PYG{n}{bind}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{localhost:8087}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{p}{(}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{socket}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}addr}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{listener}\PYG{p}{.}\PYG{n}{accept}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// 在`socket`上与客户端对话}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+上述代码会将 \texttt{serve\_one} 初始化为一个 \texttt{Future}（当被轮询时），以侦听并处理单个 TCP 连接。直到轮询 \texttt{serve\_one} 时才会开始执行代码块的主体，就像直到轮询 \texttt{Future} 时才会开始执行异步函数的主体一样。
+
+如果在异步块中使用 \texttt{?} 运算符处理错误，那么它只会从块中而不是围绕它的函数中返回。如果前面的 \texttt{bind} 调用返回了错误，则 \texttt{?} 运算符会将其作为 \texttt{serve\_one} 的最终值返回。同样，\texttt{return} 表达式也会从异步块而不是其所在函数中返回。
+
+如果异步块引用了围绕它的代码中定义的变量，那么它的 \texttt{Future} 就会捕获这些变量的值，就像闭包所做的那样。与 \texttt{move} 闭包（参见 14.1.2 节）的用法一样，也可以用 \texttt{async move} 启动该块以获取捕获的值的所有权，而不仅仅持有对它们的引用。
+
+为了将你想要异步运行的那部分代码分离出去，异步块提供了一种简洁的方法。例如，在 20.1.4 节中，\texttt{spawn\_local} 需要一个 \texttt{'static} 的 \texttt{Future}，因此我们定义了包装函数 \texttt{cheapo\_owning\_request} 来为我们提供一个拥有其参数所有权的 \texttt{Future}。只需从异步块中调用 \texttt{cheapo\_request} 即可获得相同的效果，不用花心思去写包装函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{many\PYGZus{}requests}\PYG{p}{(}\PYG{n}{requests}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{k+kt}{u16}\PYG{p}{,}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{+w}{                           }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{handles}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{requests}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{handles}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn\PYGZus{}local}\PYG{p}{(}\PYG{k}{async}\PYG{+w}{ }\PYG{k}{move}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{path}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+由于这是一个 \texttt{async move} 块，因此它的 \texttt{Future} 获取了 \texttt{String} 值 \texttt{host} 和 \texttt{path} 的所有权，和 \texttt{move} 闭包一样。然后该 \texttt{Future} 会传递对 \texttt{cheapo\_request} 的引用。借用检查器可以看到块的 \texttt{await} 表达式接手了 \texttt{cheapo\_request} 返回的 \texttt{Future} 的所有权，因此对 \texttt{host} 和 \texttt{path} 的引用的生命周期不能比它们借来的已捕获变量的生命周期长。对于 \texttt{cheapo\_owning\_request} 所能做的事，\texttt{async} 块也能完成，且使用的样板代码更少。
+
+你可能会遇到的一个棘手问题是，与异步函数不同，没有任何语法可用于指定异步块的返回类型。这在使用 \texttt{?} 运算符时会导致问题：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{input}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{future}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// 这会返回`std::io::Result\PYGZlt{}usize\PYGZgt{}`}
+\PYG{+w}{    }\PYG{n}{input}\PYG{p}{.}\PYG{n}{read\PYGZus{}line}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Read line: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{line}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+运行失败并出现以下错误：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{type}\PYG{+w}{ }\PYG{n}{annotations}\PYG{+w}{ }\PYG{n}{needed}
+\PYG{+w}{   }\PYG{o}{|}
+\PYG{l+m+mi}{48}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{     }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{future}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{         }\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{consider}\PYG{+w}{ }\PYG{n}{giving}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{future}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{a}\PYG{+w}{ }\PYG{k}{type}
+\PYG{o}{..}\PYG{p}{.}
+\PYG{l+m+mi}{60}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{         }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{         }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{+w}{ }\PYG{n}{cannot}\PYG{+w}{ }\PYG{n}{infer}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{for}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{parameter}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{E}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{declared}
+\PYG{+w}{   }\PYG{o}{|}\PYG{+w}{            }\PYG{n}{on}\PYG{+w}{ }\PYG{n}{the}\PYG{+w}{ }\PYG{k}{enum}\PYG{+w}{ }\PYG{err}{`}\PYG{n+nb}{Result}\PYG{err}{`}
+\end{Verbatim}
+
+Rust 无法判断异步块的返回类型是什么。\texttt{read\_line} 方法会返回 \texttt{Result<(), std::io::Error>}，但是因为 \texttt{?} 运算符会使用 \texttt{From} 特型将手头的错误类型转换为场景要求的任何类型，所以异步块的返回类型 \texttt{Result<(), E>} 中的 \texttt{E} 可以是实现了 \texttt{From<std::io::Error>} 的任意类型。
+
+Rust 的未来版本中可能会新增相应的语法来指出 \texttt{async} 块的返回类型。目前，可以通过明确写出块的最终 \texttt{Ok} 的类型来解决这个问题：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{future}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\end{Verbatim}
+
+由于 \texttt{Result} 是一个希望以成功类型和错误类型作为其参数的泛型类型，因此，如上例所示，可以在使用 \texttt{Ok} 或 \texttt{Err} 时指定这些类型参数。
+
+\subsection{从异步块构建异步函数}
+
+异步块为我们提供了另一种实现与异步函数相同效果的方式，并且这种方式更加灵活。例如，可以将我们的 \texttt{cheapo\_request} 示例改写为一个普通的同步函数，该函数会返回一个异步块的 \texttt{Future}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{future}\PYG{p}{::}\PYG{n}{Future}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cheapo\PYGZus{}request}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{host}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u16}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}\PYG{+w}{ }\PYG{k+kt}{str}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n}{Future}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+na}{a}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{async}\PYG{+w}{ }\PYG{k}{move}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{err}{…}\PYG{err}{…}\PYG{err}{函}\PYG{err}{数}\PYG{err}{体}\PYG{err}{…}\PYG{err}{…}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当你调用这个版本的函数时，它会立即返回异步块返回值的 \texttt{Future}。这会捕获该函数的参数表，并且表现得就像异步函数返回的 \texttt{Future} 一样。由于没有使用 \texttt{async fn} 语法，因此需要在返回类型中写上 \texttt{impl Future}。但就调用者而言，这两个定义是具有相同函数签名的可互换实现。
+
+如果想在调用函数时立即进行一些计算，然后再创建其结果的 \texttt{Future}，那么第二种方法会很有用。例如，另一种让 \texttt{cheapo\_request} 和 \texttt{spawn\_local} 协同工作的方法是将其变成一个返回 \texttt{'static Future} 的同步函数，这会捕获由其参数完全拥有的副本：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{n}{host}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kt}{u16}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n}{Future}\PYG{o}{\PYGZlt{}}\PYG{n}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{host}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{host}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{path}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{async}\PYG{+w}{ }\PYG{k}{move}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{err}{…}\PYG{err}{…}\PYG{err}{使}\PYG{err}{用}\PYG{o}{\PYGZam{}}\PYG{o}{*}\PYG{n}{host}\PYG{err}{、}\PYG{n}{port和path}\PYG{err}{…}\PYG{err}{…}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个版本允许异步块将 \texttt{host} 和 \texttt{path} 捕获为拥有型 \texttt{String} 值，而不是 \texttt{\&str} 引用。由于 \texttt{Future} 拥有其运行所需的全部数据，因此它会在整个 \texttt{'static} 生命周期内有效。（在前面所展示的签名中我们明确写出了 \texttt{+ 'static}，但 \texttt{'static} 本来就是各种 \texttt{-> impl} 返回类型的默认值，因此将其省略也不会有任何影响。）
+
+由于这个版本的 \texttt{cheapo\_request} 返回的是 \texttt{'static Future}，因此可以将它们直接传给 \texttt{spawn\_local}。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{join\PYGZus{}handle}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn\PYGZus{}local}\PYG{p}{(}
+\PYG{+w}{    }\PYG{n}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{areweasyncyet.rs}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+m+mi}{80}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{/}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}
+\PYG{p}{)}\PYG{p}{;}
+
+\PYG{err}{…}\PYG{err}{…}\PYG{err}{其}\PYG{err}{他}\PYG{err}{工}\PYG{err}{作}\PYG{err}{…}\PYG{err}{…}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{response}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{join\PYGZus{}handle}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+\subsection{在线程池中启动异步任务}
+
+迄今为止，我们展示的这些示例把几乎所有时间都花在了等待 I/O 上，但某些工作负载主要是 CPU 任务和阻塞的混合体。当计算量繁重到无法仅靠单个 CPU 满足时，可以使用 \texttt{async\_std::task::spawn} 在工作线程池中启动 \texttt{Future}，线程池专门用于轮询那些已准备好向前推进的 \texttt{Future}。
+
+\texttt{async\_std::task::spawn} 用起来很像 \texttt{async\_std::task::spawn\_local}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{handles}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{path}\PYG{p}{)}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{requests}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{handles}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{k}{async}\PYG{+w}{ }\PYG{k}{move}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{cheapo\PYGZus{}request}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{host}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{port}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{path}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\PYG{o}{..}\PYG{p}{.}
+\end{Verbatim}
+
+与 \texttt{spawn\_local} 一样，\texttt{spawn} 也会返回一个 \texttt{JoinHandle} 值，你可以等待它，以获得 \texttt{Future} 的最终值。但与 \texttt{spawn\_local} 不同，\texttt{Future} 不必等到调用 \texttt{block\_on} 才进行轮询。一旦线程池中的某个线程空闲了，该线程就会试着轮询它。
+
+在实践中，\texttt{spawn} 比 \texttt{spawn\_local} 用得多。这只是因为人们更希望看到他们的工作负载在机器资源上均匀分配，而不关心工作负载的计算和阻塞是如何混杂的。
+
+使用 \texttt{spawn} 时要记住一点：线程池倾向于保持忙碌。因此无论哪个线程率先得到轮询的机会，都会轮询到你的 \texttt{Future}。异步调用可能在一个线程上开始执行，阻塞在 \texttt{await} 表达式上，然后在另一个线程中恢复。因此，虽然将异步函数调用视为单一的、连续的代码执行是一种合理的简化（实际上，异步函数和 \texttt{await} 表达式的设计目标就是鼓励你以这种方式思考），但实际上可能会通过许多不同的线程来承载此次调用。
+
+如果你正在使用线程本地存储，可能会惊讶地看到你在 \texttt{await} 表达式之前放置的数据后来被换成了完全不同的东西。这是因为你的任务现在正由线程池中的不同线程轮询。如果你觉得这是一个问题，就应该改用\textbf{任务本地存储}，具体请参阅 \texttt{async-std} crate 的 \texttt{task\_local!} 宏的详细信息。
+
+\subsection{你的 \texttt{Future} 实现 \texttt{Send} 了吗}
+
+\texttt{spawn} 具有 \texttt{spawn\_local} 所没有的一项限制。由于 \texttt{Future} 会被发送到另一个线程运行，因此它必须实现标记特型 \texttt{Send}（参见 19.2.5 节）。只有当 \texttt{Future} 包含的所有值都符合 \texttt{Send} 要求时，它自己才符合 \texttt{Send} 要求：所有函数参数、局部变量，甚至匿名临时值都必须安全地转移给另一个线程。
+
+和生命周期方面的限制一样，这项要求也不是异步任务独有的：如果尝试用 \texttt{std::thread::spawn} 启动其闭包以捕获非 \texttt{Send} 值的线程，那么也会遇到类似的错误。不同点在于，虽然传给 \texttt{std::thread::spawn} 的闭包会留在创建并运行它的线程上，但在线程池中启动的 \texttt{Future} 可以在等待期间的任意时刻从一个线程转移给另一个线程。
+
+这项限制很容易意外触发。例如，下面的代码乍看起来没问题：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{rc}\PYG{p}{::}\PYG{n}{Rc}\PYG{p}{;}
+
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{reluctant}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{string}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Rc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ref\PYGZhy{}counted string}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{some\PYGZus{}asynchronous\PYGZus{}thing}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Your splendid string: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{n}{reluctant}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+异步函数的 \texttt{Future} 需要保存足够的信息，以便此函数能从 \texttt{await} 表达式继续。在这种情况下，\texttt{reluctant} 返回的 \texttt{Future} 必须在 \texttt{await} 之后使用 \texttt{string} 的值，因此 \texttt{Future}（至少在某些时刻）会包含一个 \texttt{Rc<String>} 值。由于 \texttt{Rc} 指针不能在线程之间安全地共享，因此 \texttt{Future} 本身也不能是 \texttt{Send} 的。因为 \texttt{spawn} 只接受符合 \texttt{Send} 要求的 \texttt{Future}，所以 Rust 不会接受 \texttt{Rc} 指针：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{error}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{future}\PYG{+w}{ }\PYG{n}{cannot}\PYG{+w}{ }\PYG{n}{be}\PYG{+w}{ }\PYG{n}{sent}\PYG{+w}{ }\PYG{n}{between}\PYG{+w}{ }\PYG{n}{threads}\PYG{+w}{ }\PYG{n}{safely}
+\PYG{+w}{    }\PYG{o}{|}
+\PYG{l+m+mi}{17}\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{     }\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{n}{reluctant}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{|}\PYG{+w}{     }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{+w}{ }\PYG{n}{future}\PYG{+w}{ }\PYG{n}{returned}\PYG{+w}{ }\PYG{n}{by}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{reluctant}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{not}\PYG{+w}{ }\PYG{err}{`}\PYG{n+nb}{Send}\PYG{err}{`}
+\PYG{+w}{    }\PYG{o}{|}
+\PYG{+w}{    }\PYG{o}{|}
+\PYG{l+m+mi}{127}\PYG{+w}{ }\PYG{o}{|}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Future}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{p}{,}
+\PYG{+w}{    }\PYG{o}{|}\PYG{+w}{             }\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{required}\PYG{+w}{ }\PYG{n}{by}\PYG{+w}{ }\PYG{n}{this}\PYG{+w}{ }\PYG{n}{bound}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{err}{`}
+\PYG{+w}{    }\PYG{o}{|}
+\PYG{+w}{    }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{help}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{within}\PYG{+w}{ }\PYG{err}{`}\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Future}\PYG{err}{`}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{the}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{err}{`}\PYG{n+nb}{Send}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{not}\PYG{+w}{ }\PYG{n}{implemented}
+\PYG{+w}{            }\PYG{k}{for}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{Rc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{err}{`}
+\PYG{n}{note}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{future}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{not}\PYG{+w}{ }\PYG{err}{`}\PYG{n+nb}{Send}\PYG{err}{`}\PYG{+w}{ }\PYG{k}{as}\PYG{+w}{ }\PYG{n}{this}\PYG{+w}{ }\PYG{n}{value}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{used}\PYG{+w}{ }\PYG{n}{across}\PYG{+w}{ }\PYG{n}{an}\PYG{+w}{ }\PYG{k}{await}
+\PYG{+w}{    }\PYG{o}{|}
+\PYG{l+m+mi}{10}\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{         }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{string}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Rc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ref\PYGZhy{}counted string}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{|}\PYG{+w}{             }\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{n}{has}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{Rc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{which}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{not}\PYG{+w}{ }\PYG{err}{`}\PYG{n+nb}{Send}\PYG{err}{`}
+\PYG{l+m+mi}{11}\PYG{+w}{  }\PYG{o}{|}
+\PYG{l+m+mi}{12}\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{         }\PYG{n}{some\PYGZus{}asynchronous\PYGZus{}thing}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{|}\PYG{+w}{         }\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}\PYG{o}{\PYGZca{}}
+\PYG{+w}{                  }\PYG{k}{await}\PYG{+w}{ }\PYG{n}{occurs}\PYG{+w}{ }\PYG{n}{here}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{with}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{string}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{maybe}\PYG{+w}{ }\PYG{n}{used}\PYG{+w}{ }\PYG{n}{later}
+\PYG{o}{..}\PYG{p}{.}
+\PYG{l+m+mi}{15}\PYG{+w}{  }\PYG{o}{|}\PYG{+w}{     }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{o}{|}\PYG{+w}{     }\PYG{o}{\PYGZhy{}}\PYG{+w}{ }\PYG{err}{`}\PYG{n}{string}\PYG{err}{`}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{later}\PYG{+w}{ }\PYG{n}{dropped}\PYG{+w}{ }\PYG{n}{here}
+\end{Verbatim}
+
+此错误消息很长，包含很多有用的详细信息。
+
+\begin{itemize}
+\item 解释了为什么 \texttt{Future} 需要符合 \texttt{Send} 的要求：\texttt{task::spawn} 需要它。
+\item 解释了哪个值不符合 \texttt{Send} 的要求：局部变量 \texttt{string}，其类型是 \texttt{Rc<String>}。
+\item 解释了为什么 \texttt{string} 会影响 \texttt{Future}：它的作用域跨越了 \texttt{await}\footnote{由于 \texttt{await} 之前和之后不属于同一个作用域，因此需要保存上下文。——译者注}。
+\end{itemize}
+
+有两种方法可以解决此问题。一种方法是限制非 \texttt{Send} 值的作用域，使其不跨越任何 \texttt{await} 表达式的作用域，因此也不需要保存在函数的 \texttt{Future} 中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{reluctant}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{return\PYGZus{}value}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{string}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Rc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ref\PYGZhy{}counted string}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Your splendid string: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{)}
+\PYG{+w}{        }\PYG{c+c1}{// `Rc\PYGZlt{}String\PYGZgt{}`在此离开了作用域……}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// ……因此当我们在这里暂停时，它不在周边环境里}
+\PYG{+w}{    }\PYG{n}{some\PYGZus{}asynchronous\PYGZus{}thing}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{return\PYGZus{}value}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+另一种方法是简单地使用 \texttt{std::sync::Arc} 而非 \texttt{Rc}。\texttt{Arc} 使用原子更新来管理引用计数，这会让它略慢，但 \texttt{Arc} 指针是符合 \texttt{Send} 要求的。
+
+虽然最终你将学会识别和避免非 \texttt{Send} 类型，但一开始它们可能有点儿令人吃惊。[ 至少，我们（本书作者）曾感到惊讶。] 例如，旧的 Rust 代码有时会使用下面这样的泛型结果类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 别这样做！}
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{GenericError}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{error}\PYG{p}{::}\PYG{n}{Error}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{GenericResult}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{GenericError}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+这个 \texttt{GenericError} 类型使用了装箱过的特型对象来保存实现了 \texttt{std::error::Error} 的任意类型的值，但没有对它施加任何进一步的限制：如果有某个非 \texttt{Send} 类型实现了 \texttt{Error}，那么就可以将该类型的装箱值转换为 \texttt{GenericError}。由于这种可能性，\texttt{GenericError} 不符合 \texttt{Send} 要求，并且下面的代码无法工作：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{some\PYGZus{}fallible\PYGZus{}thing}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{GenericResult}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{i32}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// 这个函数的Future不符合`Send`要求……}
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{unfortunate}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// ……因为此调用的值……}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{some\PYGZus{}fallible\PYGZus{}thing}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{error}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{report\PYGZus{}error}\PYG{p}{(}\PYG{n}{error}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{output}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{c+c1}{// ……其生命周期跨越了这个await……}
+\PYG{+w}{            }\PYG{n}{use\PYGZus{}output}\PYG{p}{(}\PYG{n}{output}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+c1}{// ……因此这个`spawn`会出错}
+\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{n}{unfortunate}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+与前面的示例一样，编译器的错误消息解释了正在发生的事情，并指出 \texttt{Result} 类型是罪魁祸首。由于 Rust 认为 \texttt{some\_fallible\_thing} 的结果存在于整个 \texttt{match} 语句（包括 \texttt{await} 表达式）中，所以它确定 \texttt{unfortunate} 返回的 \texttt{Future} 不符合 \texttt{Send} 的要求。对于这个错误，Rust 过于谨慎了：虽然 \texttt{GenericError} 确实不能安全地发送到另一个线程，但 \texttt{await} 只有在结果为 \texttt{Ok} 时才会发生，因此当我们等待 \texttt{use\_output} 返回的 \texttt{Future} 时其实并不存在错误值。
+
+理想的解决方案是使用更严格的泛型错误类型，比如 7.2.5 节提到的错误类型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{GenericError}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{error}\PYG{p}{::}\PYG{n}{Error}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Sync}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{GenericResult}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{GenericError}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+这个特型对象会明确要求底层错误类型实现 \texttt{Send}。一切顺利。
+
+即使你的 \texttt{Future} 不符合 \texttt{Send} 要求，而且不容易把它变成符合形式，仍然可以使用 \texttt{spawn\_local} 在当前线程上运行它。当然，你需要确保此线程会在某个时刻调用 \texttt{block\_on} 以便让它有机会运行，并且你无法受益于跨多个处理器分派工作的能力。
+
+\subsection{长时间运行的计算：\texttt{yield\_now} 与 \texttt{spawn\_blocking}}
+
+为了让 \texttt{Future} 更好地与其他任务共享线程，它的 \texttt{poll} 方法应该总是尽可能快地返回。但是，如果你正在进行长时间的计算，就可能需要很长时间才能到达下一个 \texttt{await}，从而让其他异步任务等待的时间比你预想的更久些。
+
+避免这种情况的一种方法是偶尔等待某些事情。\texttt{async\_std::task::yield\_now} 函数会返回一个为此而设计的简单的 \texttt{Future}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{while}\PYG{+w}{ }\PYG{n}{computation\PYGZus{}not\PYGZus{}done}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{err}{…}\PYG{err}{…}\PYG{err}{完}\PYG{err}{成}\PYG{err}{一}\PYG{err}{个}\PYG{err}{中}\PYG{err}{等}\PYG{err}{规}\PYG{err}{模}\PYG{err}{的}\PYG{err}{计}\PYG{err}{算}\PYG{err}{步}\PYG{err}{骤}\PYG{err}{…}\PYG{err}{…}
+\PYG{+w}{    }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{yield\PYGZus{}now}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+当 \texttt{yield\_now} 返回的 \texttt{Future} 第一次被轮询时，它会返回 \texttt{Poll::Pending}，但表示自己很快就值得再次轮询。因此你的异步调用放弃了线程，以使其他任务有机会运行，但很快会再次轮到它。第二次轮询 \texttt{yield\_now} 返回的 \texttt{Future} 时，它会返回 \texttt{Poll::Ready(())}，让你的异步函数恢复执行。
+
+然而，这种方法并不总是可行。如果你使用外部 crate 进行长时间运行的计算或者调用 C 或 C++，那么将上述代码更改为异步友好型代码可能并不方便。或者很难确保计算所经过的每条路径一定会时不时地等待一下。
+
+对于这种情况，可以使用 \texttt{async\_std::task::spawn\_blocking}。该函数会接受一个闭包，开始在独立的线程上运行它，并返回携带其返回值的 \texttt{Future}。异步代码可以等待那个 \texttt{Future}，将其线程让给其他任务，直到本次计算就绪。通过将繁重的工作放在单独的线程上，可以委托给操作系统去负责，让它更友善地分享处理器。
+
+假设我们要根据存储在身份验证数据库中的密码哈希值来检查用户提供的密码。为安全起见，验证密码需要进行大量计算，这样即使攻击者获得了数据库的副本，也无法简单地通过尝试数万亿个可能的密码来查看是否有匹配项。\texttt{argonautica} crate 提供了一个专为存储密码而设计的哈希函数：正确生成的 \texttt{argonautica} 哈希需要相当一部分时间才能验证。可以在异步应用程序中使用 \texttt{argonautica}（0.2 版），如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{verify\PYGZus{}password}\PYG{p}{(}\PYG{n}{password}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{hash}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{key}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}
+\PYG{+w}{                        }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{k+kt}{bool}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{argonautica}\PYG{p}{::}\PYG{n}{Error}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{c+c1}{// 制作参数的副本，以使闭包的生命周期是\PYGZsq{}static}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{password}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{password}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{hash}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{hash}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{key}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{key}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn\PYGZus{}blocking}\PYG{p}{(}\PYG{k}{move}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{argonautica}\PYG{p}{::}\PYG{n}{Verifier}\PYG{p}{::}\PYG{n}{default}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{with\PYGZus{}hash}\PYG{p}{(}\PYG{n}{hash}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{with\PYGZus{}password}\PYG{p}{(}\PYG{n}{password}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{with\PYGZus{}secret\PYGZus{}key}\PYG{p}{(}\PYG{n}{key}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{verify}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+如果 \texttt{password} 与 \texttt{hash} 匹配，则返回 \texttt{Ok(true)}，给定的 \texttt{key} 是整个数据库的键。通过在传给 \texttt{spawn\_blocking} 的闭包中进行验证，可以将昂贵的计算推给其各自的线程，确保它不会影响我们对其他用户请求的响应。
+
+\subsection{对几种异步设计进行比较}
+
+在许多方面，Rust 的异步编程方式与其他语言所采用的方法相似。例如，JavaScript、C\#和 Rust 都有带 \texttt{await} 表达式的异步函数。所有这些语言都有代表未完成计算的值：Rust 中叫作“\texttt{Future}”，JavaScript 中叫作“承诺”（Promise），C\# 中叫作“任务”（Task），但它们都代表一种你可能不得不等待的值。
+
+然而，Rust 对轮询的使用独树一帜。在 JavaScript 和 C\# 中，异步函数在调用后会立即开始运行，并且系统库中内置了一个全局事件循环，可在等待的值可用时恢复挂起的异步函数调用。不过，在 Rust 中，异步调用什么都不会做，直到你将它传给 \texttt{block\_on}、\texttt{spawn} 或 \texttt{spawn\_local} 之类的函数，这些函数将轮询它并驱动此事直到完成。我们称这些函数为\textbf{执行器}，它们承担着与其他语言中全局事件循环类似的职责。
+
+因为 Rust 会让你（程序员）选择一个执行器来轮询你的 \texttt{Future}，所以它并不需要在系统中内置全局事件循环。\texttt{async-std} crate 提供了迄今为止本章使用过的这些执行器函数，但是 \texttt{tokio} crate（本章稍后会用到）自己定义了一组类似的执行器函数。在本章的末尾，我们将实现自己的执行器。你可以在同一个程序中使用这 3 种执行器。
+
+\subsection{一个真正的异步 HTTP 客户端}
+
+如果不展示一个正确使用异步 HTTP 客户端 crate 的例子，那本章就是不完整的，因为它非常简单，并且确有几个不错的 crate 可供选择，包括 \texttt{request} 和 \texttt{surf}。
+
+下面是对 \texttt{many\_requests} 的重写，它甚至比基于 \texttt{cheapo\_request} 的重写更简单，而且会用 \texttt{surf} 同时运行一系列请求。你需要在 Cargo.toml 文件中添加如下依赖项：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{[}\PYG{k}{dependencies}\PYG{k}{]}
+\PYG{n}{async\PYGZhy{}std}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1.7}\PYG{l+s+s2}{\PYGZdq{}}
+\PYG{n}{surf}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s+s2}{\PYGZdq{}}\PYG{l+s+s2}{1.0}\PYG{l+s+s2}{\PYGZdq{}}
+\end{Verbatim}
+
+然后，可以像下面这样定义 \texttt{many\_requests}：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{many\PYGZus{}requests}\PYG{p}{(}\PYG{n}{urls}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{p}{[}\PYG{n+nb}{String}\PYG{p}{]}\PYG{p}{)}
+\PYG{+w}{                           }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Vec}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{surf}\PYG{p}{::}\PYG{n}{Exception}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{client}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{surf}\PYG{p}{::}\PYG{n}{Client}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{handles}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{url}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{urls}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{request}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{client}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{url}\PYG{p}{)}\PYG{p}{.}\PYG{n}{recv\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{handles}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{n}{request}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{results}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nf+fm}{vec!}\PYG{p}{[}\PYG{p}{]}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{handle}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{handles}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{results}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{n}{handle}\PYG{p}{.}\PYG{k}{await}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n}{results}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{requests}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{http://example.com}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                     }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{https://www.red\PYGZhy{}bean.com}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                     }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{https://en.wikipedia.org/wiki/Main\PYGZus{}Page}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{]}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{results}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{block\PYGZus{}on}\PYG{p}{(}\PYG{n}{many\PYGZus{}requests}\PYG{p}{(}\PYG{n}{requests}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{k}{in}\PYG{+w}{ }\PYG{n}{results}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{response}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{*** \PYGZob{}\PYGZcb{}}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{response}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{err}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error: \PYGZob{}\PYGZcb{}}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{err}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+使用单个 \texttt{surf::Client} 发出所有请求可以让我们重用 HTTP 连接（如果其中有多个请求指向同一台服务器的话），并且不需要异步块：因为 \texttt{recv\_string} 是一个返回 \texttt{Send + 'static} 型 \texttt{Future} 的异步方法，所以可以将它返回的 \texttt{Future} 直接传给 \texttt{spawn}。
+
+\section{异步客户端与服务器}
+
+现在，我们要把这些已讨论过的关键思想组合成一个真正可用的程序。在很大程度上，异步应用程序和普通的多线程应用程序非常相似，但在某些需要紧凑而且富有表现力的代码的场合，异步编程可以大显身手。
+
+本节的示例是聊天服务器和客户端。真正的聊天系统是很复杂的，涉及从安全、重新连接到隐私和内部审核的各种问题，但我们已将此系统缩减为一组非常基础的特性，来把注意力聚焦于少数我们感兴趣的要点上。
+
+特别是，我们希望能好好处理\textbf{背压}。也就是说，即使一个客户端的网络连接速度较慢或完全断开连接，也绝不能影响其他客户端按照自己的节奏交换消息。由于“龟速”客户端不应该让服务器花费无限的内存来保存其不断增长的积压消息，因此我们的服务器应该丢弃那些发给掉队客户端的消息，但也有义务提醒他们其信息流不完整。（一个真正的聊天服务器会将消息记录到磁盘并允许客户端检索他们错过的消息，但这里不考虑那样做。）
+
+使用命令 \texttt{cargo new --lib async-chat} 启动项目，并将以下文本放入 async-chat/\allowbreak{}Cargo.toml 中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{[}\PYG{n}{package}\PYG{p}{]}
+\PYG{n}{name}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{async\PYGZhy{}chat}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{0.1.0}\PYG{l+s}{\PYGZdq{}}
+\PYG{n}{authors}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{You \PYGZlt{}you@example.com\PYGZgt{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}
+\PYG{n}{edition}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{2021}\PYG{l+s}{\PYGZdq{}}
+
+\PYG{p}{[}\PYG{n}{dependencies}\PYG{p}{]}
+\PYG{k}{async}\PYG{o}{\PYGZhy{}}\PYG{n}{std}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.7}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{features}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{unstable}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{n}{tokio}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.0}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{features}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{sync}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{n}{serde}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{version}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.0}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{features}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{[}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{derive}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{rc}\PYG{l+s}{\PYGZdq{}}\PYG{p}{]}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{n}{serde\PYGZus{}json}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{1.0}\PYG{l+s}{\PYGZdq{}}
+\end{Verbatim}
+
+我们依赖于 4 个 crate。
+
+\begin{itemize}
+\item \texttt{async-std} crate 是本章中一直在用的异步 I/O 基础构件和实用工具的集合。
+\item \texttt{tokio} crate 是类似于 \texttt{async-std} crate 的另一个异步基础构件集合，它也是最古老且最成熟的 crate 之一。\texttt{tokio} crate 应用广泛，设计和实现的标准都很高，但使用时需要比 \texttt{async-std} crate 更加小心。
+
+\texttt{tokio} 是一个大型 crate，但我们只需要其中的一个组件，因此 Cargo.toml 依赖行中的 \texttt{features = ["sync"]} 字段将 \texttt{tokio} 缩减为了我们需要的部分，使其成为一种轻型依赖。当异步库生态系统还不太成熟时，人们会避免在同一个程序中同时使用 \texttt{tokio} 和 \texttt{async-std}。不过，只要遵循这两个项目各自 crate 文档中的规则，就可以在同一个程序中使用。
+\item \texttt{serde} 和 \texttt{serde\_json} 是第 18 章中介绍过的两个 crate。它们为我们提供了方便且高效的工具来生成和解析 JSON，我们的聊天协议使用 JSON 来表示网络上的数据。我们想使用 \texttt{serde} 的一些可选特性，因此会在提供依赖项时选择它们。
+\end{itemize}
+
+我们的聊天应用程序、客户端和服务器的整体结构如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{async}\PYG{o}{\PYGZhy{}}\PYG{n}{chat}
+\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{Cargo}\PYG{p}{.}\PYG{n}{toml}
+\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{src}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{lib}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{    }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{utils}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{    }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{bin}
+\PYG{+w}{        }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{client}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{        }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{server}
+\PYG{+w}{            }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{main}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{            }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{connection}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{            }\PYG{err}{├}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{group}\PYG{p}{.}\PYG{n}{rs}
+\PYG{+w}{            }\PYG{err}{└}\PYG{err}{─}\PYG{err}{─}\PYG{+w}{ }\PYG{n}{group\PYGZus{}table}\PYG{p}{.}\PYG{n}{rs}
+\end{Verbatim}
+
+这个包的布局使用了 8.4 节中提到的一项 Cargo 特性：除了主库 crate src/lib.rs 及其子模块 src/utils.rs，还包括两个可执行文件。
+
+\begin{itemize}
+\item src/bin/client.rs 是聊天客户端的单文件可执行文件。
+\item src/bin/server 是服务端的可执行文件，分布在 4 个文件中：main.rs 包含 \texttt{main} 函数，另外 3 个子模块分别是 connection.rs、group.rs 和 group\_table.rs。
+\end{itemize}
+
+我们将在本章中展示每个源文件的内容，如果它们都就位了，那么一旦在此目录树中键入 \texttt{cargo build}，就会编译库的 crate，然后构建出两个可执行文件。Cargo 会自动包含库的 crate 作为依赖项，使其成为放置客户端和服务器共享定义的约定位置。同样，\texttt{cargo check} 会检查整棵源代码树。要运行任何一个可执行文件，可以使用如下命令：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYGZhy{}\PYGZhy{}release\PYG{+w}{ }\PYGZhy{}\PYGZhy{}bin\PYG{+w}{ }server\PYG{+w}{ }\PYGZhy{}\PYGZhy{}\PYG{+w}{ }localhost:8088
+\PYGZdl{}\PYG{+w}{ }cargo\PYG{+w}{ }run\PYG{+w}{ }\PYGZhy{}\PYGZhy{}release\PYG{+w}{ }\PYGZhy{}\PYGZhy{}bin\PYG{+w}{ }client\PYG{+w}{ }\PYGZhy{}\PYGZhy{}\PYG{+w}{ }localhost:8088
+\end{Verbatim}
+
+\texttt{--bin} 选项会指出要运行哪个可执行文件，而 \texttt{--} 选项后面的任何参数都会传给可执行文件本身。我们的客户端和服务器只希望知道服务器的地址和 TCP 端口。
+
+\subsection{\texttt{Error} 类型与 \texttt{Result} 类型}
+
+库 crate 的 \texttt{utils} 模块定义了要在整个应用程序中使用的 \texttt{Error} 类型与 \texttt{Result} 类型。以下来自 src/utils.rs：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{error}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{ChatError}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Box}\PYG{o}{\PYGZlt{}}\PYG{k}{dyn}\PYG{+w}{ }\PYG{n}{Error}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Sync}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ChatError}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\end{Verbatim}
+
+这些是我们在 7.2.5 节中建议的泛型错误类型。\texttt{async\_std} crate、\texttt{serde\_json} crate 和 \texttt{tokio} crate 也分别定义了自己的错误类型，但是 \texttt{?} 运算符可以自动将它们全部转换为 \texttt{ChatError}，这是借助标准库的 \texttt{From} 特型实现的，该特型可以将任何合适的错误类型转换为 \texttt{Box<dyn Error + Send + Sync + 'static>} 类型。类型限界 \texttt{Send} 和 \texttt{Sync} 会确保，如果在另一个线程中启动的任务失败，那么它可以安全地将错误报告给主线程。
+
+在实际的应用程序中，请考虑使用 \texttt{anyhow} crate，它提供了与这里类似的 \texttt{Error} 类型和 \texttt{Result} 类型。\texttt{anyhow} crate 易于使用，而且提供了一些超越 \texttt{ChatError} 和 \texttt{ChatResult} 的优秀特性。
+
+\subsection{协议}
+
+库 crate 以下面这两种类型来支持整个聊天协议，这是在 lib.rs 中定义的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{serde}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Deserialize}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Serialize}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{Arc}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{utils}\PYG{p}{;}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Debug, Deserialize, Serialize, PartialEq)}\PYG{c+cp}{]}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{FromClient}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Join}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{group\PYGZus{}name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Post}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{group\PYGZus{}name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{message}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{derive(Debug, Deserialize, Serialize, PartialEq)}\PYG{c+cp}{]}
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{enum}\PYG{+w}{ }\PYG{n+nc}{FromServer}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{Message}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{group\PYGZus{}name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{message}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{Error}\PYG{p}{(}\PYG{n+nb}{String}\PYG{p}{)}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{c+cp}{\PYGZsh{}[}\PYG{c+cp}{test}\PYG{c+cp}{]}
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{test\PYGZus{}fromclient\PYGZus{}json}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{Arc}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{from\PYGZus{}client}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{FromClient}\PYG{p}{::}\PYG{n}{Post}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{group\PYGZus{}name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Dogs}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{message}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Samoyeds rock!}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{json}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{serde\PYGZus{}json}\PYG{p}{::}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{from\PYGZus{}client}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{json}\PYG{p}{,}
+\PYG{+w}{               }\PYG{l+s}{r\PYGZsh{}\PYGZdq{}\PYGZob{}\PYGZdq{}Post\PYGZdq{}:\PYGZob{}\PYGZdq{}group\PYGZus{}name\PYGZdq{}:\PYGZdq{}Dogs\PYGZdq{},\PYGZdq{}message\PYGZdq{}:\PYGZdq{}Samoyeds rock!\PYGZdq{}\PYGZcb{}\PYGZcb{}\PYGZdq{}\PYGZsh{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{serde\PYGZus{}json}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{FromClient}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{json}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{               }\PYG{n}{from\PYGZus{}client}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{FromClient} 枚举表示可以从客户端发送到服务器的数据包：它可以请求加入一个组或向已加入的任何组发布消息。\texttt{FromServer} 表示可以由服务器发回的内容，即发布到某个组的消息或错误消息。可以使用带引用计数的 \texttt{Arc<String>} 而不是普通的 \texttt{String}，这有助于服务器在管理组和分发消息时避免复制字符串。
+
+\texttt{\#[derive]} 属性要求 \texttt{serde} crate 为 \texttt{FromClient} 和 \texttt{FromServer} 生成其 \texttt{Serialize} 特型和 \texttt{Deserialize} 特型的实现。这样一来，就可以调用 \texttt{serde\_json::to\_string} 将它们转换为 JSON 值，通过网络进行发送，最后再调用 \texttt{serde\_json::from\_str} 转换回它们的 Rust 形式。
+
+\texttt{test\_fromclient\_json} 这个单元测试演示了它的用法。给定由 \texttt{serde} 派生的 \texttt{Serialize} 实现，可以调用 \texttt{serde\_json::to\_string} 将给定的 \texttt{FromClient} 值转换为这样的 JSON：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{p}{\PYGZob{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Post}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{group\PYGZus{}name}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Dogs}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{message}\PYG{l+s}{\PYGZdq{}}\PYG{p}{:}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Samoyeds rock!}\PYG{l+s}{\PYGZdq{}}\PYG{p}{\PYGZcb{}}\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+然后，派生出的 \texttt{Deserialize} 实现会将其解析回等效的 \texttt{FromClient} 值。请注意，\texttt{FromClient} 中的 \texttt{Arc} 指针对其序列化形式没有任何影响：引用计数字符串会直接显示为 JSON 对象成员的值。
+
+\subsection{获取用户输入：异步流}
+
+我们的聊天客户端的首要职责是读取用户的命令并将相应的数据包发送到服务器。管理一个合适的用户界面超出了本章的范围，所以我们将做最简单可行的事情：直接从标准输入中读取行。以下代码位于 src/bin/client.rs 中：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}chat}\PYG{p}{::}\PYG{n}{utils}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ChatResult}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{net}\PYG{p}{;}
+
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{send\PYGZus{}commands}\PYG{p}{(}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{to\PYGZus{}server}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{net}\PYG{p}{::}\PYG{n}{TcpStream}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Commands:}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{              join GROUP}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{              post GROUP MESSAGE...}\PYG{l+s+se}{\PYGZbs{}n}\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{              Type Control\PYGZhy{}D (on Unix) or Control\PYGZhy{}Z (on Windows) }\PYG{l+s}{\PYGZbs{}}
+\PYG{l+s}{              to close the connection.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{command\PYGZus{}lines}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n}{BufReader}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{io}\PYG{p}{::}\PYG{n}{stdin}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{command\PYGZus{}result}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{command\PYGZus{}lines}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{command}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{command\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{c+c1}{// 参见GitHub存储库中对`parse\PYGZus{}command`的定义}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{request}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{parse\PYGZus{}command}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{command}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{request}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{request}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{continue}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{n}{utils}\PYG{p}{::}\PYG{n}{send\PYGZus{}as\PYGZus{}json}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{to\PYGZus{}server}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{request}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{to\PYGZus{}server}\PYG{p}{.}\PYG{n}{flush}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这会调用 \texttt{async\_std::io::stdin} 来获取客户端标准输入的异步句柄，并包装在 \texttt{async\_std::io::BufReader} 中对其进行缓冲，然后调用 \texttt{lines} 逐行处理用户的输入。它会尝试将每一行解析为与某个 \texttt{FromClient} 值相对应的命令，如果成功，就将该值发送到服务器。如果用户输入了无法识别的命令，那么 \texttt{parse\_command} 就会打印一条错误消息并返回 \texttt{None}，以便 \texttt{send\_commands} 可以重新开始循环。如果用户键入了文件结束（EOF）指示符，则 \texttt{lines} 流会返回 \texttt{None}，并且 \texttt{send\_commands} 也会返回。此代码与你在普通同步程序中编写的代码非常相似，只不过它使用的是 \texttt{async\_std} 版本的库特性。
+
+异步 \texttt{BufReader} 的 \texttt{lines} 方法很有趣。它没有像标准库那样返回一个迭代器：\texttt{Iterator::next} 方法是一个普通的同步函数，因此调用 \texttt{command\_lines.next()} 会阻塞线程，直到下一行代码就绪。而这里的 \texttt{lines} 会返回一个 \texttt{Result<String>} 值组成的\textbf{流}。流是迭代器的异步模拟，它会用异步友好的方式按需生成一系列值。下面是 \texttt{async\_std::stream} 模块中 \texttt{Stream} 特型的定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{Stream}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Item}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{c+c1}{// 现在，把`Pin\PYGZlt{}\PYGZam{}mut Self\PYGZgt{}`读取为`\PYGZam{}mut Self`}
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{poll\PYGZus{}next}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Pin}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{cx}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Context}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Poll}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n+nb+bp}{Self}\PYG{p}{::}\PYG{n}{Item}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+可以将 \texttt{Stream} 特型视为 \texttt{Iterator} 特型和 \texttt{Future} 特型的混合体。与迭代器一样，\texttt{Stream} 也有关联的 \texttt{Item} 类型，并使用 \texttt{Option} 来指示序列何时结束。同时，与 \texttt{Future} 一样，流必须被轮询：要获取下一个条目（或了解流是否结束），就必须调用 \texttt{poll\_next} 直到它返回 \texttt{Poll::Ready}。流的 \texttt{poll\_next} 实现应该总是快速返回，不会阻塞。如果流返回了 \texttt{Poll::Pending}，则必须在值得再次轮询时通过 \texttt{Context} 通知调用者。
+
+\texttt{poll\_next} 方法很难直接使用，不过通常也不需要直接使用该方法。与迭代器一样，流有很多实用方法，比如 \texttt{filter} 和 \texttt{map}。在这些方法中，有一个 \texttt{next} 方法，它会返回流中下一个 \texttt{Option<Self::Item>} 的 \texttt{Future}。可以调用 \texttt{next} 并等待它返回的 \texttt{Future}，而不必显式轮询流。
+
+把这些片段结合起来看，\texttt{send\_commands} 会利用 \texttt{while let} 和 \texttt{next} 循环遍历输入行组成的流来消耗这个流：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{item}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{stream}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{err}{…}\PYG{err}{…}\PYG{err}{使}\PYG{err}{用}\PYG{err}{条}\PYG{err}{目}\PYG{err}{…}\PYG{err}{…}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+（Rust 可能会在未来版本中引入可用来消耗流的异步 \texttt{for} 循环，就像普通 \texttt{for} 循环能消耗 \texttt{Iterator} 值一样。）
+
+在流结束后（也就是说，在流返回 \texttt{Poll::Ready(None)} 指出流已结束之后）轮询流，就像在迭代器返回 \texttt{None} 之后调用 \texttt{next}，或者在 \texttt{Future} 返回 \texttt{Poll::Ready} 之后轮询 \texttt{Future}：\texttt{Stream} 特型没有规定此时流应该怎么做，某些流可能行为诡异。与 \texttt{Future} 和迭代器一样，流也有一个 \texttt{fuse} 方法来确保此类调用的行为在必要时是可预测的。有关详细信息，请参阅在线文档。
+
+使用流时，务必记住使用 \texttt{async\_std} 预导入：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\end{Verbatim}
+
+这是因为 \texttt{Stream} 特型的实用方法（如 \texttt{next}、\texttt{map}、\texttt{filter} 等）实际上并没有定义在自身上，而是单独特型 \texttt{StreamExt} 上的默认方法，该特型会自动为所有 \texttt{Stream} 实现：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{trait}\PYG{+w}{ }\PYG{n}{StreamExt}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Stream}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{err}{…}\PYG{err}{…}\PYG{err}{把}\PYG{err}{一}\PYG{err}{些}\PYG{err}{实}\PYG{err}{用}\PYG{err}{工}\PYG{err}{具}\PYG{err}{方}\PYG{err}{法}\PYG{err}{定}\PYG{err}{义}\PYG{err}{为}\PYG{err}{默}\PYG{err}{认}\PYG{err}{方}\PYG{err}{法}\PYG{err}{…}\PYG{err}{…}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Stream}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{StreamExt}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{T}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这是 11.2.2 节描述的\textbf{扩展特型}模式的示例。\texttt{async\_std::prelude} 模块会将 \texttt{StreamExt} 方法引入作用域，因此使用预导入可以确保这些方法在你的代码中可见。
+
+\subsection{发送数据包}
+
+为了在网络套接字上传输数据包，我们的客户端和服务器会使用库 crate 的 \texttt{utils} 模块中的 \texttt{send\_as\_json} 函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{serde}\PYG{p}{::}\PYG{n}{Serialize}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{marker}\PYG{p}{::}\PYG{n+nb}{Unpin}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{send\PYGZus{}as\PYGZus{}json}\PYG{o}{\PYGZlt{}}\PYG{n}{S}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{outbound}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{S}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{packet}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{P}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}
+\PYG{+w}{    }\PYG{n}{S}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{Write}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Unpin}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Serialize}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{json}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{serde\PYGZus{}json}\PYG{p}{::}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{packet}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{json}\PYG{p}{.}\PYG{n}{push}\PYG{p}{(}\PYG{l+s+sc}{\PYGZsq{}\PYGZbs{}n\PYGZsq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{outbound}\PYG{p}{.}\PYG{n}{write\PYGZus{}all}\PYG{p}{(}\PYG{n}{json}\PYG{p}{.}\PYG{n}{as\PYGZus{}bytes}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个函数会将 \texttt{packet} 的 JSON 表示形式构建为 \texttt{String}，在末尾添加换行符，然后将其全部写入 \texttt{outbound}。
+
+从这个函数的 \texttt{where} 子句可以看出 \texttt{send\_as\_json} 非常灵活。要发送的数据包类型 \texttt{P} 可以是任何实现了 \texttt{serde::Serialize} 的值。输出流 \texttt{S} 可以是任何实现了 \texttt{async\_std::io::Write}（输出流的 \texttt{std::io::Write} 特型的异步版本）的值。这足以让我们在异步 \texttt{TcpStream} 上发送 \texttt{FromClient} 值和 \texttt{FromServer} 值。只要遵守 \texttt{send\_as\_json} 的泛型定义，就能确保它不会意外依赖于流类型或数据包类型的细节，因为 \texttt{send\_as\_json} 只能使用来自这些特型的方法。
+
+使用 \texttt{write\_all} 方法需要满足 \texttt{S} 上的 \texttt{Unpin} 约束。本章在后面会介绍 \texttt{Pin} 和 \texttt{Unpin}，但就目前而言，只要在必要时向类型变量中添加 \texttt{Unpin} 约束就足够了，如果忘记了，Rust 编译器会帮你指出这些问题。
+
+\texttt{send\_as\_json} 没有将数据包直接序列化到 \texttt{outbound} 流，而是将其序列化为临时 \texttt{String}，然后写入 \texttt{outbound} 中。\texttt{serde\_json} crate 确实提供了将值直接序列化为输出流的函数，但这些函数只支持同步流。要想写入异步流，就要对 \texttt{serde\_json} 和 \texttt{serde} 这两个 crate 中与格式无关的核心代码进行根本性更改，因为围绕它们设计的特型都有一些同步方法。
+
+与流一样，\texttt{async\_std} 的 I/O 特型的许多方法实际上是在其扩展特型上定义的，因此在使用它们时请务必记住 \texttt{use async\_std::prelude::*}。
+
+\subsection{接收数据包：更多异步流}
+
+为了接收数据包，我们的服务器和客户端将使用一个来自 \texttt{utils} 模块的函数从异步缓冲的 TCP 套接字（\texttt{async\_std::io::BufReader<TcpStream>}）中接收 \texttt{FromClient} 值和 \texttt{FromServer} 值：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{serde}\PYG{p}{::}\PYG{n}{de}\PYG{p}{::}\PYG{n}{DeserializeOwned}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{receive\PYGZus{}as\PYGZus{}json}\PYG{o}{\PYGZlt{}}\PYG{n}{S}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{inbound}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{S}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{impl}\PYG{+w}{ }\PYG{n}{Stream}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}
+\PYG{+w}{    }\PYG{k}{where}\PYG{+w}{ }\PYG{n}{S}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{BufRead}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{n+nb}{Unpin}\PYG{p}{,}
+\PYG{+w}{          }\PYG{n}{P}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{DeserializeOwned}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{inbound}\PYG{p}{.}\PYG{n}{lines}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{map}\PYG{p}{(}\PYG{o}{|}\PYG{n}{line\PYGZus{}result}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{line}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{line\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{parsed}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{serde\PYGZus{}json}\PYG{p}{::}\PYG{n}{from\PYGZus{}str}\PYG{p}{:}\PYG{p}{:}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{line}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{parsed}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+与 \texttt{send\_as\_json} 一样，这个函数的输入流类型和数据包类型是泛型的。
+
+\begin{itemize}
+\item 流类型 \texttt{S} 必须实现 \texttt{async\_std::io::BufRead}，这是 \texttt{std::io::BufRead} 的异步模拟，表示缓冲输入字节流。
+\item 数据包类型 \texttt{P} 必须实现 \texttt{DeserializeOwned}，这是 \texttt{serde} 的 \texttt{Deserialize} 特型的更严格变体。为了提高效率，\texttt{Deserialize} 可以生成 \texttt{\&str} 值和 \texttt{\&[u8]} 值，这些值会直接从反序列化的缓冲区中借用它们的内容，以免复制数据。然而，在上面的例子中，这样做可不太好：我们要将反序列化后的值返回给调用者，因此它们的生命周期必须超出被解析的缓冲区。实现了 \texttt{DeserializeOwned} 的类型始终独立于被反序列化的缓冲区。
+\end{itemize}
+
+调用 \texttt{inbound.lines()} 会为我们提供一个携带 \texttt{std::io::Result<String>} 值的 \texttt{Stream}。然后，使用流的 \texttt{map} 适配器对每个条目应用一个闭包，处理错误并将每一行都解析为 \texttt{P} 类型值的 JSON 形式。这就生成了一个携带 \texttt{ChatResult<P>} 值的流，我们直接将其返回。该函数的返回类型如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Stream}\PYG{o}{\PYGZlt{}}\PYG{n}{Item}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}
+\end{Verbatim}
+
+这表示我们返回了\textbf{某种}会异步生成 \texttt{ChatResult<P>} 值序列的类型，但我们的调用者无法准确判断是哪种类型。由于传给 \texttt{map} 的闭包无论如何都是匿名类型，因此这已经是 \texttt{receive\_as\_json} 可能返回的最具体的类型了。
+
+请注意，\texttt{receive\_as\_json} 本身并不是异步函数，它是会返回一个异步值（一个流）的普通函数。现在，比起“只在某些地方添加 \texttt{async} 与 \texttt{.await}”，你更深入地理解了 Rust 的异步支持机制，能够写出清晰、灵活和高效的定义，就像刚才这个充分发挥出语言特性的定义一样。
+
+要想了解 \texttt{receive\_as\_json} 的用法，可以看看下面这个来自 src/bin/client.rs 的聊天客户端的 \texttt{handle\_replies} 函数，该函数会从网络接收 \texttt{FromServer} 的值流并将它们打印出来供用户查看：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}chat}\PYG{p}{::}\PYG{n}{FromServer}\PYG{p}{;}
+
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{handle\PYGZus{}replies}\PYG{p}{(}\PYG{n}{from\PYGZus{}server}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{net}\PYG{p}{::}\PYG{n}{TcpStream}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{buffered}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{io}\PYG{p}{::}\PYG{n}{BufReader}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{from\PYGZus{}server}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{reply\PYGZus{}stream}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{utils}\PYG{p}{::}\PYG{n}{receive\PYGZus{}as\PYGZus{}json}\PYG{p}{(}\PYG{n}{buffered}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{reply}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{reply\PYGZus{}stream}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{reply}\PYG{o}{?}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{FromServer}\PYG{p}{::}\PYG{n}{Message}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{group\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{message}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{message posted to \PYGZob{}\PYGZcb{}: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{group\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{message}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{            }\PYG{n}{FromServer}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{(}\PYG{n}{message}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{n+nf+fm}{println!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{error from server: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{message}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这个函数会接受一个从服务器接收数据的套接字，把它包装进 \texttt{BufReader}（请注意，这是 \texttt{async\_std} 版本），然后将其传给 \texttt{receive\_as\_json} 以获取传入的 \texttt{FromServer} 值流。接下来它会用 \texttt{while let} 循环来处理传入的回复，检查错误结果并打印每个服务器的回复以供用户查看。
+
+\subsection{客户端的 \texttt{main} 函数}
+
+介绍完 \texttt{send\_commands} 和 \texttt{handle\_replies}，现在可以展示聊天客户端的 \texttt{main} 函数了，该函数来自 src/bin/client.rs：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{address}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{nth}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Usage: client ADDRESS:PORT}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{task}\PYG{p}{::}\PYG{n}{block\PYGZus{}on}\PYG{p}{(}\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{socket}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpStream}\PYG{p}{::}\PYG{n}{connect}\PYG{p}{(}\PYG{n}{address}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{set\PYGZus{}nodelay}\PYG{p}{(}\PYG{k+kc}{true}\PYG{p}{)}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{to\PYGZus{}server}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{send\PYGZus{}commands}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{from\PYGZus{}server}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{handle\PYGZus{}replies}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{n}{from\PYGZus{}server}\PYG{p}{.}\PYG{n}{race}\PYG{p}{(}\PYG{n}{to\PYGZus{}server}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+从命令行获取服务器地址后，\texttt{main} 要调用一系列异步函数，因此它会将函数的其余部分都包装在一个异步块中，并将该块返回的 \texttt{Future} 传给 \texttt{async\_std::task::block\_on} 来运行。
+
+建立连接后，我们希望 \texttt{send\_commands} 函数和 \texttt{handle\_replies} 函数双线运行，这样就可以在键入的同时看到别人发来的消息。如果遇到了 EOF 指示器或者与服务器的连接断开了，那么程序就应该退出。
+
+考虑到我们在本章其他地方所做的工作，你可能想要写出这样的代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{to\PYGZus{}server}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{n}{send\PYGZus{}commands}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{from\PYGZus{}server}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{n}{handle\PYGZus{}replies}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n}{to\PYGZus{}server}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{n}{from\PYGZus{}server}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+但由于我们在等待两个 \texttt{JoinHandle}，这会让程序在\textbf{两个}任务都完成后才能退出。但我们希望只要\textbf{任何}一个完成就立即退出。\texttt{Future} 上的 \texttt{race}（赛跑）方法可以满足这一要求。调用 \texttt{from\_server.race(to\_server)} 会返回一个新的 \texttt{Future}，它会同时轮询 \texttt{from\_server} 和 \texttt{to\_server}，并在二者之一就绪时返回 \texttt{Poll::Ready(v)}。这两个 \texttt{Future} 必须具有相同的输出类型，其最终值是先完成的那个 \texttt{Future} 的值。未完成的 \texttt{Future} 会被丢弃。
+
+\texttt{race} 方法以及许多其他的便捷工具都是在 \texttt{async\_std::prelude::FutureExt} 特型上定义的，\texttt{async\_std::prelude} 能让它对我们可见。
+
+迄今为止，我们唯一没有展示过的客户端代码是 \texttt{parse\_command} 函数。这是一目了然的文本处理代码，所以这里就不展示它的定义了。有关详细信息，请参阅 Git 库中的完整代码。
+
+\subsection{服务器的 \texttt{main} 函数}
+
+以下是服务器主文件 src/bin/server/\allowbreak{}main.rs 的全部内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}chat}\PYG{p}{::}\PYG{n}{utils}\PYG{p}{::}\PYG{n}{ChatResult}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{Arc}\PYG{p}{;}
+
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{connection}\PYG{p}{;}
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{group}\PYG{p}{;}
+\PYG{k}{mod}\PYG{+w}{ }\PYG{n+nn}{group\PYGZus{}table}\PYG{p}{;}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{connection}\PYG{p}{::}\PYG{n}{serve}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{main}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{address}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{env}\PYG{p}{::}\PYG{n}{args}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{nth}\PYG{p}{(}\PYG{l+m+mi}{1}\PYG{p}{)}\PYG{p}{.}\PYG{n}{expect}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Usage: server ADDRESS}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{chat\PYGZus{}group\PYGZus{}table}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Arc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{group\PYGZus{}table}\PYG{p}{::}\PYG{n}{GroupTable}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{block\PYGZus{}on}\PYG{p}{(}\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{c+c1}{// 下面这段代码曾在本章的章节介绍中展示过}
+\PYG{+w}{        }\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{net}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{task}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{listener}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpListener}\PYG{p}{::}\PYG{n}{bind}\PYG{p}{(}\PYG{n}{address}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{new\PYGZus{}connections}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{listener}\PYG{p}{.}\PYG{n}{incoming}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{socket\PYGZus{}result}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{new\PYGZus{}connections}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{socket}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{socket\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{groups}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{chat\PYGZus{}group\PYGZus{}table}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{n}{log\PYGZus{}error}\PYG{p}{(}\PYG{n}{serve}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{groups}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{log\PYGZus{}error}\PYG{p}{(}\PYG{n}{result}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{error}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nf+fm}{eprintln!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Error: \PYGZob{}\PYGZcb{}}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{error}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+服务器的 \texttt{main} 函数和客户端的 \texttt{main} 函数类似：它会先进行一些设置，然后调用 \texttt{block\_on} 来运行一个异步块以完成真正的工作。为了处理来自客户端的传入连接，它创建了 \texttt{TcpListener} 套接字，其 \texttt{incoming} 方法会返回一个 \texttt{std::io::Result<TcpStream>} 值流。
+
+对于每个传入的连接，我们都会启动一个运行 \texttt{connection::serve} 函数的异步任务。每个任务还会收到一个 \texttt{GroupTable} 值的引用，该值表示服务器的当前聊天组列表，由所有连接通过 \texttt{Arc} 引用计数指针共享。
+
+如果 \texttt{connection::serve} 返回错误，我们就会将一条消息记录到标准错误并让任务退出，其他连接则照常运行。
+
+\subsection{处理聊天连接：异步互斥锁}
+
+下面这些位于 src/bin/server/\allowbreak{}connection.rs 的 \texttt{connection} 模块中的 \texttt{serve} 函数是服务器的主要工作代码：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}chat}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{FromClient}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{FromServer}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}chat}\PYG{p}{::}\PYG{n}{utils}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{ChatResult}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{BufReader}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpStream}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{Arc}\PYG{p}{;}
+
+\PYG{k}{use}\PYG{+w}{ }\PYG{k}{crate}\PYG{p}{::}\PYG{n}{group\PYGZus{}table}\PYG{p}{::}\PYG{n}{GroupTable}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{serve}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{TcpStream}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{groups}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n}{GroupTable}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{+w}{                   }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}
+
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{outbound}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Arc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{Outbound}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{buffered}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{BufReader}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{socket}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{from\PYGZus{}client}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{utils}\PYG{p}{::}\PYG{n}{receive\PYGZus{}as\PYGZus{}json}\PYG{p}{(}\PYG{n}{buffered}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k}{while}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{request\PYGZus{}result}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{from\PYGZus{}client}\PYG{p}{.}\PYG{n}{next}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{request}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{request\PYGZus{}result}\PYG{o}{?}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{request}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{FromClient}\PYG{p}{::}\PYG{n}{Join}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{group\PYGZus{}name}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{group}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{groups}\PYG{p}{.}\PYG{n}{get\PYGZus{}or\PYGZus{}create}\PYG{p}{(}\PYG{n}{group\PYGZus{}name}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{                }\PYG{n}{group}\PYG{p}{.}\PYG{n}{join}\PYG{p}{(}\PYG{n}{outbound}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{                }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{            }\PYG{n}{FromClient}\PYG{p}{::}\PYG{n}{Post}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{group\PYGZus{}name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{message}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{groups}\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{group\PYGZus{}name}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                    }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{group}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                        }\PYG{n}{group}\PYG{p}{.}\PYG{n}{post}\PYG{p}{(}\PYG{n}{message}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{                        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{                    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{                    }\PYG{n+nb}{None}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                        }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Group \PYGZsq{}\PYGZob{}\PYGZcb{}\PYGZsq{} does not exist}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{group\PYGZus{}name}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{                    }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{                }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{message}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{result}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{report}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{FromServer}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{(}\PYG{n}{message}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{n}{outbound}\PYG{p}{.}\PYG{n}{send}\PYG{p}{(}\PYG{n}{report}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这几乎就是客户端的 \texttt{handle\_replies} 函数的镜像：大部分代码是一个循环，用于处理传入的 \texttt{FromClient} 值的流，它是从带有 \texttt{receive\_as\_json} 的缓冲 TCP 流构建出来的。如果发生错误，就会生成一个 \texttt{FromServer::Error} 数据包，将坏消息传回给客户端。
+
+除了错误消息，客户端还希望接收来自他们已加入的聊天组的消息，因此需要与每个组共享和客户端的连接。虽然可以简单地为每个人提供一份 \texttt{TcpStream} 的克隆，但是如果其中两个源试图同时将数据包写入套接字，那么他们的输出就可能彼此交叉，并且客户端最终会收到乱码 JSON。我们需要对此连接安排安全的并发访问。
+
+这是使用 \texttt{Outbound} 类型管理的，在 src/bin/server/\allowbreak{}connection.rs 中的定义如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{Mutex}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Outbound}\PYG{p}{(}\PYG{n}{Mutex}\PYG{o}{\PYGZlt{}}\PYG{n}{TcpStream}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Outbound}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{new}\PYG{p}{(}\PYG{n}{to\PYGZus{}client}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{TcpStream}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Outbound}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Outbound}\PYG{p}{(}\PYG{n}{Mutex}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{to\PYGZus{}client}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{send}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{packet}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{FromServer}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{ChatResult}\PYG{o}{\PYGZlt{}}\PYG{p}{(}\PYG{p}{)}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{guard}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{l+m+mf}{0.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{utils}\PYG{p}{::}\PYG{n}{send\PYGZus{}as\PYGZus{}json}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{o}{*}\PYG{n}{guard}\PYG{p}{,}\PYG{+w}{ }\PYG{o}{\PYGZam{}}\PYG{n}{packet}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{guard}\PYG{p}{.}\PYG{n}{flush}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Outbound} 值在创建时会获得 \texttt{TcpStream} 的所有权并将其包装在 \texttt{Mutex} 中以确保一次只有一个任务可以使用它。\texttt{serve} 函数会将每个 \texttt{Outbound} 包装在一个 \texttt{Arc} 引用计数指针中，以便客户端加入的所有组都可以指向同一个共享的 \texttt{Outbound} 实例。
+
+调用 \texttt{Outbound::send} 时会首先锁定互斥锁，返回一个可解引用为内部 \texttt{TcpStream} 的守卫值。我们使用 \texttt{send\_as\_json} 来传输 \texttt{packet}，最后会调用 \texttt{guard.flush()} 来确保它不会在某处缓冲区进行不完整传输。（据我们所知，\texttt{TcpStream} 实际上并不会缓冲数据，但 \texttt{Write} 特型确实允许它的实现这样做，所以不应该冒这个险。）
+
+表达式 \texttt{\&mut *guard} 可以帮我们解决 Rust 不会通过隐式解引用来满足特型限界的问题。我们会显式解引用互斥锁守卫，得到受保护的 \texttt{TcpStream}，然后借用一个可变引用，生成 \texttt{send\_as\_json} 所需的 \texttt{\&mut TcpStream}。
+
+请注意，\texttt{Outbound} 会使用 \texttt{async\_std::sync::Mutex} 类型，而不是标准库的 \texttt{Mutex}。原因有以下 3 点。
+
+首先，如果任务在持有互斥锁守卫时被挂起，那么标准库的 \texttt{Mutex} 可能会行为诡异。如果一直运行该任务的线程选择了另一个试图锁定同一 \texttt{Mutex} 的任务，那么麻烦就会随之而来：从 \texttt{Mutex} 的角度来看，已经拥有它的线程正试图再次锁定它。标准的 \texttt{Mutex} 不是为处理这种情况而设计的，因此会发生 panic 或死锁。（它永远不会以不恰当的方式授予锁。）Rust 团队正在进行的一项工作就是在编译期检测到这个问题，并当 \texttt{std::sync::Mutex} 守卫运行在 \texttt{await} 表达式中时发出警告。由于 \texttt{Outbound::send} 在等待 \texttt{send\_as\_json} 和 \texttt{guard.flush} 返回的 \texttt{Future} 时需要持有锁，因此它必须使用 \texttt{async\_std} 的 \texttt{Mutex}。
+
+其次，异步 \texttt{Mutex} 的 \texttt{lock} 方法会返回一个守卫的 \texttt{Future}，因此正在等待互斥锁的任务会将其线程让给别的任务使用，直到互斥锁就绪。（如果互斥锁已然可用，则此 \texttt{lock} 的 \texttt{Future} 会立即就绪，任务根本不会自行挂起。）另外，标准库 \texttt{Mutex} 的 \texttt{lock} 方法在等待获取锁期间会锁定整个线程。由于前面的代码在通过网络传输数据包时持有互斥锁，因此这种等待可能会持续相当长的时间。
+
+最后，标准库 \texttt{Mutex} 必须由锁定它的同一个线程解锁。为了强制执行此操作，标准库互斥锁的守卫类型没有实现 \texttt{Send}，它不能传输到其他线程。这意味着持有这种守卫的 \texttt{Future} 本身不会实现 \texttt{Send}，并且不能传给 \texttt{spawn} 以在线程池中运行，它只能与 \texttt{block\_on} 或 \texttt{spawn\_local} 一起使用。而 \texttt{async\_std Mutex} 的守卫实现了 \texttt{Send}，因此在已启动的任务中使用它没有问题。
+
+\subsection{群组表：同步互斥锁}
+
+但前面所讲的那些并不能导向“在异步代码中应该始终使用 \texttt{async\_std::sync::Mutex}”这样简单的结论。通常在持有互斥锁时不需要等待任何东西，并且这种锁定不会持续太久。在这种情况下，标准库的 \texttt{Mutex} 效率会更高。聊天服务器的 \texttt{GroupTable} 类型就说明了这种情况。以下是 src/bin/server/\allowbreak{}group\_table.rs 的全部内容：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{k}{crate}\PYG{p}{::}\PYG{n}{group}\PYG{p}{::}\PYG{n}{Group}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{collections}\PYG{p}{::}\PYG{n}{HashMap}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Arc}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Mutex}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{GroupTable}\PYG{p}{(}\PYG{n}{Mutex}\PYG{o}{\PYGZlt{}}\PYG{n}{HashMap}\PYG{o}{\PYGZlt{}}\PYG{n}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n}{Group}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{GroupTable}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{new}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{GroupTable}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{GroupTable}\PYG{p}{(}\PYG{n}{Mutex}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{HashMap}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nb}{String}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n}{Group}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{l+m+mf}{0.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{get}\PYG{p}{(}\PYG{n}{name}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{cloned}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{get\PYGZus{}or\PYGZus{}create}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n}{Group}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{l+m+mf}{0.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{entry}\PYG{p}{(}\PYG{n}{name}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{or\PYGZus{}insert\PYGZus{}with}\PYG{p}{(}\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{Arc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{Group}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{name}\PYG{p}{)}\PYG{p}{)}\PYG{p}{)}
+\PYG{+w}{        }\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{GroupTable} 只是一个受互斥锁保护的哈希表，它会将聊天组名称映射到实际组，两者都使用引用计数指针进行管理。\texttt{get} 方法和 \texttt{get\_or\_create} 方法会锁定互斥锁，执行一些哈希表操作，可能还会做一些内存分配，然后返回。
+
+在 \texttt{GroupTable} 中，我们会使用普通的旧式 \texttt{std::sync::Mutex}。此模块中根本没有异步代码，因此无须避免 \texttt{await}。事实上，如果想在这里使用 \texttt{async\_std::sync::Mutex}，就要将 \texttt{get} 和 \texttt{get\_or\_create} 变成异步函数，这会引入 \texttt{Future} 创建、暂停和恢复的开销，但收益甚微：互斥锁只会在一些哈希操作和可能出现的少量内存分配上锁定。
+
+如果聊天服务器发现自己拥有数百万用户，并且 \texttt{GroupTable} 的互斥锁确实成了瓶颈，那么就算把它变成异步形式也无法解决该问题。使用某种专门用于并发访问的集合类型来代替 \texttt{HashMap} 可能会好一些。例如，\texttt{dashmap} crate 就提供了这样一个类型。
+
+\subsection{聊天组：\texttt{tokio} 的广播通道}
+
+在我们的服务器中，\texttt{group::Group} 类型代表一个聊天组。该类型只需要支持 \texttt{connection::serve} 调用的两个方法：\texttt{join} 用于添加新成员，\texttt{post} 用于发布消息。发布的每条消息都要分发给所有成员。
+
+现在我们来解决前面提过的\textbf{背压}大挑战。有几项需求相互掣肘。
+
+\begin{itemize}
+\item 如果一个成员无法跟上发布到群组的消息（比如，其网络连接速度较慢），则群组中的其他成员不应受到影响。
+\item 即使某个成员掉线了，也应该有办法重新加入对话并以某种方式继续参与。
+\item 用于缓冲消息的内存不应无限制地增长。
+\end{itemize}
+
+因为这些挑战在实现多对多通信模式时很常见，所以 \texttt{tokio} crate 提供了一种\textbf{广播通道}类型，可以对这些挑战进行合理的权衡。\texttt{tokio} 广播通道是一个值队列（在这个例子中就是聊天消息），它允许任意数量的不同线程或任务发送值和接收值。之所以称为“广播”通道，是因为每个消费者都会获得这里发出的每个值的副本。（这个值的类型必须实现了 \texttt{Clone}。）
+
+通常，广播通道会在队列中把一条消息保留到每个消费者都获得了它的副本为止。但是，如果队列的长度超过通道的最大容量（在创建通道时指定），那么最旧的消息将被丢弃。任何掉队的消费者在下次尝试获取下一条消息时都会收到错误消息，并且通道会让他们赶上仍然可用的最旧消息。
+
+例如，图 20-4 展示了一个最大容量为 16 个值的广播通道。
+
+\myFigure{images/ch20/fig-20-4.jpeg}{图 20-4：\texttt{tokio} 广播通道}
+
+有 2 个发送方会将消息排入队列，4 个接收方会将消息从队列中取出——或者更准确地说，是将消息从队列中复制出来。接收者 B 还有 14 条消息要接收，接收者 C 还有 7 条，接收者 D 已经完全赶上了。接收者 A 掉队了，有 11 条消息在它看到之前就被丢弃了。它的下一次接收消息的尝试将失败，然后会返回一个错误以说明情况，并快进到队列的当前尾部。
+
+聊天服务器会将每个聊天组都表示为承载 \texttt{Arc<String>} 值的广播通道：向该组发布消息会将消息广播给所有当前成员。下面是 src/bin/server/\allowbreak{}group.rs 中的 \texttt{group::Group} 类型的定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{k}{crate}\PYG{p}{::}\PYG{n}{connection}\PYG{p}{::}\PYG{n}{Outbound}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{Arc}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{tokio}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{broadcast}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Group}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{sender}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{broadcast}\PYG{p}{::}\PYG{n}{Sender}\PYG{o}{\PYGZlt{}}\PYG{n}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Group}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{new}\PYG{p}{(}\PYG{n}{name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Group}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{sender}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{\PYGZus{}receiver}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{broadcast}\PYG{p}{::}\PYG{n}{channel}\PYG{p}{(}\PYG{l+m+mi}{1000}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{Group}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{n}{name}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{sender}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{join}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{outbound}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n}{Outbound}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{receiver}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{sender}\PYG{p}{.}\PYG{n}{subscribe}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{n}{task}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{n}{handle\PYGZus{}subscriber}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{name}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                                      }\PYG{n}{receiver}\PYG{p}{,}
+\PYG{+w}{                                      }\PYG{n}{outbound}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{    }\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{post}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n+nb+bp}{self}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{message}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{c+c1}{// 这只会在没有订阅者时返回错误。连接的发送端可能会退出，并恰好赶在其}
+\PYG{+w}{        }\PYG{c+c1}{// 接收端回复之前丢弃订阅，这可能会最终导致接收端试图向空组回复消息}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{\PYGZus{}ignored}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{sender}\PYG{p}{.}\PYG{n}{send}\PYG{p}{(}\PYG{n}{message}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Group} 结构体中包含聊天组的名称，以及表示组广播通道发送端的 \texttt{broadcast::Sender}。
+
+\texttt{Group::new} 函数会调用 \texttt{broadcast::channel} 创建一个最大容量为 1000 条消息的广播通道。\texttt{channel} 函数会返回发送者和接收者，但此时我们不需要接收者，因为组中还没有任何成员。
+
+要向组中添加新成员，\texttt{Group::join} 方法会调用发送者的 \texttt{subscribe} 方法来为通道创建新的接收者。然后聊天组会在 \texttt{handle\_subscribe} 函数中启动一个新的异步任务来监视消息的接收者并将它们写回客户端。
+
+有了这些细节，\texttt{Group::post} 方法就很简单了：它只是将消息发送到广播通道。由于通道携带的值是 \texttt{Arc<String>} 型的值，因此为每个接收者提供自己的消息副本只会增加消息的引用计数，不会进行任何复制或堆分配。一旦所有订阅者都传输了这条消息，引用计数就会降为 0，并且此消息会被释放。
+
+下面是 \texttt{handle\_subscriber} 的定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}chat}\PYG{p}{::}\PYG{n}{FromServer}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{tokio}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{broadcast}\PYG{p}{::}\PYG{n}{error}\PYG{p}{::}\PYG{n}{RecvError}\PYG{p}{;}
+
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{handle\PYGZus{}subscriber}\PYG{p}{(}\PYG{n}{group\PYGZus{}name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{                           }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{receiver}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{broadcast}\PYG{p}{::}\PYG{n}{Receiver}\PYG{o}{\PYGZlt{}}\PYG{n}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{                           }\PYG{n}{outbound}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n}{Outbound}\PYG{o}{\PYGZgt{}}\PYG{p}{)}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{packet}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{receiver}\PYG{p}{.}\PYG{n}{recv}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{message}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{FromServer}\PYG{p}{::}\PYG{n}{Message}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{n}{group\PYGZus{}name}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{group\PYGZus{}name}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{                }\PYG{n}{message}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{message}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}\PYG{p}{,}
+
+\PYG{+w}{            }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{RecvError}\PYG{p}{::}\PYG{n}{Lagged}\PYG{p}{(}\PYG{n}{n}\PYG{p}{)}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{FromServer}\PYG{p}{::}\PYG{n}{Error}\PYG{p}{(}
+\PYG{+w}{                }\PYG{n+nf+fm}{format!}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Dropped \PYGZob{}\PYGZcb{} messages from \PYGZob{}\PYGZcb{}.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{n}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{group\PYGZus{}name}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{)}\PYG{p}{,}
+
+\PYG{+w}{            }\PYG{n+nb}{Err}\PYG{p}{(}\PYG{n}{RecvError}\PYG{p}{::}\PYG{n}{Closed}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{break}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{n}{outbound}\PYG{p}{.}\PYG{n}{send}\PYG{p}{(}\PYG{n}{packet}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{p}{.}\PYG{n}{is\PYGZus{}err}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{break}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+尽管细节略有不同，但此函数的形式我们很熟悉：它是一个循环，从广播通道接收消息并通过共享的 \texttt{Outbound} 值将消息传输回客户端。如果此循环跟不上广播通道，它就会收到一个 \texttt{Lagged} 错误，并会尽职尽责地报告给客户端。
+
+如果将数据包发送回客户端时完全失败了，那么可能是因为连接已关闭，\texttt{handle\_subscriber} 退出其循环并返回，导致异步任务退出。这会丢弃广播通道的 \texttt{Receiver}，并取消订阅该通道。这样，当连接断开时，它的每个组成员身份都会在下次该组试图向它发送消息时被清除。
+
+这个聊天组永远不会关闭，因为我们不会从群组表中移除一个组。但为完整性考虑，一旦遇到 \texttt{Closed} 错误，\texttt{handle\_subscriber} 就会退出该任务。
+
+请注意，我们正在为每个客户端的每个组成员创建一个新的异步任务。这之所以可行，是因为异步任务使用的内存要比线程少得多，而且在同一个进程中从一个异步任务切换到另一个异步任务效率非常高。
+
+这就是聊天服务器的完整代码。它有点儿简陋，\texttt{async\_std} crate、\texttt{tokio} crate 和 \texttt{futures} crate 中有许多比本书所讲更有价值的特性，但从理论上说，这个扩展示例已经阐明了异步生态系统的一些特性是如何协同工作的：例子中有两种风格的异步任务、流、异步 I/O 特型、通道和互斥锁。
+
+\section{原始 \texttt{Future} 与执行器：\texttt{Future} 什么时候值得再次轮询}
+
+聊天服务器展示了我们如何使用 \texttt{TcpListener}、\texttt{broadcast} 通道等异步原语来编写代码，并使用 \texttt{block\_on}、\texttt{spawn} 等执行器来驱动它们的执行。现在来看看这些操作是如何实现的。关键问题是，当一个 \texttt{Future} 返回 \texttt{Poll::Pending} 时，应该如何与执行器协调，以便在正确的时机再次轮询。
+
+想想当我们从聊天客户端的 \texttt{main} 函数运行如下代码时会发生什么：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{task}\PYG{p}{::}\PYG{n}{block\PYGZus{}on}\PYG{p}{(}\PYG{k}{async}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{socket}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpStream}\PYG{p}{::}\PYG{n}{connect}\PYG{p}{(}\PYG{n}{address}\PYG{p}{)}\PYG{p}{.}\PYG{k}{await}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{p}{\PYGZcb{}}\PYG{p}{)}
+\end{Verbatim}
+
+在 \texttt{block\_on} 第一次轮询异步块的 \texttt{Future} 时，几乎可以肯定网络连接没有立即就绪，所以 \texttt{block\_on} 进入了睡眠状态。那它应该在什么时候醒来呢？一旦网络连接就绪，\texttt{TcpStream} 就需要以某种方式告诉 \texttt{block\_on} 应该再次尝试轮询异步块的 \texttt{Future}，因为它知道这一次 \texttt{await} 将完成，并且异步块的执行可以向前推进。
+
+当像 \texttt{block\_on} 这样的执行器轮询 \texttt{Future} 时，必须传入一个称为\textbf{唤醒器}（waker）的回调。如果 \texttt{Future} 还没有就绪，那么 \texttt{Future} 特型的规则就会要求它必须暂时返回 \texttt{Poll::Pending}，并且如果 \texttt{Future} 值得再次轮询，就会安排在那时调用唤醒器。
+
+所以 \texttt{Future} 的手写实现通常看起来是这样的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{Waker}\PYG{p}{;}
+
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{MyPrimitiveFuture}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{    }\PYG{n}{waker}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{Waker}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+
+\PYG{k}{impl}\PYG{+w}{ }\PYG{n}{Future}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{MyPrimitiveFuture}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{poll}\PYG{p}{(}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Pin}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{cx}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Context}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Poll}\PYG{o}{\PYGZlt{}}\PYG{o}{..}\PYG{p}{.}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{o}{..}\PYG{p}{.}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{n}{future}\PYG{+w}{ }\PYG{n}{is}\PYG{+w}{ }\PYG{n}{ready}\PYG{+w}{ }\PYG{o}{..}\PYG{p}{.}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Ready}\PYG{p}{(}\PYG{n}{final\PYGZus{}value}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{        }\PYG{c+c1}{// 保存此唤醒器以备后用}
+\PYG{+w}{        }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{waker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{cx}\PYG{p}{.}\PYG{n}{waker}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Pending}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+换句话说，如果 \texttt{Future} 的值就绪了，就返回它。否则，将 \texttt{Context} 中唤醒器的克隆体存储在某处，并返回 \texttt{Poll::Pending}。
+
+当 \texttt{Future} 值得再次轮询时，它一定会通过调用其唤醒器的 \texttt{wake} 方法通知最后一个轮询它的执行器：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{c+c1}{// 如果有一个唤醒器，就调用它，并清除`self.waker`}
+\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{waker}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{n}{waker}\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{waker}\PYG{p}{.}\PYG{n}{wake}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+理论上，执行器和 \texttt{Future} 会轮流轮询和唤醒：执行器会轮询 \texttt{Future} 并进入休眠状态，然后 \texttt{Future} 会调用唤醒器，这样，执行器就会醒来并再次轮询 \texttt{Future}。
+
+异步函数和异步块的 \texttt{Future} 不会处理唤醒器本身，它们只会将自己获得的上下文传给要等待的子 \texttt{Future}，并将保存和调用唤醒器的义务委托给这些子 \texttt{Future}。在我们的聊天客户端中，对异步块返回的 \texttt{Future} 的第一次轮询只会在等待 \texttt{TcpStream::connect} 返回的 \texttt{Future} 时传递上下文（\texttt{Context}）。随后的轮询会同样将自己的上下文传给异步块接下来要等待的任何 \texttt{Future}。
+
+如前面的示例所示，\texttt{TcpStream::connect} 返回的 \texttt{Future} 会被轮询。也就是说，这些返回的 \texttt{Future} 会将唤醒器转移给一个辅助线程，该线程会等待连接就绪，然后调用唤醒器。
+
+\texttt{Waker} 实现了 \texttt{Clone} 和 \texttt{Send}，因此 \texttt{Future} 总是可以制作自己的唤醒器副本并根据需要将其发送到其他线程。\texttt{Waker::wake} 方法会消耗此唤醒器。还有一个 \texttt{wake\_by\_ref} 方法，该方法不会消耗唤醒器，但某些执行器可以更高效地实现消耗唤醒器的版本。（但这种差异充其量也只是一次 \texttt{clone} 而已。）
+
+执行器过度轮询 \texttt{Future} 并无害处，只会影响效率。然而，\texttt{Future} 应该只在轮询会取得实际进展时才小心地调用唤醒器：虚假唤醒和轮询之间的循环调用可能会阻止执行器完全休眠，从而浪费电量并使处理器对其他任务的响应速度降低。
+
+既然已经展示了执行器和原始 \texttt{Future} 是如何通信的，那么接下来我们就自己实现一个原始 \texttt{Future}，然后看看 \texttt{block\_on} 执行器的实现。
+
+\subsection{调用唤醒器：\texttt{spawn\_blocking}}
+
+本章在前面介绍过 \texttt{spawn\_blocking} 函数，该函数会启动在另一个线程上运行的给定闭包，并返回携带闭包返回值的 \texttt{Future}。现在，我们拥有实现 \texttt{spawn\_blocking} 所需的所有“零件”。为简单起见，我们的版本会为每个闭包创建一个新线程，而不是像 \texttt{async\_std} 的版本那样使用线程池。
+
+尽管 \texttt{spawn\_blocking} 会返回 \texttt{Future}，但我们并不会将其写成 \texttt{async fn}。相反，它将作为普通的同步函数，返回一个 \texttt{SpawnBlocking} 结构体，我们会利用该结构体实现自己的 \texttt{Future}。
+
+\texttt{spawn\_blocking} 的签名如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{spawn\PYGZus{}blocking}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{closure}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{SpawnBlocking}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}\PYG{+w}{ }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnOnce}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+\PYG{+w}{      }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{p}{,}
+\PYG{+w}{      }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{p}{,}
+\end{Verbatim}
+
+由于需要将闭包发送到另一个线程并带回返回值，因此闭包 \texttt{F} 及其返回值 \texttt{T} 必须实现 \texttt{Send}。由于不知道线程会运行多长时间，因此它们也必须是 \texttt{'static} 的。这些限界与 \texttt{std::thread::spawn} 自身的强制限界是一样的。
+
+\texttt{SpawnBlocking<T>} 是携带闭包返回值的 \texttt{Future}。下面是它的定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Arc}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Mutex}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{::}\PYG{n}{Waker}\PYG{p}{;}
+
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{SpawnBlocking}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{Arc}\PYG{o}{\PYGZlt{}}\PYG{n}{Mutex}\PYG{o}{\PYGZlt{}}\PYG{n}{Shared}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Shared}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{value}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{+w}{    }\PYG{n}{waker}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Option}\PYG{o}{\PYGZlt{}}\PYG{n}{Waker}\PYG{o}{\PYGZgt{}}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+\texttt{Shared} 结构体必须充当 \texttt{Future} 和运行闭包的线程之间的结合点，因此它由 \texttt{Arc} 拥有并受 \texttt{Mutex} 保护。（同步互斥锁在这里很好用。）轮询此 \texttt{Future} 会检查 \texttt{value} 是否存在，如果不存在则将唤醒器保存在 \texttt{waker} 中。运行闭包的线程会将其返回值保存在 \texttt{value} 中，然后调用 \texttt{waker}（如果存在的话）。
+
+下面是 \texttt{spawn\_blocking} 的完整定义：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{spawn\PYGZus{}blocking}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{F}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{closure}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{SpawnBlocking}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}
+\PYG{k}{where}\PYG{+w}{ }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{FnOnce}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{T}\PYG{p}{,}
+\PYG{+w}{      }\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{p}{,}
+\PYG{+w}{      }\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{o}{\PYGZsq{}}\PYG{n+nb}{static}\PYG{p}{,}
+\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{inner}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Arc}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{Mutex}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{n}{Shared}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{value}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{waker}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{None}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{std}\PYG{p}{::}\PYG{n}{thread}\PYG{p}{::}\PYG{n}{spawn}\PYG{p}{(}\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{inner}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{inner}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{move}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{value}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{closure}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{            }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{maybe\PYGZus{}waker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{guard}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{inner}\PYG{p}{.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{                }\PYG{n}{guard}\PYG{p}{.}\PYG{n}{value}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{                }\PYG{n}{guard}\PYG{p}{.}\PYG{n}{waker}\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{p}{)}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{+w}{            }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{waker}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{maybe\PYGZus{}waker}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{                }\PYG{n}{waker}\PYG{p}{.}\PYG{n}{wake}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{            }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{SpawnBlocking}\PYG{p}{(}\PYG{n}{inner}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+创建 \texttt{Shared} 值后，就会启动一个线程来运行此闭包，将结果存储在 \texttt{Shared} 的 \texttt{value} 字段中，并调用唤醒器（如果有的话）。
+
+可以为 \texttt{SpawnBlocking} 实现 \texttt{Future}，如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{future}\PYG{p}{::}\PYG{n}{Future}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{pin}\PYG{p}{::}\PYG{n}{Pin}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Context}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Poll}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{impl}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nb}{Send}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{Future}\PYG{+w}{ }\PYG{k}{for}\PYG{+w}{ }\PYG{n}{SpawnBlocking}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{type}\PYG{+w}{ }\PYG{n+nc}{Output}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{T}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{poll}\PYG{p}{(}\PYG{n+nb+bp}{self}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Pin}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb+bp}{Self}\PYG{o}{\PYGZgt{}}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{cx}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{n+nc}{mut}\PYG{+w}{ }\PYG{n}{Context}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZsq{}}\PYG{n+nb}{\PYGZus{}}\PYG{o}{\PYGZgt{}}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{Poll}\PYG{o}{\PYGZlt{}}\PYG{n}{T}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{guard}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb+bp}{self}\PYG{p}{.}\PYG{l+m+mf}{0.}\PYG{n}{lock}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{unwrap}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{k}{if}\PYG{+w}{ }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{guard}\PYG{p}{.}\PYG{n}{value}\PYG{p}{.}\PYG{n}{take}\PYG{p}{(}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Ready}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+
+\PYG{+w}{        }\PYG{n}{guard}\PYG{p}{.}\PYG{n}{waker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{Some}\PYG{p}{(}\PYG{n}{cx}\PYG{p}{.}\PYG{n}{waker}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{        }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Pending}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+轮询 \texttt{SpawnBlocking} 来检查闭包的值是否就绪，如果已经就绪，就接手这个值的所有权并返回它。否则，\texttt{Future} 仍然处于 \texttt{Pending} 状态，因此它在 \texttt{Future} 的 \texttt{waker} 字段中保存了此上下文中唤醒器的克隆体。
+
+一旦 \texttt{Future} 返回了 \texttt{Poll::Ready}，就不应该再次对其进行轮询。诸如 \texttt{await} 和 \texttt{block\_on} 之类消耗 \texttt{Future} 的常用方式都遵守这条规则。过度轮询 \texttt{SpawnBlocking} 型 \texttt{Future} 并不会发生什么可怕的事情，因此也不必花费精力来处理这种情况。这就是典型的手写型 \texttt{Future}。
+
+\subsection{实现 \texttt{block\_on}}
+
+除了能够实现原始 \texttt{Future}，我们还拥有构建简单执行器所需的全部“零件”。在本节中，我们将编写自己的 \texttt{block\_on} 版本。它会比 \texttt{async\_std} 的版本简单很多，比如，它不支持 \texttt{spawn\_local}、任务局部变量或嵌套调用（从异步代码调用 \texttt{block\_on}）。但这已足够运行我们的聊天客户端和服务器了。
+
+代码如下所示：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{waker\PYGZus{}fn}\PYG{p}{::}\PYG{n}{waker\PYGZus{}fn}\PYG{p}{;}\PYG{+w}{      }\PYG{c+c1}{// Cargo.toml: waker\PYGZhy{}fn = \PYGZdq{}1.1\PYGZdq{}}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{futures\PYGZus{}lite}\PYG{p}{::}\PYG{n}{pin}\PYG{p}{;}\PYG{+w}{       }\PYG{c+c1}{// Cargo.toml: futures\PYGZhy{}lite = \PYGZdq{}1.11\PYGZdq{}}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{crossbeam}\PYG{p}{::}\PYG{n}{sync}\PYG{p}{::}\PYG{n}{Parker}\PYG{p}{;}\PYG{+w}{ }\PYG{c+c1}{// Cargo.toml: crossbeam = \PYGZdq{}0.8\PYGZdq{}}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{future}\PYG{p}{::}\PYG{n}{Future}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{std}\PYG{p}{::}\PYG{n}{task}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{Context}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{Poll}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{block\PYGZus{}on}\PYG{o}{\PYGZlt{}}\PYG{n}{F}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Future}\PYG{o}{\PYGZgt{}}\PYG{p}{(}\PYG{n}{future}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{F}\PYG{p}{::}\PYG{n}{Output}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{parker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Parker}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{unparker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parker}\PYG{p}{.}\PYG{n}{unparker}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{waker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{waker\PYGZus{}fn}\PYG{p}{(}\PYG{k}{move}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{unparker}\PYG{p}{.}\PYG{n}{unpark}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{context}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Context}\PYG{p}{::}\PYG{n}{from\PYGZus{}waker}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{n}{waker}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{n}{pin}\PYG{o}{!}\PYG{p}{(}\PYG{n}{future}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{+w}{    }\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{future}\PYG{p}{.}\PYG{n}{as\PYGZus{}mut}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{poll}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{context}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Ready}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{,}
+\PYG{+w}{            }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Pending}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{parker}\PYG{p}{.}\PYG{n}{park}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+上述代码虽然很短，但做了很多事，我们慢慢讲。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{parker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Parker}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{unparker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{parker}\PYG{p}{.}\PYG{n}{unparker}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{clone}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+\texttt{crossbeam} crate 的 \texttt{Parker} 类型是一个简单的阻塞原语：调用 \texttt{parker.park()} 阻塞线程，直到其他人在相应的 \texttt{Unparker}（可以通过调用 \texttt{parker.unparker()} 预先获得）上调用 \texttt{.unpark()}。如果要 \texttt{unpark} 一个尚未停泊（\texttt{park}）的线程，那么它的下一次 \texttt{park} 调用将立即返回，而不会阻塞。这里的 \texttt{block\_on} 将使用 \texttt{Parker} 在 \texttt{Future} 未就绪时等待，而我们传给 \texttt{Future} 的唤醒器将解除停泊。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{waker}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{waker\PYGZus{}fn}\PYG{p}{(}\PYG{k}{move}\PYG{+w}{ }\PYG{o}{|}\PYG{o}{|}\PYG{+w}{ }\PYG{n}{unparker}\PYG{p}{.}\PYG{n}{unpark}\PYG{p}{(}\PYG{p}{)}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+来自 \texttt{waker\_fn} crate 的 \texttt{waker\_fn} 函数会从给定的闭包创建一个 \texttt{Waker}。在这里，我们制作了一个 \texttt{Waker}，当调用它时，它会调用闭包 \texttt{move || unparker.unpark()}。还可以通过实现 \texttt{std::task::Wake} 特型来创建唤醒器，但这里用 \texttt{waker\_fn} 更方便一些。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{pin}\PYG{o}{!}\PYG{p}{(}\PYG{n}{future}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+给定一个携带 \texttt{F} 类型 \texttt{Future} 的变量，\texttt{pin!} 宏\footnote{在 Rust 1.68 及以上版本中，标准库已经内置 \texttt{pin!} 宏。——译者注}会获取 \texttt{Future} 的所有权并声明一个同名的新变量，其类型为 \texttt{Pin<\&mut F>} 并借入了此 \texttt{Future}。这就为我们提供了 \texttt{poll} 方法所需的 \texttt{Pin<\&mut Self>}。异步函数和异步块返回的 \texttt{Future} 必须在轮询之前通过 \texttt{Pin} 换成引用，20.4 节会对此进行解释。
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{future}\PYG{p}{.}\PYG{n}{as\PYGZus{}mut}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{poll}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{context}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Ready}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Pending}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{parker}\PYG{p}{.}\PYG{n}{park}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+最后，轮询循环非常简单。以一个携带唤醒器的上下文为入参，我们会轮询 \texttt{Future} 直到它返回 \texttt{Poll::Ready}。如果返回的是 \texttt{Poll::Pending}，我们会暂停此线程，并阻塞到调用了 \texttt{waker} 为止。放行后就再重试。
+
+\texttt{as\_mut} 调用能让我们在不放弃所有权的情况下对 \texttt{future} 进行轮询，20.4 节会对此进行详细解释。
+
+\section{固定（\texttt{Pin}）}
+
+\footnote{pin 原意为“图钉”，这里指把某个值固定在原位，防止被移动。——译者注}尽管异步函数和异步块对于编写清晰的异步代码至关重要，但处理它们的 \texttt{Future} 时要小心一点儿。\texttt{Pin} 类型有助于确保 Rust 安全地使用它们。
+
+本节首先会展示为什么异步函数调用和异步块的 \texttt{Future} 不能像普通 Rust 值那样随意处理；然后会展示 \texttt{Pin} 如何用作指针的“许可印章”，我们可以依靠这些“盖章指针”来安全地管理此类 \texttt{Future}；最后会展示几种使用 \texttt{Pin} 值的方法。
+
+\subsection{\texttt{Future} 生命周期的两个阶段}
+
+考虑下面这个简单的异步函数：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{::}\PYG{n}{io}\PYG{p}{::}\PYG{n}{prelude}\PYG{p}{:}\PYG{p}{:}\PYG{o}{*}\PYG{p}{;}
+\PYG{k}{use}\PYG{+w}{ }\PYG{n}{async\PYGZus{}std}\PYG{p}{:}\PYG{p}{:}\PYG{p}{\PYGZob{}}\PYG{n}{io}\PYG{p}{,}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{\PYGZcb{}}\PYG{p}{;}
+
+\PYG{k}{async}\PYG{+w}{ }\PYG{k}{fn}\PYG{+w}{ }\PYG{n+nf}{fetch\PYGZus{}string}\PYG{p}{(}\PYG{n}{address}\PYG{p}{:}\PYG{+w}{ }\PYG{k+kp}{\PYGZam{}}\PYG{k+kt}{str}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n+nc}{io}\PYG{p}{::}\PYG{n+nb}{Result}\PYG{o}{\PYGZlt{}}\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{err}{➊}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{socket}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{net}\PYG{p}{::}\PYG{n}{TcpStream}\PYG{p}{::}\PYG{n}{connect}\PYG{p}{(}\PYG{n}{address}\PYG{p}{)}\PYG{p}{.}\PYG{n}{await➋}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n}{socket}\PYG{p}{.}\PYG{n}{read\PYGZus{}to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{)}\PYG{p}{.}\PYG{n}{await➌}\PYG{o}{?}\PYG{p}{;}
+\PYG{+w}{    }\PYG{n+nb}{Ok}\PYG{p}{(}\PYG{n}{buf}\PYG{p}{)}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+这会打开到给定地址的 TCP 连接，并以 \texttt{String} 的形式返回服务器发送的任何内容。标有 ➊、➋ 和 ➌ 的点是\textbf{恢复点}，即异步函数代码中可以暂停执行的点。
+
+假设你调用它，但没有等待，就像下面这样：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{response}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{fetch\PYGZus{}string}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{localhost:6502}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+现在 \texttt{response} 是一个 \texttt{Future}，它准备在 \texttt{fetch\_string} 的开头开始执行，并带有给定的参数。在内存中，\texttt{Future} 看起来如图 20-5 所示。
+
+\myFigure{images/ch20/fig-20-5.jpeg}{图 20-5：为调用 \texttt{fetch\_string} 而构建的 \texttt{Future}}
+
+由于我们刚刚创建了这个 \texttt{Future}，因此它认为执行应该从函数体顶部的恢复点 ➊ 开始。在这种状态下，\texttt{Future} 唯一能给出的值就是函数参数。
+
+现在假设你对 \texttt{response} 进行了几次轮询，并且它在函数体中到达了下面这个点：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{socket}\PYG{p}{.}\PYG{n}{read\PYGZus{}to\PYGZus{}string}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{buf}\PYG{p}{)}\PYG{p}{.}\PYG{n}{await➌}\PYG{o}{?}\PYG{p}{;}
+\end{Verbatim}
+
+进一步假设 \texttt{read\_to\_string} 的结果尚未就绪，因此轮询会返回 \texttt{Poll::Pending}。此时，\texttt{Future} 看起来如图 20-6 所示。
+
+\myFigure{images/ch20/fig-20-6.jpeg}{图 20-6：同一个 \texttt{Future}，正在等待 \texttt{read\_to\_string}}
+
+\texttt{Future} 必须始终保存下一次轮询时恢复执行需要的所有信息。在这种情况下是如下内容。
+
+\begin{itemize}
+\item 恢复点 ➌，表示执行应该在 \texttt{await} 处恢复，那时正在轮询 \texttt{read\_to\_string} 返回的 \texttt{Future}。
+\item 在那个恢复点处于活动状态的变量：\texttt{socket} 和 \texttt{buf}。\texttt{address} 的值在 \texttt{Future} 中不会再出现，因为该函数已不再需要它。
+\item \texttt{read\_to\_string} 的子 \texttt{Future}，\texttt{await} 表达式正在对其进行轮询。
+\end{itemize}
+
+请注意，对 \texttt{read\_to\_string} 的调用借用了对 \texttt{socket} 和 \texttt{buf} 的引用。在同步函数中，所有局部变量都存在于栈中，但在异步函数中，在 \texttt{await} 中仍然存活的局部变量必须位于 \texttt{Future} 中，这样当再次轮询时它们才是可用的。借入对这样一个变量的引用，就是借入了 \texttt{Future} 中的一部分。
+
+然而，Rust 要求值在已借出时就不能再移动了。假设要将下面这个 \texttt{Future} 移动到一个新位置：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{new\PYGZus{}variable}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{response}\PYG{p}{;}
+\end{Verbatim}
+
+Rust 无法找出所有活动引用并相应地调整它们。引用不会指向新位置的 \texttt{socket} 和 \texttt{buf}，而是继续指向它们在当前处于未初始化状态的 \texttt{response} 中的旧位置。它们变成了悬空指针，如图 20-7 所示。
+
+\myFigure{images/ch20/fig-20-7.jpeg}{图 20-7：\texttt{fetch\_string} 返回的 \texttt{Future}，在已借出时移动（Rust 会阻止这样做）}
+
+防止已借出的值被移动通常是借用检查器的责任。借用检查器会将变量视为所有权树的根。但与存储在栈中的变量不同，如果 \texttt{Future} 本身已移动，则存储在 \texttt{Future} 中的变量也会移动。这意味着 \texttt{socket} 和 \texttt{buf} 的借用不仅会影响 \texttt{fetch\_string} 可以用自己的变量做什么，还会影响其调用者可以安全地用 \texttt{response}（也就是持有这些变量的 \texttt{Future}）做什么。异步函数的 \texttt{Future} 是借用检查器的盲点，如果 Rust 想要保持其内存安全承诺，就必须以某种方式解决这个问题。
+
+Rust 对这个问题的解决方案基于这样一种洞见：\texttt{Future} 在首次创建时总是可以安全地移动，只有在轮询时才会变得不安全。在一开始，通过调用异步函数创建的 \texttt{Future} 仅包含一个恢复点和参数值。这些仅仅存在于尚未开始执行的异步函数主体的作用域内。只有当轮询 \texttt{Future} 时才会借用其内容。
+
+由此可见，每一个 \texttt{Future} 的生命周期中都有两个阶段。
+
+\begin{itemize}
+\item 第一阶段从刚创建 \texttt{Future} 时开始。因为函数体还没有开始执行，所以它的任何部分都不可能被借用。在这一点上，移动它和移动其他 Rust 值一样安全。
+\item 第二阶段在第一次轮询 \texttt{Future} 时开始。一旦函数的主体开始执行，它就可以借用对存储在 \texttt{Future} 中的变量的引用，然后等待，保留对 \texttt{Future} 持有的变量的借用。从第一次轮询开始，就必须假设 \texttt{Future} 不能被安全地移动了。
+\end{itemize}
+
+第一个生命阶段的灵活性让我们能够将 \texttt{Future} 传给 \texttt{block\_on} 和 \texttt{spawn} 并调用适配器方法（如 \texttt{race} 和 \texttt{fuse}），所有这些都会按值获取 \texttt{Future}。事实上，即使最初创建 \texttt{Future} 的那次异步函数调用也必须将其返回给调用者，那同样是一次移动。
+
+要进入 \texttt{Future} 的第二个生命阶段，就必须对 \texttt{Future} 进行轮询。\texttt{poll} 方法要求将 \texttt{Future} 作为 \texttt{Pin<\&mut Self>} 值传递。\texttt{Pin} 是指针类型（如 \texttt{\&mut Self}）的包装器，它限制了指针的使用方式，以确保它们的引用目标（如 \texttt{Self}）永远不会再次移动。因此，必须首先生成一个指向 \texttt{Future} 的以 \texttt{Pin} 包装的指针，然后才能对其进行轮询。
+
+这就是 Rust 确保 \texttt{Future} 安全的策略：\texttt{Future} 只有在轮询之前移动才不会有危险，在构建指向 \texttt{Future} 的以 \texttt{Pin} 包装的指针之前无法轮询 \texttt{Future}，一旦这么做了，\texttt{Future} 就不可再移动。
+
+“一个无法移动的值”听起来有点儿不可思议，因为在 Rust 中移动无处不在。20.4.2 节会详细解释 \texttt{Pin} 是如何保护 \texttt{Future} 的。
+
+尽管本节讨论的是异步函数，但这里的所有内容也适用于异步块。一个新创建的异步块的 \texttt{Future} 只会从它周围的代码中捕获要使用的变量，就像闭包一样。只有轮询 \texttt{Future} 时才会创建对其内容的引用，使其移动变得不安全。
+
+请记住，这种移动的脆弱性仅限于异步函数和异步块的 \texttt{Future}，以及编译器为它们生成的特殊 \texttt{Future} 实现。如果你为自己的类型手动实现了 \texttt{Future}，就像我们在 20.3.1 节为 \texttt{SpawnBlocking} 类型所做的那样，那么这样的 \texttt{Future} 无论在轮询之前还是之后移动都是完全安全的。在任何手写的 \texttt{poll} 实现中，借用检查器会确保当 \texttt{poll} 返回时你已借出的任何对 \texttt{self} 部分的引用都已消失。正是因为异步函数和异步块有能力在函数调用过程中暂停执行并仍持有借用，所以才必须小心处理它们的 \texttt{Future}。
+
+\subsection{固定指针}
+
+\texttt{Pin} 类型是指向 \texttt{Future} 的指针的包装器，它限制了指针的用法，以确保 \texttt{Future} 一旦被轮询就不能移动。这些限制对于不介意被移动的 \texttt{Future} 是可以取消的，但对于需要安全地轮询异步函数和异步块的 \texttt{Future} 必不可少。
+
+这里的\textbf{指针}指的是任何实现了 \texttt{Deref} 或 \texttt{DerefMut} 的类型。包裹在指针上的 \texttt{Pin} 称为\textbf{固定指针}。\texttt{Pin<\&mut T>} 和 \texttt{Pin<Box<T>>} 是典型的固定指针。
+
+标准库中 \texttt{Pin} 的定义很简单：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{pub}\PYG{+w}{ }\PYG{k}{struct}\PYG{+w}{ }\PYG{n+nc}{Pin}\PYG{o}{\PYGZlt{}}\PYG{n}{P}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{n}{pointer}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{P}\PYG{p}{,}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+请注意，\texttt{pointer} 字段\textbf{不是} \texttt{pub} 的。这意味着构造或使用 \texttt{Pin} 的唯一方法是借助该类型提供的经过精心设计的方法。
+
+给定一个异步函数或异步块返回的 \texttt{Future}，只有以下几种方法可以获得指向它的固定指针。
+
+\begin{itemize}
+\item \texttt{pin!} 宏来自 \texttt{futures-lite} crate，它会用新的 \texttt{Pin<\&mut T>} 类型的变量遮蔽 \texttt{T} 类型的变量。新变量会指向原始值，而原始值已移至栈中的匿名临时位置。当新变量超出作用域时，原始值会被丢弃。我们用 \texttt{pin!} 在 \texttt{block\_on} 实现中固定了想要轮询的 \texttt{Future}。
+\item 标准库的 \texttt{Box::pin} 构造函数能获取任意类型 \texttt{T} 值的所有权，将其移动到堆中，并返回 \texttt{Pin<Box<T>>}。
+\item \texttt{Pin<Box<T>>} 可以实现 \texttt{From<Box<T>>}，因此 \texttt{Pin::from(boxed)} 会取得 \texttt{boxed} 的所有权，并返回指向堆上同一个 \texttt{T} 的固定过的 \texttt{Box}。
+\end{itemize}
+
+获得指向这些 \texttt{Future} 的固定指针的每一种方法都需要放弃对 \texttt{Future} 的所有权，并且无法再取回。当然，固定指针本身可以按照你喜欢的任何方式移动，但移动指针不会移动其引用目标。因此，拥有指向 \texttt{Future} 的固定指针足以证明你已经不能移动 \texttt{Future} 了。这样就可以安全地对其进行轮询了。这就是我们所要了解的一切。
+
+一旦固定了 \texttt{Future}，如果想轮询它，那么所有 \texttt{Pin<pointer to T>} 类型都会有一个 \texttt{as\_mut} 方法，该方法会解引用指针并返回 \texttt{poll} 所需的 \texttt{Pin<\&mut T>}。
+
+\texttt{as\_mut} 方法还可以帮你在不放弃所有权的情况下轮询 \texttt{Future}。\texttt{block\_on} 的实现中就是出于这个目的而使用它的：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{n}{pin}\PYG{o}{!}\PYG{p}{(}\PYG{n}{future}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k}{loop}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{    }\PYG{k}{match}\PYG{+w}{ }\PYG{n}{future}\PYG{p}{.}\PYG{n}{as\PYGZus{}mut}\PYG{p}{(}\PYG{p}{)}\PYG{p}{.}\PYG{n}{poll}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{context}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Ready}\PYG{p}{(}\PYG{n}{value}\PYG{p}{)}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{k}{return}\PYG{+w}{ }\PYG{n}{value}\PYG{p}{,}
+\PYG{+w}{        }\PYG{n}{Poll}\PYG{p}{::}\PYG{n}{Pending}\PYG{+w}{ }\PYG{o}{=}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{n}{parker}\PYG{p}{.}\PYG{n}{park}\PYG{p}{(}\PYG{p}{)}\PYG{p}{,}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+在这里，\texttt{pin!} 宏已将 \texttt{future} 重新声明为 \texttt{Pin<\&mut F>}，因此可以将其传给 \texttt{poll}。但是可变引用不是 \texttt{Copy} 类型，因此 \texttt{Pin<\&mut F>} 也不是 \texttt{Copy} 类型，这意味着直接调用 \texttt{future.poll()} 将取得 \texttt{future} 的所有权，进而导致循环的下一次迭代留下未初始化的变量。为了避免这种情况，我们会调用 \texttt{future.as\_mut()} 为每次循环迭代重新借入新的 \texttt{Pin<\&mut F>}。
+
+无法获得对已固定 \texttt{Future} 的 \texttt{\&mut} 引用，因为如果可以获得该引用，那么你就能用 \texttt{std::mem::replace} 或 \texttt{std::mem::swap} 将其移动出来并在原位置放入另一个 \texttt{Future}。
+
+之所以不必担心普通异步代码中的固定 \texttt{Future}，是因为获取 \texttt{Future} 的最终值的最常见方式（等待它或传给执行器）都要求拥有 \texttt{Future} 的所有权并会在内部管理固定指针。例如，我们的 \texttt{block\_on} 实现会接手 \texttt{Future} 的所有权并使用 \texttt{pin!} 来生成轮询所需的 \texttt{Pin<\&mut F>} 的宏。\texttt{await} 表达式也会接手 \texttt{Future} 的所有权，其内部实现类似于 \texttt{pin!} 宏。
+
+\subsection{\texttt{Unpin} 特型}
+
+然而，并不是所有的 \texttt{Future} 都需要这样小心翼翼地处理。对于普通类型（如前面提到的 \texttt{SpawnBlocking} 类型）的 \texttt{Future} 的任何手写实现，这些对构造和使用固定指针方面的限制都是不必要的。
+
+这种耐用类型实现了 \texttt{Unpin} 标记特型：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k}{trait}\PYG{+w}{ }\PYG{n+nb}{Unpin}\PYG{+w}{ }\PYG{p}{\PYGZob{}}\PYG{+w}{ }\PYG{p}{\PYGZcb{}}
+\end{Verbatim}
+
+Rust 中的几乎所有类型都使用编译器中的特殊支持自动实现了 \texttt{Unpin}。异步函数和异步块返回的 \texttt{Future} 是这条规则的例外情况。
+
+对于各种 \texttt{Unpin} 类型，\texttt{Pin} 没有任何限制。可以使用 \texttt{Pin::new} 从普通指针创建固定指针，然后使用 \texttt{Pin::into\_inner} 取回该指针。\texttt{Pin} 本身会传递指针自己的 \texttt{Deref} 实现和 \texttt{DerefMut} 实现。
+
+例如，\texttt{String} 实现了 \texttt{Unpin}，所以可以这样写：
+
+\begin{Verbatim}[commandchars=\\\{\},breaklines=true,breakanywhere=true,fontsize=\codefont,xleftmargin=17bp]
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{string}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Pinned?}\PYG{l+s}{\PYGZdq{}}\PYG{p}{.}\PYG{n}{to\PYGZus{}string}\PYG{p}{(}\PYG{p}{)}\PYG{p}{;}
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{pinned}\PYG{p}{:}\PYG{+w}{ }\PYG{n+nc}{Pin}\PYG{o}{\PYGZlt{}}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n+nb}{String}\PYG{o}{\PYGZgt{}}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{Pin}\PYG{p}{::}\PYG{n}{new}\PYG{p}{(}\PYG{o}{\PYGZam{}}\PYG{k}{mut}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{n}{pinned}\PYG{p}{.}\PYG{n}{push\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ Not}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\PYG{n}{Pin}\PYG{p}{::}\PYG{n}{into\PYGZus{}inner}\PYG{p}{(}\PYG{n}{pinned}\PYG{p}{)}\PYG{p}{.}\PYG{n}{push\PYGZus{}str}\PYG{p}{(}\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{ so much.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+
+\PYG{k+kd}{let}\PYG{+w}{ }\PYG{n}{new\PYGZus{}home}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{string}\PYG{p}{;}
+\PYG{n+nf+fm}{assert\PYGZus{}eq!}\PYG{p}{(}\PYG{n}{new\PYGZus{}home}\PYG{p}{,}\PYG{+w}{ }\PYG{l+s}{\PYGZdq{}}\PYG{l+s}{Pinned? Not so much.}\PYG{l+s}{\PYGZdq{}}\PYG{p}{)}\PYG{p}{;}
+\end{Verbatim}
+
+即使在制作出 \texttt{Pin<\&mut String>} 之后，仍然可以完全可变地访问字符串，并且一旦这个 \texttt{Pin} 被 \texttt{into\_inner} 消耗，可变引用消失后就可以将其转移给新变量。因此，对 \texttt{Unpin} 类型（几乎所有类型）来说，\texttt{Pin} 只是指向该类型指针的一个无聊包装器而已。
+
+这意味着当你为自己的 \texttt{Unpin} 类型实现 \texttt{Future} 时，你的 \texttt{poll} 实现可以将 \texttt{self} 视为 \texttt{\&mut Self}，而不是 \texttt{Pin<\&mut Self>}。\texttt{Pin} 成了几乎可以忽略的东西。
+
+令人惊讶的是，即使 \texttt{F} 没有实现 \texttt{Unpin}，\texttt{Pin<\&mut F>} 和 \texttt{Pin<Box<F>>} 也会实现 \texttt{Unpin}。这读起来不太对劲。（\texttt{Pin} 怎么可能是 \texttt{Unpin} 呢？）但是如果仔细考虑一下每个术语的含义，就能想通了。虽然 \texttt{F} 一旦被轮询就不能安全地移动，但指向它的指针总是可以安全地移动，无论其是否被轮询过。不过，只有指针可以移动，其脆弱的引用目标仍然不能。
+
+当你想把一个异步函数或异步块的 \texttt{Future} 传给只接受 \texttt{Unpin} 类 \texttt{Future} 的函数时，知道这一点很重要。（此类函数在 \texttt{async\_std} 中很少见，但在异步生态中的其他地方并非如此。）无论 \texttt{F} 是否实现了 \texttt{Unpin}，\texttt{Pin<Box<F>>} 都会实现 \texttt{Unpin}，因此将 \texttt{Box::pin} 应用于异步函数或异步块返回的 \texttt{Future} 都会为你提供一个可以在任何地方使用的 \texttt{Future}，但代价是要进行堆分配。
+
+使用 \texttt{Pin} 时，还有各种不安全的方法，通过这些方法，你可以对指针及其目标做任何想做的事情，甚至对于非 \texttt{Unpin} 目标类型也是如此。但是，正如第 22 章所解释的，Rust 无法检查这些方法用的是否正确。因此，你有责任确保用到这些方法的代码的安全性。
+
+\section{什么时候要用异步代码}
+
+异步代码比多线程代码更难写。你必须使用正确的 I/O 和同步原语，手动分解长时间运行的计算或将它们分拆到其他线程上，并管理多线程代码中不会遇到的其他细节，比如固定。那么异步代码到底有哪些优势呢？
+
+下面是你常会听到的两种说法，但它们经不起仔细推敲。
+
+\begin{itemize}
+\item “异步代码非常适合 I/O。”这不完全正确。如果应用程序正在花费时间等待 I/O，那么把它变成异步形式并不会让 I/O 运行得更快。如今普遍使用的异步 I/O 接口没有什么比同步接口更高效的地方。对于这两种方式，操作系统会完成同样的工作。（事实上，未就绪的异步 I/O 操作必须稍后重试，因此需要两次系统调用才能完成，而不是一次。）
+\item “异步代码比多线程代码更容易编写。”在 JavaScript、Python 等语言中，这很可能是正确的。在这些语言中，程序员使用 \texttt{async}/\texttt{await} 作为并发的一种形式：有一个执行线程，并且中断只发生在 \texttt{await} 表达式中，因此通常不需要互斥锁来保持数据一致，只是不要在使用它的中途进行 \texttt{await}。当只有在你的明确许可下才可能发生任务切换时，代码会更容易理解。
+
+但是这个论点不适用于 Rust，因为在 Rust 中线程用起来几乎不怎么麻烦。一旦程序编译完成，就不会出现数据竞争。非确定性行为仅限于同步特性，比如互斥锁、通道、原子等，它们都是为应对该行为而设计的。因此，异步代码并不能帮你更好地了解其他线程何时会影响你，这在\textbf{所有}安全的 Rust 代码中一目了然。
+
+当然，在与线程结合使用时，Rust 的异步支持真的很出色。如果放弃这种用法实在太可惜了。
+\end{itemize}
+
+那么，异步代码的真正优势是什么呢？
+
+\begin{itemize}
+\item \textbf{异步任务可以使用更少的内存}。在 Linux 上，一个线程的内存使用量至少为 20 KiB，包括用户空间和内核空间的内存使用量。\footnote{这包括内核内存，并按为线程分配的物理分页（而非虚拟分页）中尚未分配的数量计算。macOS 和 Windows 上的数量类似。} \texttt{Future} 则小得多：我们的聊天服务器的 \texttt{Future} 只有几百字节大小，并且随着 Rust 编译器的改进还能变得更小。
+\item \textbf{异步任务的创建速度更快}。在 Linux 上，创建一个线程大约需要 15 微秒。而启动一个异步任务大约需要 300 纳秒，仅为创建线程所花费时间的约 1/50。
+\item \textbf{异步任务之间的上下文切换比操作系统线程之间的上下文切换更快}。在 Linux 上这两个操作所需时间分别为 0.2 微秒和 1.7 微秒。\footnote{Linux 上下文切换也曾处于 0.2 微秒范围内，直到其内核由于处理器安全漏洞而被迫使用较慢的技术。}然而，这些都是最佳情况下的数值：如果切换是由于 I/O 就绪导致的，则这两个操作的时间都会上升到 1.7 微秒。线程之间的切换和不同处理器核心上的任务之间的切换大不相同：跨核心的通信非常慢。
+\end{itemize}
+
+这给了我们一个关于异步代码适合解决哪种问题的提示。例如，异步服务器可能想为每项任务使用更少的内存，以便处理更多的并发连接。（这可能就是异步代码常因“适合 I/O”而享有盛誉的原因。）或者，如果你的设计可以自然地组织成许多相互通信的独立任务，那么每项任务开销低、创建时间短，并且能快速切换上下文都会是重要的优势。这就是为什么聊天服务器是异步编程的经典示例。不过，多人游戏和网络路由器也可能是很好的应用场景。
+
+在其他场景中，要做出是否使用异步编程的决定就不这么显而易见了。如果你的程序有一个线程池来执行繁重的计算或闲置以等待 I/O 完成，那么前面列出的优势可能对其性能影响不大。你必须优化自己的计算，找到更快的网络连接，或者做点儿能实际影响这些限制因素的其他事情。
+
+在实践中，我们能找到的每一个关于实现大容量服务器的说明，都强调了通过测量、调整和不懈努力来识别和消除任务之间产生争用的根源的重要性。异步架构无法让你跳过这些工作中的任何一项。事实上，虽然很多现成的工具可以评估多线程程序的行为，但这些工具无法识别 Rust 异步任务，因此它们需要自己的工具。（正如一位智者曾经说过的：“现在，你有\textbf{两个}问题了。”）
+
+即使现在不使用异步代码，但如果将来你能有幸比现在忙得多，那么至少了解这个选项的存在也绝对是件好事。
+
